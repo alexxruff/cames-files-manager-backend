@@ -1,0 +1,8 @@
+node_modules
+coverage
+logs
+package-lock.json
+
+# Documento del front: es la especificación que nos entregaron. No se reformatea
+# para que el diff contra su original siga siendo vacío.
+backend-spec.md

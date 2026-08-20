@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.local
+.env.*.local
+logs/
+*.log
+coverage/
+dist/
+tmp/
+.DS_Store
+.idea/
+.vscode/
+!.vscode/extensions.json
+.claude/settings.local.json
