@@ -53,6 +53,17 @@ const schema = z.object({
   // Zona horaria de negocio: las fechas de calendario se interpretan aquí.
   TIMEZONE: z.string().default('America/Mexico_City'),
 
+  // ─── Administrador inicial (bootstrap) ────────────────────────────────────
+  // Se crea SOLO si la colección de usuarios está vacía, en la primera corrida.
+  // Es la única forma de entrar a un sistema recién instalado: no hay registro
+  // público. Ver src/services/bootstrapAdmin.js y docs/DECISIONES.md D-21.
+  BOOTSTRAP_ADMIN_ENABLED: booleanFromString('true'),
+  BOOTSTRAP_ADMIN_NAME: z.string().default('Alex Administrador'),
+  BOOTSTRAP_ADMIN_EMAIL: z.string().email().default('alexxruff@yahoo.com'),
+  // A propósito sin reglas de complejidad: es una credencial de arranque que se
+  // cambia en el primer acceso. La API sí exige contraseñas fuertes.
+  BOOTSTRAP_ADMIN_PASSWORD: z.string().min(1).default('1234'),
+
   // Semilla del primer administrador (`npm run seed:admin`).
   SEED_ADMIN_NAME: z.string().default('Administrador Urbacames'),
   SEED_ADMIN_EMAIL: z.string().email().optional(),

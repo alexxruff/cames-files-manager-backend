@@ -3,6 +3,8 @@ coverage
 logs
 package-lock.json
 
-# Documento del front: es la especificación que nos entregaron. No se reformatea
-# para que el diff contra su original siga siendo vacío.
+# Documentos del front: son la especificación y el modelo que nos entregaron. No se
+# reformatean, para que el diff contra sus originales siga siendo vacío.
 backend-spec.md
+docs/backend-spec.md
+docs/modelo-datos.md

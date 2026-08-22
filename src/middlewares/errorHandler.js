@@ -20,8 +20,11 @@ class AppError extends Error {
    * @param {object} [opciones]
    * @param {Array<{msg: string, path?: string}>} [opciones.errors]
    * @param {string} [opciones.code] Código estable para el front, si hace falta.
+   * @param {object} [opciones.data] Datos que el front necesita para reaccionar
+   *   al error, no sólo para mostrarlo: la lista de posibles duplicados de un
+   *   `409`, por ejemplo. Va en `data` del envelope en vez de `null`.
    */
-  constructor(statusCode, message, { errors, code } = {}) {
+  constructor(statusCode, message, { errors, code, data } = {}) {
     super(message)
     this.name = 'AppError'
     this.statusCode = statusCode
@@ -29,6 +32,7 @@ class AppError extends Error {
     this.isOperational = true
     if (errors) this.errors = errors
     if (code) this.code = code
+    if (data !== undefined) this.data = data
     Error.captureStackTrace(this, this.constructor)
   }
 
@@ -53,8 +57,12 @@ class AppError extends Error {
     return new AppError(401, message)
   }
 
-  static conflict(message) {
-    return new AppError(409, message)
+  /**
+   * 409 con datos para que el front pueda ofrecer una salida: «ya existe, ¿la
+   * adscribo?» necesita el id del que ya está, no sólo el mensaje.
+   */
+  static conflict(message, { code, data, errors } = {}) {
+    return new AppError(409, message, { code, data, errors })
   }
 }
 
@@ -132,7 +140,9 @@ function errorHandler(err, req, res, next) {
       message: error.message,
       ...(error.errors ? { errors: error.errors } : {}),
       ...(error.code ? { code: error.code } : {}),
-      data: null
+      // Normalmente `null`; algunos errores llevan datos con los que el front
+      // puede reaccionar (candidatos de un duplicado, por ejemplo).
+      data: error.data ?? null
     })
   }
 

@@ -1,21 +1,26 @@
 const mongoose = require('mongoose')
-const { MongoMemoryServer } = require('mongodb-memory-server')
+const { MongoMemoryReplSet } = require('mongodb-memory-server')
 const { connect, disconnect } = require('../../src/config/database')
 
 /**
- * Base de datos en memoria para las pruebas.
+ * Base de datos en memoria para las pruebas, como REPLICA SET de un nodo.
  *
- * Se usa `mongodb-memory-server` en vez de una base compartida para que las
- * pruebas sean aisladas y reproducibles: nadie pisa datos de nadie y no hace
- * falta Mongo instalado.
+ * Tiene que ser replica set y no un servidor suelto porque el código usa
+ * transacciones (crear un empleado con su expediente, dar acceso escribiendo
+ * `empleados` y `credenciales`). Con `MongoMemoryServer` a secas, cada
+ * `startSession().withTransaction()` falla con
+ * "Transaction numbers are only allowed on a replica set member or mongos".
  *
- * Entre pruebas se limpian las colecciones, no se recrea el servidor: es órdenes
- * de magnitud más rápido y el aislamiento es el mismo.
+ * Se levanta una vez por archivo de pruebas y entre pruebas sólo se limpian las
+ * colecciones: recrear el servidor por prueba multiplicaría el tiempo sin ganar
+ * aislamiento.
  */
 let memoria
 
 beforeAll(async () => {
-  memoria = await MongoMemoryServer.create()
+  memoria = await MongoMemoryReplSet.create({
+    replSet: { count: 1, storageEngine: 'wiredTiger' }
+  })
   await connect({ uri: memoria.getUri(), dbName: 'cames_expedientes_test' })
 })
 

@@ -3,6 +3,9 @@ const cors = require('cors')
 const helmet = require('helmet')
 const compression = require('compression')
 const env = require('./config/env')
+// Registra todos los modelos antes de montar rutas: `populate()` los resuelve
+// por nombre y falla en caliente si alguno no se ha cargado. Ver src/models.
+require('./models')
 const routes = require('./api/v1/routes')
 const { AppError, errorHandler, notFoundHandler } = require('./middlewares/errorHandler')
 const { requestContext, requestLogger } = require('./middlewares/requestContext')

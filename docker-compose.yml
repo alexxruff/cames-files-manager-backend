@@ -1,0 +1,47 @@
+# MongoDB para desarrollo local, como REPLICA SET DE UN NODO.
+#
+# POR QUÉ REPLICA SET Y NO UN NODO SUELTO: las transacciones de MongoDB sólo
+# existen en un replica set, y el modelo las necesita en varios lugares —
+# `POST /empleados` crea la persona y su expediente atómicamente, y dar acceso
+# escribe en `empleados` y en `credenciales`. Un nodo suelto haría que esas
+# operaciones se implementaran "a mano", con estados a medias cuando algo falla.
+#
+# POR QUÉ EL PUERTO 27018: el 27017 de esta máquina lo ocupa un contenedor
+# `mongo:3.6` (el de talentlink-backend), incompatible con Mongoose 8. Ver D-22.
+# El puerto es el MISMO dentro y fuera del contenedor a propósito: un replica set
+# anuncia la dirección de sus miembros, y si dentro fuera 27017 el driver
+# terminaría intentando conectarse al Mongo viejo.
+#
+#   npm run db:up        levanta el Mongo e inicia el replica set
+#   npm run db:down      lo apaga (los datos sobreviven en el volumen)
+#   npm run db:shell     abre mongosh dentro del contenedor
+#   npm run db:reset     lo borra CON TODO y vuelve a levantarlo desde cero
+#   npm run db:status    estado del replica set
+
+services:
+  mongo:
+    image: mongo:8
+    container_name: cames-mongo
+    restart: unless-stopped
+    command: ['--replSet', 'rs0', '--bind_ip_all', '--port', '27018']
+    ports:
+      - '27018:27018'
+    volumes:
+      - cames-mongo-data:/data/db
+    healthcheck:
+      # Además de comprobar salud, INICIA el replica set la primera vez. Es la
+      # forma más simple de no necesitar un contenedor de inicialización aparte.
+      test: |
+        mongosh --port 27018 --quiet --eval "
+          try {
+            rs.status().ok
+          } catch (e) {
+            rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: '127.0.0.1:27018' }] })
+          }"
+      interval: 5s
+      timeout: 30s
+      start_period: 10s
+      retries: 12
+
+volumes:
+  cames-mongo-data:

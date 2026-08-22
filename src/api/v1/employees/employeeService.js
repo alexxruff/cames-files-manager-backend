@@ -1,0 +1,641 @@
+const mongoose = require('mongoose')
+const Employee = require('./employeeModel')
+const Affiliation = require('../affiliations/affiliationModel')
+const categoryService = require('../categories/categoryService')
+const { AppError } = require('../../../middlewares/errorHandler')
+const { normalize, escapeRegex } = require('../../../utils/text')
+const { today } = require('../../../utils/dates')
+const {
+  areasVisibles,
+  empresaEsVisible
+} = require('../../../middlewares/scopeMiddleware')
+const {
+  CAPABILITIES,
+  canManageEmployeeType,
+  isLimitedToOwnArea,
+  isPlatformAdmin
+} = require('../../../utils/permissions')
+
+/**
+ * Consultas sobre el catálogo de empleados (backend-spec §6.2).
+ *
+ * Con empleados globales, «los empleados que puedo ver» ya no es un campo: se
+ * resuelve cruzando `adscripciones` con las empresas visibles del usuario
+ * (modelo-datos §8.1 y §9.1). Por eso es una agregación y no un `find`.
+ *
+ * La forma de cada renglón es la definitiva del contrato. `asignaciones` y
+ * `avanceExpediente` vienen vacíos hasta que existan esos módulos: se prefiere
+ * una forma estable con campos vacíos que cambiarla después y romper al front.
+ */
+const POR_PAGINA_DEFECTO = 25
+const POR_PAGINA_MAXIMO = 100
+
+/**
+ * Campos de la PERSONA que `PATCH /empleados/:id` puede tocar.
+ *
+ * Fuera quedan a propósito: `acceso` (tiene su sub-recurso), `activo` /
+ * `motivoBaja` / `fechaBaja` (van por `/estado`) y todo lo laboral —empresa,
+ * contrato, áreas—, que vive en la adscripción y no en la persona.
+ */
+const CAMPOS_EDITABLES = Object.freeze([
+  'nombre',
+  'curp',
+  'rfc',
+  'nss',
+  'fechaNacimiento',
+  'email',
+  'telefono',
+  'categoriaId',
+  'tipo'
+])
+
+class EmployeeService {
+  /**
+   * @param {object} filtros
+   * @param {object} contexto `{ empresasVisibles, areasPorEmpresa, user }`
+   */
+  async list(filtros = {}, contexto = {}) {
+    const {
+      busqueda,
+      empresaId,
+      area,
+      tipo,
+      soloConAcceso = false,
+      incluirInactivos = false,
+      orden = 'nombre_asc'
+    } = filtros
+
+    const pagina = Math.max(1, Number(filtros.pagina) || 1)
+    const porPagina = Math.min(
+      POR_PAGINA_MAXIMO,
+      Math.max(1, Number(filtros.porPagina) || POR_PAGINA_DEFECTO)
+    )
+
+    const { empresasVisibles = null } = contexto
+
+    // ─── 1. Filtro sobre la persona ─────────────────────────────────────────
+    const match = {}
+    if (filtros.id) {
+      if (!mongoose.isValidObjectId(filtros.id)) {
+        throw new AppError(400, 'El empleado indicado no es válido')
+      }
+      match._id = new mongoose.Types.ObjectId(filtros.id)
+    }
+    if (!incluirInactivos) match.activo = true
+    if (tipo) match.tipo = tipo
+    if (soloConAcceso) match.acceso = { $ne: null }
+    if (busqueda) {
+      const termino = normalize(busqueda)
+      if (termino) {
+        match.nombreNormalizado = new RegExp(escapeRegex(termino), 'i')
+      }
+    }
+
+    // ─── 2. Adscripciones, ya recortadas al alcance ─────────────────────────
+    const filtroEmpresas = []
+    /*
+     * Sólo cuentan las adscripciones ACTIVAS: el listado es del personal actual.
+     * Una adscripción cerrada se conserva para auditoría, pero quien ya no
+     * trabaja en la empresa no aparece entre su gente — salvo que se pidan los
+     * inactivos, que es como RH encuentra a alguien que se fue.
+     */
+    if (!incluirInactivos) filtroEmpresas.push({ activo: true })
+    if (empresasVisibles !== null) {
+      filtroEmpresas.push({
+        empresaId: { $in: empresasVisibles.map((id) => new mongoose.Types.ObjectId(id)) }
+      })
+    }
+    if (empresaId) {
+      // Acota dentro de lo visible; el middleware ya verificó que sea visible.
+      filtroEmpresas.push({ empresaId: new mongoose.Types.ObjectId(empresaId) })
+    }
+    if (area) filtroEmpresas.push({ areas: area })
+
+    const pipeline = [
+      { $match: match },
+      {
+        $lookup: {
+          from: 'affiliations',
+          let: { empleado: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ['$empleadoId', '$$empleado'] },
+                ...(filtroEmpresas.length > 0 ? { $and: filtroEmpresas } : {})
+              }
+            },
+            {
+              $lookup: {
+                from: 'companies',
+                localField: 'empresaId',
+                foreignField: '_id',
+                as: 'empresa'
+              }
+            },
+            { $unwind: { path: '$empresa', preserveNullAndEmptyArrays: true } },
+            {
+              $project: {
+                _id: 1,
+                empresaId: 1,
+                empresaNombre: '$empresa.nombre',
+                areas: 1,
+                tipoContrato: 1,
+                fechaIngreso: 1,
+                fechaTerminoContrato: 1,
+                activo: 1
+              }
+            }
+          ],
+          as: 'adscripciones'
+        }
+      }
+    ]
+
+    /*
+     * Sin alcance global, sólo se ve a quien tiene al menos una adscripción
+     * visible. Este $match va DESPUÉS del $lookup a propósito: es lo que hace
+     * imposible ver a alguien de otra empresa.
+     *
+     * TODO: cuando existan `asignaciones`, sumar a los asignados a un proyecto de
+     * una empresa visible (modelo-datos §8.1).
+     */
+    if (empresasVisibles !== null || empresaId || area) {
+      pipeline.push({ $match: { 'adscripciones.0': { $exists: true } } })
+    }
+
+    // Jefe de área: además, que comparta área con él en alguna empresa suya.
+    const restriccionAreas = this.#matchDeAreas(contexto)
+    if (restriccionAreas) pipeline.push({ $match: restriccionAreas })
+
+    pipeline.push(
+      {
+        $lookup: {
+          from: 'categories',
+          localField: 'categoriaId',
+          foreignField: '_id',
+          as: 'categoria'
+        }
+      },
+      { $unwind: { path: '$categoria', preserveNullAndEmptyArrays: true } },
+      { $sort: { nombreNormalizado: orden === 'nombre_desc' ? -1 : 1, _id: 1 } },
+      {
+        // El orden se calcula sobre el total y DESPUÉS se corta la página.
+        $facet: {
+          total: [{ $count: 'valor' }],
+          pagina: [{ $skip: (pagina - 1) * porPagina }, { $limit: porPagina }]
+        }
+      }
+    )
+
+    const [resultado] = await Employee.aggregate(pipeline)
+    const total = resultado?.total?.[0]?.valor || 0
+
+    return {
+      total,
+      pagina,
+      porPagina,
+      empleados: (resultado?.pagina || []).map((doc) => this.#formatearRenglon(doc))
+    }
+  }
+
+  /**
+   * Un empleado por id, **dentro del alcance de quien pregunta**.
+   * 404 si no existe o no es visible: un 403 confirmaría que existe.
+   */
+  async getById(id, contexto = {}) {
+    const { empleados } = await this.list({ id, incluirInactivos: true }, contexto)
+    if (empleados.length === 0) throw AppError.notFound('El empleado no existe')
+    return empleados[0]
+  }
+
+  /**
+   * Alta de una persona **y su adscripción, en una sola transacción**.
+   *
+   * POR QUÉ EN TRANSACCIÓN: sin la adscripción, el empleado no pertenece a
+   * ninguna empresa y por lo tanto **no es visible para nadie** — ni para quien
+   * lo acaba de crear, porque el alcance se deriva de las adscripciones. El alta
+   * en dos pasos deja basura invisible si el segundo falla, y obliga a la
+   * interfaz a hacer rollback a mano. O se crean las dos cosas, o ninguna.
+   *
+   * QUIÉN PUEDE QUÉ (matriz corregida con Urbacames):
+   *
+   * | Quien pide | Tipo | Adscripción |
+   * | --- | --- | --- |
+   * | admin de plataforma | cualquiera | opcional (llena el catálogo compartido) |
+   * | `rh_admin` | cualquiera | obligatoria, sólo sus empresas |
+   * | `rh_consulta` | sólo `mano_de_obra` | obligatoria, sólo sus empresas |
+   * | `jefe_area` | sólo `mano_de_obra` | obligatoria, sus empresas y **sus áreas** |
+   */
+  async create(datos, contexto = {}) {
+    const { user } = contexto
+    const acceso = user?.acceso
+    const tipo = datos.tipo
+
+    // 1. ¿Puede crear a alguien de este tipo?
+    if (!canManageEmployeeType(acceso, tipo)) {
+      throw AppError.forbidden(
+        'Sólo un administrador de RH puede dar de alta personal administrativo'
+      )
+    }
+
+    // 2. ¿Puede omitir la adscripción?
+    //
+    // DESVIACIÓN DELIBERADA de la propuesta del front, que la hacía opcional
+    // también para `rh_admin`: quien crea sin adscribir produce una persona que
+    // él mismo no puede ver ni editar. Sólo el administrador de plataforma —que
+    // ve todo— puede dejarla para después. Ver D-33.
+    const adscripcion = datos.adscripcion || null
+    if (!adscripcion && !isPlatformAdmin(acceso)) {
+      throw AppError.validation(
+        'Indica la empresa a la que se adscribe: sin ella, la persona no pertenece a ninguna y nadie podría verla',
+        [{ msg: 'La empresa es requerida', path: 'adscripcion.empresaId' }]
+      )
+    }
+
+    if (adscripcion) this.#validarAdscripcion(adscripcion, tipo, contexto)
+
+    // 3. La categoría tiene que existir y servir para este tipo de persona.
+    await categoryService.assertUsableParaTipo(datos.categoriaId, tipo)
+
+    // 4. Duplicados: es el riesgo real de un catálogo compartido con tres
+    //    niveles capturando y CURP opcional.
+    await this.#assertNoEsDuplicado(datos, contexto)
+
+    // 5. Alta atómica.
+    const sesion = await mongoose.startSession()
+    let creado
+    try {
+      await sesion.withTransaction(async () => {
+        ;[creado] = await Employee.create(
+          [
+            {
+              nombre: datos.nombre,
+              curp: datos.curp || null,
+              rfc: datos.rfc || null,
+              nss: datos.nss || null,
+              fechaNacimiento: datos.fechaNacimiento || null,
+              email: datos.email || null,
+              telefono: datos.telefono || null,
+              categoriaId: datos.categoriaId,
+              tipo
+            }
+          ],
+          { session: sesion }
+        )
+
+        if (adscripcion) {
+          await Affiliation.create(
+            [
+              {
+                empresaId: adscripcion.empresaId,
+                empleadoId: creado._id,
+                areas: adscripcion.areas || [],
+                tipoContrato: adscripcion.tipoContrato,
+                fechaIngreso: adscripcion.fechaIngreso,
+                fechaTerminoContrato: adscripcion.fechaTerminoContrato || null
+              }
+            ],
+            { session: sesion }
+          )
+        }
+      })
+    } finally {
+      await sesion.endSession()
+    }
+
+    // Se devuelve el renglón completo, igual que `GET /empleados`, para que la
+    // interfaz lo inserte sin una segunda petición. Que esto no falle es además
+    // la prueba de que la persona quedó visible para quien la creó.
+    return this.getById(creado._id, contexto)
+  }
+
+  /**
+   * Edita los datos de la PERSONA (backend-spec §6.2).
+   *
+   * Aquí no se toca nada que tenga su propio recurso:
+   * - el acceso a la plataforma → `PATCH /empleados/:id/acceso`
+   * - la baja del sistema → `PATCH /empleados/:id/estado`
+   * - la relación laboral (empresa, contrato, áreas) → adscripciones
+   *
+   * Cambiar el `tipo` exige el mismo permiso que crear a alguien de ese tipo: si
+   * no, un `jefe_area` podría dar de alta a un peón y luego "ascenderlo" a
+   * administrativo, que es justo lo que la matriz le prohíbe.
+   */
+  async update(id, datos, contexto = {}) {
+    // 404 si no existe o no es visible para quien pregunta.
+    await this.getById(id, contexto)
+    const empleado = await Employee.findById(id)
+    const acceso = contexto.user?.acceso
+
+    /*
+     * Quien puede dar de alta a alguien de un tipo puede también editarlo. Se
+     * mira el tipo ACTUAL de la persona: un `rh_consulta` corrige a un peón, no
+     * a un administrativo.
+     */
+    if (!canManageEmployeeType(acceso, empleado.tipo)) {
+      throw AppError.forbidden(
+        'Sólo un administrador de RH puede editar personal administrativo'
+      )
+    }
+
+    const tipoFinal = datos.tipo || empleado.tipo
+    const cambiaTipo = Boolean(datos.tipo && datos.tipo !== empleado.tipo)
+
+    // Y para moverlo a otro tipo hace falta poder crear de ese tipo.
+    if (cambiaTipo && !canManageEmployeeType(acceso, tipoFinal)) {
+      throw AppError.forbidden(
+        'Sólo un administrador de RH puede convertir a alguien en personal administrativo'
+      )
+    }
+
+    // La categoría tiene que corresponder al tipo con el que va a quedar.
+    if (datos.categoriaId || cambiaTipo) {
+      await categoryService.assertUsableParaTipo(
+        datos.categoriaId || empleado.categoriaId,
+        tipoFinal
+      )
+    }
+
+    // Pasar a administrativo exige que sus adscripciones tengan área: un
+    // administrativo sin área no lo ve ningún jefe y rompe la invariante del
+    // modelo (§5b.1).
+    if (cambiaTipo && tipoFinal === 'administrativo') {
+      const sinArea = await Affiliation.countDocuments({
+        empleadoId: empleado._id,
+        activo: true,
+        $or: [{ areas: { $size: 0 } }, { areas: { $exists: false } }]
+      })
+      if (sinArea > 0) {
+        throw new AppError(
+          400,
+          'Antes de convertirlo en administrativo, asígnale al menos un área en cada empresa donde esté adscrito'
+        )
+      }
+    }
+
+    // La CURP es la identidad: si se completa o se corrige, no puede chocar.
+    if (datos.curp) {
+      const curp = String(datos.curp).toUpperCase()
+      if (curp !== empleado.curp) {
+        const otro = await Employee.findOne({ curp, _id: { $ne: empleado._id } })
+        if (otro) {
+          throw AppError.conflict(
+            `Ya existe otra persona registrada con esa CURP: ${otro.nombre}`,
+            {
+              code: 'CURP_DUPLICADA',
+              errors: [{ msg: 'Esa CURP ya está registrada', path: 'curp' }],
+              data: { candidatos: await this.#resumirCandidatos([otro], contexto) }
+            }
+          )
+        }
+      }
+    }
+
+    /*
+     * El nombre NO se revisa contra duplicados al editar, a diferencia del alta:
+     * corregir "Roberto Aguilar" a "Roberto Aguilar Sosa" es lo normal, y
+     * bloquearlo porque ya existe alguien así impediría justo la corrección que
+     * se está haciendo. La identidad la cuida la CURP.
+     */
+    for (const campo of CAMPOS_EDITABLES) {
+      if (datos[campo] === undefined) continue
+      // Un opcional vacío es "sin valor", no cadena vacía.
+      empleado[campo] = datos[campo] === '' ? null : datos[campo]
+    }
+
+    await empleado.save()
+    return this.getById(empleado._id, contexto)
+  }
+
+  /**
+   * Baja o reactivación **del sistema** (backend-spec §6.2).
+   *
+   * No borra: el expediente y el histórico se conservan. Distinta de la baja de
+   * una adscripción, que es sólo dejar una empresa.
+   */
+  async setEstado(id, { activo, motivo, fecha }, contexto = {}) {
+    await this.getById(id, contexto)
+    const empleado = await Employee.findById(id)
+    const actor = contexto.user
+
+    if (activo === false) {
+      if (actor && empleado._id.equals(actor._id)) {
+        throw new AppError(400, 'No puedes darte de baja a ti mismo')
+      }
+      if (empleado.acceso?.alcanceGlobal && empleado.acceso.activo) {
+        await this.#assertQuedaOtroAdminGlobal(empleado._id)
+      }
+    }
+
+    const sesion = await mongoose.startSession()
+    try {
+      await sesion.withTransaction(async () => {
+        if (activo === false) {
+          empleado.activo = false
+          empleado.motivoBaja = motivo
+          empleado.fechaBaja = fecha || today()
+          /*
+           * Si tenía acceso, se desactiva en la misma operación. De todos modos
+           * no podría entrar —`protect` comprueba que la persona esté activa—,
+           * pero dejarlo marcado como activo haría que la pantalla de accesos
+           * mintiera. La credencial NO se borra: reactivar y volver a darle
+           * acceso no debería obligarlo a que le repongan la contraseña.
+           */
+          if (empleado.acceso) empleado.acceso.activo = false
+        } else {
+          empleado.activo = true
+          // `pre('validate')` limpia motivoBaja y fechaBaja.
+          // El acceso NO se reactiva solo: volver a dárselo es una decisión
+          // aparte, con su propia ruta.
+        }
+        await empleado.save({ session: sesion })
+      })
+    } finally {
+      await sesion.endSession()
+    }
+
+    return this.getById(empleado._id, contexto)
+  }
+
+  /** El sistema nunca puede quedarse sin administrador de plataforma. */
+  async #assertQuedaOtroAdminGlobal(idExcluido) {
+    const otros = await Employee.countDocuments({
+      _id: { $ne: idExcluido },
+      activo: true,
+      'acceso.alcanceGlobal': true,
+      'acceso.activo': true
+    })
+    if (otros === 0) {
+      throw new AppError(
+        400,
+        'Debe quedar al menos un administrador de plataforma activo. Asigna otro antes de continuar.'
+      )
+    }
+  }
+
+  /** Empresa dentro del alcance, áreas dentro de las suyas, y coherencia de tipo. */
+  #validarAdscripcion(adscripcion, tipoEmpleado, contexto) {
+    const { user, empresasVisibles, areasPorEmpresa = {} } = contexto
+
+    if (!empresaEsVisible({ empresasVisibles }, adscripcion.empresaId)) {
+      // Fuera de alcance: 404, no 403.
+      throw AppError.notFound('La empresa no existe')
+    }
+
+    const areas = adscripcion.areas || []
+
+    // Un administrativo necesita al menos un área (modelo-datos §5b.1).
+    if (tipoEmpleado === 'administrativo' && areas.length === 0) {
+      throw AppError.validation('Un empleado administrativo necesita al menos un área', [
+        { msg: 'Indica al menos un área', path: 'adscripcion.areas' }
+      ])
+    }
+
+    if (!isLimitedToOwnArea(user?.acceso, CAPABILITIES.VIEW_EMPLOYEES)) return
+
+    // Jefe de área: sólo puede dar de alta en SUS áreas de esa empresa, y tiene
+    // que indicar al menos una — si no, crearía a alguien que no puede ver.
+    const suyas = areasPorEmpresa[String(adscripcion.empresaId)] || []
+    if (areas.length === 0) {
+      throw AppError.validation(
+        'Indica al menos un área: sin ella no podrías ver a la persona que estás dando de alta',
+        [{ msg: 'Indica al menos un área', path: 'adscripcion.areas' }]
+      )
+    }
+    const fuera = areas.filter((area) => !suyas.includes(area))
+    if (fuera.length > 0) {
+      throw AppError.forbidden(
+        suyas.length > 0
+          ? `Sólo puedes dar de alta en tus áreas: ${suyas.join(', ')}`
+          : 'No tienes áreas asignadas en esa empresa'
+      )
+    }
+  }
+
+  /**
+   * Duplicados (política acordada con el front):
+   *
+   * - **Con CURP**: si ya existe, `409` con el id de quien la tiene. No hay forma
+   *   de forzarlo: la CURP es la identidad de la persona.
+   * - **Sin CURP**: se busca por nombre normalizado (+ fecha de nacimiento si
+   *   viene) y se devuelve `409` con los candidatos, en vez de crear a ciegas.
+   *   Si de verdad es otra persona, la petición lo dice con
+   *   `confirmarDuplicado: true`.
+   */
+  async #assertNoEsDuplicado(datos, contexto) {
+    if (datos.curp) {
+      const existente = await Employee.findOne({ curp: datos.curp.toUpperCase() })
+      if (existente) {
+        throw AppError.conflict(
+          `Ya existe una persona registrada con esa CURP: ${existente.nombre}`,
+          {
+            code: 'CURP_DUPLICADA',
+            errors: [{ msg: 'Esa CURP ya está registrada', path: 'curp' }],
+            data: { candidatos: await this.#resumirCandidatos([existente], contexto) }
+          }
+        )
+      }
+      return
+    }
+
+    if (datos.confirmarDuplicado) return
+
+    const filtro = { nombreNormalizado: normalize(datos.nombre) }
+    if (datos.fechaNacimiento) filtro.fechaNacimiento = datos.fechaNacimiento
+
+    const candidatos = await Employee.find(filtro).limit(5)
+    if (candidatos.length > 0) {
+      throw AppError.conflict(
+        'Puede que esta persona ya esté registrada. Revísala y, si es otra, vuelve a enviar con confirmarDuplicado.',
+        {
+          code: 'POSIBLE_DUPLICADO',
+          data: { candidatos: await this.#resumirCandidatos(candidatos, contexto) }
+        }
+      )
+    }
+  }
+
+  /**
+   * Resumen mínimo de un posible duplicado.
+   *
+   * NO se listan las empresas de esa persona: el catálogo es compartido, pero
+   * dónde más trabaja alguien no es información de otra empresa. Sí se dice
+   * `yaEstaEnTuEmpresa`, que es lo único que la interfaz necesita para elegir
+   * entre «ya la tienes» y «existe en el grupo, ¿la adscribo?».
+   */
+  async #resumirCandidatos(empleados, { empresasVisibles = null } = {}) {
+    const ids = empleados.map((e) => e._id)
+    const suyas = await Affiliation.find({
+      empleadoId: { $in: ids },
+      activo: true,
+      ...(empresasVisibles !== null
+        ? {
+            empresaId: {
+              $in: empresasVisibles.map((id) => new mongoose.Types.ObjectId(id))
+            }
+          }
+        : {})
+    }).select('empleadoId')
+
+    const enMisEmpresas = new Set(suyas.map((a) => a.empleadoId.toString()))
+
+    return empleados.map((e) => ({
+      _id: e._id.toString(),
+      nombre: e.nombre,
+      curp: e.curp ?? null,
+      fechaNacimiento: e.fechaNacimiento ?? null,
+      tipo: e.tipo,
+      activo: e.activo,
+      yaEstaEnTuEmpresa: enMisEmpresas.has(e._id.toString())
+    }))
+  }
+
+  /** Restricción por áreas del jefe de área, empresa por empresa. */
+  #matchDeAreas(contexto) {
+    const { user, empresasVisibles, areasPorEmpresa = {} } = contexto
+    if (!user) return null
+    const areas = areasVisibles({ user, areasPorEmpresa, empresasVisibles }, null)
+    // `areasVisibles` devuelve null cuando el nivel no está limitado por área.
+    if (areas === null) return null
+
+    const clausulas = Object.entries(areasPorEmpresa)
+      .filter(([, suyas]) => (suyas || []).length > 0)
+      .map(([empresa, suyas]) => ({
+        adscripciones: {
+          $elemMatch: {
+            empresaId: new mongoose.Types.ObjectId(empresa),
+            areas: { $in: suyas }
+          }
+        }
+      }))
+
+    // Un jefe de área sin áreas asignadas no ve nada, en vez de verlo todo.
+    return clausulas.length > 0 ? { $or: clausulas } : { _id: null }
+  }
+
+  /** Forma definitiva del renglón del contrato (backend-spec §6.2). */
+  #formatearRenglon(doc) {
+    const empleado = Employee.hydrate(doc).toJSON()
+    return {
+      empleado,
+      categoriaNombre: doc.categoria?.nombre ?? null,
+      adscripciones: (doc.adscripciones || []).map((a) => ({
+        _id: a._id.toString(),
+        empresaId: a.empresaId.toString(),
+        empresaNombre: a.empresaNombre ?? null,
+        areas: a.areas || [],
+        tipoContrato: a.tipoContrato,
+        fechaIngreso: a.fechaIngreso,
+        fechaTerminoContrato: a.fechaTerminoContrato ?? null,
+        activo: a.activo
+      })),
+      // Pendientes hasta que existan sus módulos; la forma ya es la definitiva.
+      asignaciones: [],
+      avanceExpediente: null,
+      expedienteId: null
+    }
+  }
+}
+
+module.exports = new EmployeeService()
+module.exports.CAMPOS_EDITABLES = CAMPOS_EDITABLES

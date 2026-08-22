@@ -9,6 +9,7 @@
 module.exports = {
   ...require('./areas'),
   ...require('./accessLevels'),
+  ...require('./employeeTypes'),
   ...require('./contractTypes'),
   ...require('./documentTypes'),
   ...require('./statuses'),

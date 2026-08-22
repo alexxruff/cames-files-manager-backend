@@ -5,33 +5,39 @@ description: Cómo modelar colecciones en este proyecto — eje multi-cliente cl
 
 # Modelado en MongoDB
 
-## 1. El eje multi-cliente: `clienteId` nulable
+## 1. El alcance se DERIVA de los vínculos, no es un campo
 
-Todo documento que pertenezca a alguien lleva:
-
-```js
-clienteId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', default: null }
-```
-
-- **`clienteId: null` significa "pertenece a Urbacames"** (la casa). En fase 1
-  absolutamente todo se crea con `null`.
-- **El `clienteId` NUNCA se lee del body ni del query string.** Sale del usuario
-  autenticado (`req.ownerClienteId`). Si llega `?clienteId=otro`, se ignora en
-  silencio.
-- En `expedientes` va **desnormalizado** (copia del colaborador) para evitar un
-  `$lookup` en cada consulta. Si un colaborador cambia de cliente, se actualiza
-  su expediente en la misma operación: es el único lugar donde hay que
-  acordarse.
-
-Toda consulta de datos de colaboradores incluye `req.scopeFilter`:
+Con empleados y clientes **globales** (catálogos compartidos), «lo que puedo ver»
+ya no es un `clienteId` en el documento: se calcula cruzando las **adscripciones**
+activas del usuario (modelo-datos §8.1).
 
 ```js
-// interno → {} · cliente → { clienteId: <el suyo> }
-const filtro = { ...scopeFilter, ...areaFilter, activo: true }
+// scopeMiddleware deja esto en cada petición
+req.empresasVisibles // ids, o null = todas (acceso.alcanceGlobal)
+req.areasPorEmpresa // { empresaId: [areas] }, para el jefe de área
 ```
 
-Y **fuera de alcance se responde 404, no 403**: un 403 confirmaría que el
-documento existe.
+Reglas que no se negocian:
+
+- **Toda consulta de datos de empleados cruza `affiliations`.** Un `find` directo
+  sobre `employees` sin ese cruce devuelve gente de otras empresas.
+- **`empresaId` nunca se lee del body ni del query para decidir alcance.** Si
+  llega, sólo **acota** dentro de lo visible (`empresaFiltro`).
+- **Fuera de alcance responde 404, no 403.**
+- Sólo cuentan las adscripciones **activas**, salvo `incluirInactivos=true`.
+- Una prueba por endpoint que verifique que la Empresa A no alcanza datos de la B
+  (`tests/integracion/scope.test.js`).
+
+## 1b. El usuario es un empleado con `acceso`
+
+No hay colección de usuarios. `empleados.acceso` guarda la autorización
+(`email`, `nivelAcceso`, `alcanceGlobal`, `activo`, `passwordActualizadaEn`) y el
+**secreto vive en `credentials`** (D-27).
+
+**No vuelvas a embeber el `passwordHash` en el empleado**, aunque parezca más
+simple: las agregaciones y los `$lookup` ignoran `select: false`, y el listado de
+empleados es precisamente una agregación con `$lookup`. Hay una prueba que lo
+demuestra (`tests/unitarias/credentialIsolation.test.js`).
 
 ## 2. Fechas de calendario como `String`
 
@@ -118,14 +124,32 @@ la bitácora de accesos es su propia colección.
 ## 9. Colecciones
 
 Nombre de colección **explícito y en inglés** en cada esquema
-(`collection: 'app_users'`). Explícito porque el aislamiento respecto al backend
+(`collection: 'employees'`). Explícito porque el aislamiento respecto al backend
 prestado no debe depender de que `MONGODB_DB_NAME` esté bien puesto.
 
-| Modelo              | Colección             | Spec                   |
-| ------------------- | --------------------- | ---------------------- |
-| `User`              | `app_users`           | `usuarios`             |
-| `Client`            | `clients`             | `clientes`             |
-| `Employee`          | `employees`           | `colaboradores`        |
-| `Record`            | `records`             | `expedientes`          |
-| `ChecklistTemplate` | `checklist_templates` | `plantillas_checklist` |
-| `AccessLog`         | `access_logs`         | `bitacora_accesos`     |
+| Modelo              | Colección             | Nombre en el spec    |
+| ------------------- | --------------------- | -------------------- |
+| `Company`           | `companies`           | empresas             |
+| `Employee`          | `employees`           | empleados            |
+| `Credential`        | `credentials`         | credenciales         |
+| `Client`            | `clients`             | clientes             |
+| `Category`          | `categories`          | categorías           |
+| `Affiliation`       | `affiliations`        | adscripciones        |
+| `Portfolio`         | `portfolios`          | carteras             |
+| `Assignment`        | `assignments`         | asignaciones         |
+| `Project`           | `projects`            | proyectos            |
+| `Record`            | `records`             | expedientes          |
+| `ChecklistTemplate` | `checklist_templates` | plantillas_checklist |
+| `AccessLog`         | `access_logs`         | bitacora_accesos     |
+
+**Al agregar un modelo, regístralo en `src/models/index.js`** o `populate()`
+fallará en caliente con `MissingSchemaError` (D-31).
+
+**Índices únicos sobre campos con `default: null`: usa `partialFilterExpression`,
+no `sparse`.** Con un default el campo existe en el documento, así que un índice
+disperso no lo omite y dos registros sin valor colisionan. Aplica a `curp` y a
+`acceso.email`.
+
+**Transacciones:** el modelo las exige (crear un empleado escribe su expediente;
+dar acceso escribe empleado y credencial). El Mongo local es replica set por eso
+(D-29); en pruebas se usa `MongoMemoryReplSet`.

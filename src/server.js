@@ -2,6 +2,8 @@ const env = require('./config/env')
 const app = require('./app')
 const logger = require('./utils/logger')
 const { connect, disconnect } = require('./config/database')
+const { ensureBootstrapAdmin } = require('./services/bootstrapAdmin')
+const { ensureBaseChecklistTemplates } = require('./services/seedChecklistTemplates')
 
 /**
  * Arranque y apagado del proceso.
@@ -18,6 +20,27 @@ let server
 
 async function iniciar() {
   await connect()
+
+  // Administrador inicial: sólo hace algo si la base no tiene ningún usuario.
+  // Un fallo aquí no debe impedir que la API levante, pero sí se registra: sin
+  // usuarios y sin bootstrap, nadie puede entrar.
+  try {
+    await ensureBootstrapAdmin()
+  } catch (error) {
+    logger.error('No se pudo crear el administrador inicial', {
+      error: error.message
+    })
+  }
+
+  // Plantillas base del checklist: sin ellas no se puede generar ningún
+  // expediente. Idempotente, y no sobreescribe las que alguien haya editado.
+  try {
+    await ensureBaseChecklistTemplates()
+  } catch (error) {
+    logger.error('No se pudieron sembrar las plantillas base', {
+      error: error.message
+    })
+  }
 
   server = app.listen(env.PORT, () => {
     logger.info('Servidor escuchando', {

@@ -13,8 +13,7 @@ const logger = require('../src/utils/logger')
 const { connect, disconnect } = require('../src/config/database')
 
 // Todos los modelos deben quedar registrados antes de sincronizar.
-require('../src/api/v1/users/userModel')
-require('../src/api/v1/clients/clientModel')
+require('../src/models')
 
 async function main() {
   await connect()

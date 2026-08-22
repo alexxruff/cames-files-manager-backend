@@ -17,8 +17,16 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.js\" \"tests/**/*.js\" \"scripts/**/*.js\" \"*.js\" \"docs/**/*.md\" \"*.md\"",
     "format:check": "prettier --check \"src/**/*.js\" \"tests/**/*.js\" \"scripts/**/*.js\" \"*.js\"",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f mongo",
+    "db:shell": "docker compose exec mongo mongosh --port 27018 cames_expedientes",
+    "db:reset": "docker compose down -v && docker compose up -d",
     "db:indices": "node scripts/syncIndexes.js",
-    "seed:admin": "node scripts/seedAdminUser.js"
+    "seed:admin": "node scripts/seedAdminUser.js",
+    "seed:plantillas": "node scripts/seedChecklistTemplates.js",
+    "migrate:usuarios": "node scripts/migrateUsersToEmployees.js",
+    "db:status": "docker compose exec mongo mongosh --port 27018 --quiet --eval 'rs.status().members.map(m => m.name + \" \" + m.stateStr)'"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

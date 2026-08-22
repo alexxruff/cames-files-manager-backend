@@ -2,18 +2,18 @@ const jwt = require('jsonwebtoken')
 const env = require('../config/env')
 const { AppError } = require('./errorHandler')
 const { can } = require('../utils/permissions')
-const User = require('../api/v1/users/userModel')
+const Employee = require('../api/v1/employees/employeeModel')
 
 /**
  * Autenticación y autorización.
  *
- * Cambios respecto a `talentlink-backend`:
- * - `restrictTo` operaba sobre `role: 'user' | 'admin'`. Aquí la autorización se
- *   expresa en CAPACIDADES (`requireCapability`), no en niveles sueltos: cuando
- *   la matriz del spec 8 cambie, se toca un solo archivo y no cada ruta.
- * - El token incluye `nivelAcceso` y `alcance` sólo como pista de depuración: el
- *   usuario SIEMPRE se relee de la base, para que revocar acceso o cambiar de
- *   nivel surta efecto de inmediato y no al expirar el token.
+ * El usuario de la plataforma **es un empleado con `acceso`** (modelo-datos §5.2):
+ * no hay colección de usuarios. El token lleva el id del empleado.
+ *
+ * `protect` relee al empleado en cada petición —una sola consulta, por `_id`—
+ * para que quitar el acceso, bajar el nivel o dar de baja a la persona surta
+ * efecto de inmediato y no al expirar el token. Y comprueba que el token no sea
+ * anterior al último cambio de contraseña.
  */
 
 function extraerToken(req) {
@@ -24,7 +24,6 @@ function extraerToken(req) {
   return null
 }
 
-/** Exige sesión válida. Deja el documento del usuario en `req.user`. */
 async function protect(req, res, next) {
   try {
     const token = extraerToken(req)
@@ -33,17 +32,26 @@ async function protect(req, res, next) {
     }
 
     const payload = jwt.verify(token, env.JWT_SECRET)
-    const usuario = await User.findById(payload.sub || payload.id)
+    const empleado = await Employee.findById(payload.sub)
 
-    if (!usuario) {
-      return next(new AppError(401, 'Tu sesión no es válida. Vuelve a iniciar sesión.'))
+    const sesionInvalida = new AppError(
+      401,
+      'Tu sesión no es válida. Vuelve a iniciar sesión.'
+    )
+
+    if (!empleado || !empleado.acceso) return next(sesionInvalida)
+    if (!empleado.activo) return next(new AppError(401, 'Tu cuenta está desactivada'))
+    if (!empleado.acceso.activo) {
+      return next(new AppError(401, 'Tu acceso a la plataforma fue desactivado'))
     }
-    if (!usuario.active) {
-      return next(new AppError(401, 'Tu cuenta está desactivada'))
+    // `iatMs` es lo que emite este backend; `iat * 1000` cubre un token viejo.
+    const emitidoEn = payload.iatMs || (payload.iat ? payload.iat * 1000 : null)
+    if (!empleado.tokenSigueValido(emitidoEn)) {
+      return next(new AppError(401, 'Tu contraseña cambió. Vuelve a iniciar sesión.'))
     }
 
-    req.user = usuario
-    req.log = req.log?.child?.({ usuarioId: usuario._id.toString() }) || req.log
+    req.user = empleado
+    req.log = req.log?.child?.({ empleadoId: empleado._id.toString() }) || req.log
     return next()
   } catch (error) {
     return next(error)
@@ -51,33 +59,36 @@ async function protect(req, res, next) {
 }
 
 /**
- * Exige una capacidad de la matriz de permisos (spec 8).
+ * Exige una capacidad de la matriz (modelo-datos §8.2).
  *
- *   router.post('/', protect, requireCapability(CAPABILITIES.MANAGE_USERS), …)
+ *   router.post('/', protect, requireCapability(CAPABILITIES.MANAGE_ACCESS), …)
  */
 function requireCapability(capability) {
   return function verificar(req, res, next) {
     if (!req.user) {
       return next(new AppError(401, 'Necesitas iniciar sesión para continuar'))
     }
-    if (!can(req.user.nivelAcceso, capability)) {
+    if (!can(req.user.acceso, capability)) {
       return next(new AppError(403, 'No tienes permiso para realizar esta acción'))
     }
     return next()
   }
 }
 
-/** Exige uno de los niveles de acceso indicados. Úsalo sólo si no hay capacidad. */
-function requireAccessLevel(...niveles) {
-  return function verificar(req, res, next) {
-    if (!req.user) {
-      return next(new AppError(401, 'Necesitas iniciar sesión para continuar'))
-    }
-    if (!niveles.includes(req.user.nivelAcceso)) {
-      return next(new AppError(403, 'No tienes permiso para realizar esta acción'))
-    }
-    return next()
+/** Exige ser administrador de plataforma (catálogos compartidos). */
+function requirePlatformAdmin(req, res, next) {
+  if (!req.user) {
+    return next(new AppError(401, 'Necesitas iniciar sesión para continuar'))
   }
+  if (!req.user.acceso?.alcanceGlobal) {
+    return next(
+      new AppError(
+        403,
+        'Sólo un administrador de plataforma puede modificar los catálogos compartidos'
+      )
+    )
+  }
+  return next()
 }
 
-module.exports = { protect, requireCapability, requireAccessLevel }
+module.exports = { protect, requireCapability, requirePlatformAdmin }

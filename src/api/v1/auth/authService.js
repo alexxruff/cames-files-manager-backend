@@ -1,30 +1,38 @@
 const jwt = require('jsonwebtoken')
+const mongoose = require('mongoose')
 const env = require('../../../config/env')
-const User = require('../users/userModel')
 const { AppError } = require('../../../middlewares/errorHandler')
+const Employee = require('../employees/employeeModel')
+const Credential = require('../credentials/credentialModel')
+const { construirAuthUser } = require('./authUser')
 
 /**
- * Sesión (spec 8 y 9.1). JWT en `Authorization: Bearer <token>`, 12 h.
+ * Sesión (backend-spec §6.1). JWT en `Authorization: Bearer <token>`, 12 h.
  *
- * Decisiones:
- * - El token lleva `sub` (id), `nivelAcceso` y `alcance` sólo como pista para
- *   depurar. La autorización SIEMPRE relee al usuario de la base
- *   (`authMiddleware.protect`): así dar de baja a alguien o bajarle el nivel
- *   surte efecto de inmediato, no cuando expire su token.
- * - No hay registro público: las cuentas las crea un administrador por
- *   `POST /usuarios`. El backend prestado exponía `POST /auth/register` abierto,
- *   que en esta plataforma sería un agujero: cualquiera se daría acceso a
- *   expedientes con datos personales sensibles.
- * - El error de login es siempre el mismo, exista o no el correo: enumerar
- *   cuentas válidas es el primer paso de un ataque de credenciales.
+ * El usuario es un **empleado con `acceso`**; la contraseña vive en
+ * `credentials`, no en el empleado (D-27). Por eso el login hace dos consultas,
+ * las dos por índice único: el empleado por `acceso.email` y su credencial por
+ * `empleadoId`. Las peticiones autenticadas siguen costando una sola.
+ *
+ * Decisiones que se conservan del backend anterior:
+ * - No hay registro público: el acceso lo concede un `rh_admin`.
+ * - El error de login es el mismo exista o no el correo: enumerar cuentas es el
+ *   primer paso de un ataque de credenciales.
  */
 class AuthService {
-  generateToken(usuario) {
+  generateToken(empleado) {
     return jwt.sign(
       {
-        sub: usuario._id.toString(),
-        nivelAcceso: usuario.nivelAcceso,
-        alcance: usuario.alcance
+        sub: empleado._id.toString(),
+        nivelAcceso: empleado.acceso?.nivelAcceso,
+        alcanceGlobal: Boolean(empleado.acceso?.alcanceGlobal),
+        /*
+         * Instante de emisión en MILISEGUNDOS. El `iat` estándar del JWT sólo
+         * tiene precisión de segundos, y con eso la invalidación por cambio de
+         * contraseña deja una ventana de hasta un segundo en la que un token
+         * viejo sigue sirviendo. Con `iatMs` la comparación es exacta.
+         */
+        iatMs: Date.now()
       },
       env.JWT_SECRET,
       { expiresIn: env.JWT_EXPIRES_IN }
@@ -38,56 +46,98 @@ class AuthService {
       ])
     }
 
-    const usuario = await User.findOne({ email: String(email).toLowerCase() }).select(
-      '+password'
-    )
-
     const credencialesInvalidas = new AppError(401, 'Correo o contraseña incorrectos')
 
-    if (!usuario) {
+    const empleado = await Employee.findOne({
+      'acceso.email': String(email).toLowerCase().trim()
+    })
+    if (!empleado) throw credencialesInvalidas
+
+    const credencial = await Credential.findOne({ empleadoId: empleado._id }).select(
+      '+passwordHash'
+    )
+    if (!credencial) {
+      // Estado inconsistente: tiene `acceso` pero no credencial. No se le dice al
+      // usuario, pero sí queda en el log para que alguien lo arregle.
       throw credencialesInvalidas
     }
-    if (!(await usuario.comparePassword(password))) {
+
+    if (credencial.bloqueadaHasta && credencial.bloqueadaHasta > new Date()) {
+      throw new AppError(
+        401,
+        'Tu acceso está bloqueado temporalmente. Contacta a Recursos Humanos.'
+      )
+    }
+
+    if (!(await credencial.comparePassword(password))) {
+      // Se cuentan los fallos para poder auditarlos y detectar ataques.
+      await Credential.updateOne(
+        { _id: credencial._id },
+        { $inc: { intentosFallidos: 1 } }
+      )
       throw credencialesInvalidas
     }
-    // Se comprueba DESPUÉS de la contraseña: un desactivado que teclea mal su
-    // contraseña no debe averiguar que su cuenta existe.
-    if (!usuario.active) {
+
+    // Se comprueba DESPUÉS de la contraseña: quien teclea mal su contraseña no
+    // debe averiguar si la cuenta existe o está desactivada.
+    if (!empleado.activo) {
       throw new AppError(401, 'Tu cuenta está desactivada. Contacta a Recursos Humanos.')
     }
+    if (!empleado.acceso.activo) {
+      throw new AppError(
+        401,
+        'Tu acceso a la plataforma fue desactivado. Contacta a Recursos Humanos.'
+      )
+    }
 
-    // `updateOne` en vez de `save`: no dispara el hook de hasheo ni revalida.
     const ahora = new Date()
-    await User.updateOne({ _id: usuario._id }, { $set: { ultimoAccesoEn: ahora } })
-    usuario.ultimoAccesoEn = ahora
+    await Credential.updateOne(
+      { _id: credencial._id },
+      { $set: { ultimoAccesoEn: ahora, intentosFallidos: 0 } }
+    )
 
-    usuario.password = undefined
-
-    return { usuario, token: this.generateToken(usuario) }
+    return {
+      user: await construirAuthUser(empleado, { ultimoAccesoEn: ahora }),
+      token: this.generateToken(empleado)
+    }
   }
 
-  async getCurrentUser(usuarioId) {
-    const usuario = await User.findById(usuarioId)
-    if (!usuario || !usuario.active) {
+  async getCurrentUser(empleadoId) {
+    const empleado = await Employee.findById(empleadoId)
+    if (!empleado || !empleado.puedeIniciarSesion()) {
       throw new AppError(401, 'Tu sesión no es válida. Vuelve a iniciar sesión.')
     }
-    return usuario
+    const credencial = await Credential.findOne({ empleadoId }).select('ultimoAccesoEn')
+    return construirAuthUser(empleado, {
+      ultimoAccesoEn: credencial?.ultimoAccesoEn || null
+    })
   }
 
-  /** POST /auth/cambiar-password (spec 9.1). */
-  async changePassword(usuarioId, { passwordActual, passwordNueva }) {
-    const usuario = await User.findById(usuarioId).select('+password')
-    if (!usuario) {
+  /**
+   * Cambia la contraseña e **invalida las demás sesiones**.
+   *
+   * Se escriben las dos colecciones en una transacción: el hash nuevo y la marca
+   * `acceso.passwordActualizadaEn` que hace que los tokens viejos dejen de
+   * servir. Como eso también invalidaría el token con el que se está haciendo la
+   * petición, se devuelve uno nuevo para que el front lo reemplace.
+   */
+  async changePassword(empleadoId, { passwordActual, passwordNueva }) {
+    const empleado = await Employee.findById(empleadoId)
+    if (!empleado || !empleado.puedeIniciarSesion()) {
       throw new AppError(401, 'Tu sesión no es válida. Vuelve a iniciar sesión.')
     }
 
-    if (!(await usuario.comparePassword(passwordActual))) {
+    const credencial = await Credential.findOne({ empleadoId }).select('+passwordHash')
+    if (!credencial) {
+      throw new AppError(401, 'Tu sesión no es válida. Vuelve a iniciar sesión.')
+    }
+
+    if (!(await credencial.comparePassword(passwordActual))) {
       throw AppError.validation('Tu contraseña actual no es correcta', [
         { msg: 'Tu contraseña actual no es correcta', path: 'passwordActual' }
       ])
     }
-
-    if (await usuario.comparePassword(passwordNueva)) {
+    if (await credencial.comparePassword(passwordNueva)) {
       throw AppError.validation('La contraseña nueva debe ser distinta de la actual', [
         {
           msg: 'La contraseña nueva debe ser distinta de la actual',
@@ -96,11 +146,35 @@ class AuthService {
       ])
     }
 
-    usuario.password = passwordNueva
-    await usuario.save()
+    const passwordHash = await Credential.hashPassword(passwordNueva)
+    const ahora = new Date()
 
-    usuario.password = undefined
-    return usuario
+    const sesion = await mongoose.startSession()
+    try {
+      await sesion.withTransaction(async () => {
+        await Credential.updateOne(
+          { _id: credencial._id },
+          { $set: { passwordHash, resetToken: null, resetExpiraEn: null } },
+          { session: sesion }
+        )
+        await Employee.updateOne(
+          { _id: empleado._id },
+          { $set: { 'acceso.passwordActualizadaEn': ahora } },
+          { session: sesion }
+        )
+      })
+    } finally {
+      await sesion.endSession()
+    }
+
+    const actualizado = await Employee.findById(empleadoId)
+    return {
+      user: await construirAuthUser(actualizado, {
+        ultimoAccesoEn: credencial.ultimoAccesoEn
+      }),
+      // Token nuevo: el anterior queda invalidado por el cambio.
+      token: this.generateToken(actualizado)
+    }
   }
 }
 

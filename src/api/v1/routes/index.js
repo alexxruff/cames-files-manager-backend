@@ -1,7 +1,12 @@
 const express = require('express')
 const { connectionState } = require('../../../config/database')
+const { listRoutes } = require('../../../utils/routeInventory')
 const authRoutes = require('../auth/authRoutes')
-const userRoutes = require('../users/userRoutes')
+const employeeRoutes = require('../employees/employeeRoutes')
+const companyRoutes = require('../companies/companyRoutes')
+const categoryRoutes = require('../categories/categoryRoutes')
+const clientRoutes = require('../clients/clientRoutes')
+const goneRoutes = require('../users/goneRoutes')
 
 const router = express.Router()
 
@@ -34,9 +39,71 @@ router.get('/ready', (req, res) => {
   })
 })
 
+/**
+ * Rutas especificadas y todavía NO implementadas (spec 9.3 a 9.8). Están
+ * reservadas: responden 404 y no deben ocuparse con otra cosa.
+ *
+ * Se declaran aquí, junto al montaje, para que `GET /api/v1` pueda decirle al
+ * front qué falta sin que nadie tenga que consultar un documento aparte.
+ */
+const RUTAS_PENDIENTES = Object.freeze([
+  // Catálogos compartidos
+  { metodos: ['GET'], ruta: '/api/v1/empleados/:id/expediente', spec: '6.2' },
+  { metodos: ['GET'], ruta: '/api/v1/empleados/:id/adscripciones', spec: '6.2' },
+  { metodos: ['GET'], ruta: '/api/v1/empleados/:id/asignaciones', spec: '6.2' },
+  // Empresas y vínculos
+  { metodos: ['GET', 'POST'], ruta: '/api/v1/adscripciones', spec: '6.3' },
+  { metodos: ['GET', 'POST'], ruta: '/api/v1/carteras', spec: '6.3' },
+  // Proyectos, expedientes y derivados
+  { metodos: ['GET', 'POST'], ruta: '/api/v1/proyectos', spec: '6.4' },
+  { metodos: ['GET', 'POST'], ruta: '/api/v1/asignaciones', spec: '6.4' },
+  { metodos: ['GET'], ruta: '/api/v1/expedientes/:id', spec: '6.5' },
+  {
+    metodos: ['POST'],
+    ruta: '/api/v1/expedientes/:id/documentos/:tipo',
+    spec: '6.5'
+  },
+  { metodos: ['GET'], ruta: '/api/v1/alertas', spec: '6.6' },
+  { metodos: ['GET'], ruta: '/api/v1/dashboard/metricas', spec: '6.6' },
+  { metodos: ['GET'], ruta: '/api/v1/reportes/expedientes', spec: '6.6' },
+  { metodos: ['GET', 'PATCH'], ruta: '/api/v1/plantillas-checklist', spec: '6.5' },
+  { metodos: ['POST'], ruta: '/api/v1/auth/recuperar', spec: '6.1' },
+  { metodos: ['POST'], ruta: '/api/v1/auth/restablecer', spec: '6.1' }
+])
+
+/**
+ * Inventario de la API: qué existe y qué falta. Público y de sólo lectura.
+ *
+ * `implementados` NO es una lista escrita a mano: se deriva del router, así que
+ * es imposible que mienta. Si algo no aparece aquí, no existe en el servidor.
+ */
+router.get('/', (req, res) => {
+  const implementados = listRoutes(router, '/api/v1').filter((r) => r.ruta !== '/api/v1')
+
+  res.status(200).json({
+    status: 'success',
+    message: 'API de expedientes laborales (Urbacames)',
+    data: {
+      version: 'v1',
+      base: '/api/v1',
+      implementados,
+      pendientes: RUTAS_PENDIENTES,
+      nota:
+        'Un 404 con el mensaje "La ruta ... no existe" significa NO IMPLEMENTADO. ' +
+        'Un 401 significa que la ruta sí existe y falta la sesión.'
+    }
+  })
+})
+
 // ─── Recursos ────────────────────────────────────────────────────────────────
 router.use('/auth', authRoutes)
-router.use('/usuarios', userRoutes)
+router.use('/empleados', employeeRoutes)
+router.use('/empresas', companyRoutes)
+router.use('/categorias', categoryRoutes)
+router.use('/clientes', clientRoutes)
+
+// Movida al modelo nuevo: responde 410 con la ruta que la sustituye.
+router.use('/usuarios', goneRoutes)
 
 // Pendientes (spec 9.3 a 9.8). Se montarán aquí conforme se implementen:
 //   router.use('/expedientes', recordRoutes)
