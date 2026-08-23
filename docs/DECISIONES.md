@@ -722,3 +722,286 @@ clientes de las carteras de mis empresas». Sin `carteras` eso no se puede filtr
 así que hoy cualquiera con sesión ve el catálogo completo. **Cuando exista, el
 front va a ver menos clientes que ahora**: está avisado en la guía para que no lo
 lea como un bug.
+
+---
+
+## D-37 · Las carteras se implementaron antes que los proyectos, porque son su requisito
+
+**Contexto.** Se pidió «proyectos». No se pueden hacer sin `carteras`: la regla
+del spec §6.4 dice que **el cliente de un proyecto tiene que estar en la cartera
+activa de la empresa del proyecto**, y sin la colección no hay nada contra qué
+validar. Implementar proyectos sin esa regla habría dejado proyectos que violan la
+invariante en cuanto la cartera existiera, y el flujo del front —«elige un cliente
+de tu cartera»— no se puede construir.
+
+**Decisiones de diseño de la cartera:**
+
+- **El alta y el listado viven bajo la empresa** (`/empresas/:id/clientes`),
+  porque la cartera se lee y se llena siempre desde una empresa concreta. Las
+  operaciones sobre un vínculo que ya existe van en `/carteras/:id`, que se
+  identifica solo.
+- **Volver a meter un cliente que se sacó lo REACTIVA** y responde `200`, no
+  `201`: el índice único lo impide y, sobre todo, duplicarlo perdería las notas y
+  el contacto que ya tenía.
+- **Sacar un cliente falla si la empresa tiene proyectos con él** (spec §6.3):
+  dejar un proyecto con un cliente fuera de la cartera rompe la regla que hace
+  válido al proyecto.
+- El contacto de la cartera puede diferir del del catálogo global, que es la razón
+  de que la relación tenga datos propios.
+
+---
+
+## D-38 · La fecha de cierre de un proyecto es auditoría, no un campo
+
+**Decisión.** `PATCH /proyectos/:id` **rechaza** `fechaFinEstimada` con un `400`
+que dice «usa POST /proyectos/:id/aplazar, que exige motivo». Mover el cierre pasa
+sólo por `/aplazar`, que valida fecha posterior a la vigente, exige motivo de 10+
+caracteres y **guarda el aplazamiento en el historial** con quién y cuándo.
+
+**Por qué rechazarlo en vez de aceptarlo en silencio.** Un proyecto que se retrasa
+tres veces cuenta una historia; un campo sobrescrito no cuenta ninguna. El spec lo
+pide explícitamente y el mensaje de error enseña la ruta correcta, así que el front
+lo descubre en la primera llamada.
+
+`registradoPor` guarda el **nombre**, no sólo el id, por lo mismo que en los
+documentos: el histórico tiene que seguir legible si la persona se va.
+
+**Finalizar cierra las asignaciones abiertas** con la misma fecha, en una
+transacción. Una asignación activa en un proyecto terminado contradice la regla de
+que no se asigna a proyectos finalizados, y dejaría gente «en obra» para siempre en
+los reportes. **Reabrir NO las devuelve**: volver a poner a alguien en la obra es
+una decisión, no un efecto secundario — el mensaje de la respuesta lo dice.
+
+**Quitar una categoría que alguien asignado está usando falla** (`400` con cuántas
+personas la tienen), en vez de dejar asignaciones apuntando a una categoría que el
+proyecto ya no habilita.
+
+---
+
+## D-39 · `idAString`: las referencias populadas no se serializan con `.toString()`
+
+**El bug.** `POST /proyectos/:id/asignaciones` devolvía
+`empleadoId: "[object Object]"`. La causa: el `toJSON` hacía
+`ret.empleadoId.toString()`, y cuando la consulta pobló ese camino
+(`.populate('empleadoId')`) el valor ya no es un `ObjectId` sino el documento
+entero — cuyo `toString()` es `"[object Object]"`.
+
+**Decisión.** `utils/ids.js` con `idAString` / `idsAString`, usados en el `toJSON`
+de **todos** los modelos con referencias. Responden lo mismo esté populado o no,
+así que el contrato deja de depender de cómo se hizo la consulta.
+
+**Por qué en todos y no sólo donde falló.** El mismo error estaba latente en
+carteras (`clienteId` se pobla en el listado) y podía aparecer en cualquier
+consulta futura que agregara un `populate`. Es una clase de bug, no un caso.
+Cubierto en `tests/unitarias/text.test.js`.
+
+---
+
+## D-40 · Los dos pendientes que dependían de carteras y proyectos, resueltos
+
+Los dos se dejaron a medias a propósito porque faltaba la colección de la que
+dependían, y los dos se reportaron. Ya están cerrados.
+
+### `GET /clientes` está acotado por cartera
+
+Antes devolvía el catálogo del grupo a cualquiera con sesión, porque sin
+`carteras` no había con qué filtrar. Ahora, según modelo-datos §8.1, devuelve **los
+clientes de las carteras activas de las empresas visibles**. El administrador de
+plataforma sigue viendo todo: administra el catálogo.
+
+**Con una salida explícita, y hace falta:** `?catalogoCompleto=true` devuelve el
+catálogo global y **exige poder administrar clientes** (`rh_admin`, `jefe_area`);
+`rh_consulta` recibe `403`. Sin ella, quien va a meter un cliente a su cartera no
+puede comprobar si ya existe en el grupo y acaba creando el duplicado que el
+catálogo compartido viene a evitar. Es un permiso que ya tenían de hecho —pueden
+dar de alta clientes globales—, así que no abre nada nuevo.
+
+`GET /clientes/:id` sigue el mismo criterio: visible si está en una cartera propia,
+o si quien pregunta administra clientes. Fuera de eso, **404**.
+
+### `GET /empresas` ya trae los conteos reales
+
+`clientes` cuenta la **cartera activa** y `proyectosActivos` los proyectos
+**en curso** —no todos—, con tres agregaciones en paralelo, una por contador.
+`alertasPendientes` **sigue en `null`** porque el módulo de alertas no existe:
+`0` diría «no tiene ninguna» y sería mentira. Cuando exista, se llena sin cambiar
+la forma.
+
+---
+
+## D-41 · Expedientes: uno por persona, checklist por unión y almacenamiento en R2
+
+### El expediente es de la persona, no del vínculo
+
+Una colección `records` con **`empleadoId` único**. Alguien adscrito a dos empresas
+tiene **un** expediente, no dos: su INE es la misma en las dos.
+
+De ahí sale la regla del checklist: **es la unión de las plantillas de todas sus
+adscripciones activas**. `requerido` se resuelve con **OR** (si una empresa lo pide,
+hace falta) y `vigenciaMeses` con **MIN** (gana la más estricta). `resolveTemplate`
+elige la plantilla por cinco niveles de especificidad —de empresa+área+contrato a
+la global—, así que una empresa puede endurecer un requisito sin tocar las demás.
+
+La consecuencia práctica: al darle una adscripción nueva a alguien, su checklist
+puede crecer, y `sincronizar` agrega los renglones que falten **sin tocar lo ya
+entregado**. Nunca borra un documento que existe, aunque deje de ser requerido:
+pasa a `requerido: false` y ahí se queda.
+
+El expediente se crea **en la misma transacción que el alta** (`POST /empleados`),
+no en un job ni a la primera consulta. Un empleado sin expediente es un agujero:
+no sale en los faltantes ni en los reportes. `asegurarParaEmpleado` es idempotente
+y absorbe el `11000` de la carrera, porque el índice único es la garantía real.
+
+### Se reusó el servicio de R2 de Talentlink, con cuatro cambios
+
+`src/services/storageService.js` conserva la estructura de
+`talentlink-backend/src/services/r2Service.js` —`@aws-sdk/client-s3` +
+`s3-request-presigner`, URLs firmadas con caducidad— y cambia:
+
+1. **La clave nunca lleva el nombre original del archivo**, sino
+   `expedientes/{empleadoId}/{tipo}/v{version}-{uuid}.{ext}`. Un nombre subido por
+   el usuario es una ruta que él controla; el nombre real se guarda como metadato.
+2. **Driver `memoria`** cuando no hay credenciales: las pruebas y el desarrollo
+   local corren sin bucket, con el mismo contrato.
+3. **Validación por magic bytes**, no por la extensión ni por el `Content-Type`
+   —los dos los pone el cliente—. PDF, JPG, PNG y WEBP.
+4. **HEIC se rechaza a propósito**, y con mensaje propio: Chrome no lo muestra, así
+   que un expediente lleno de HEIC no se puede revisar. Es la foto que manda por
+   defecto un iPhone, así que el mensaje pide convertirla en vez de decir sólo «tipo
+   no permitido».
+
+Un documento nuevo **versiona**: la v1 queda con `reemplazadaEn`, la v2 entra al
+frente y se limpia el rechazo anterior. No se borra nada; el archivo viejo sigue en
+el bucket y su URL se puede pedir.
+
+**`claveAlmacenamiento` es `select: false` y `toJSON` la quita.** Es la ubicación
+real del archivo: al front le toca pedir una URL firmada, que caduca y **queda en la
+bitácora**. `access_logs` se escribe en **cada** emisión de URL, no en cada consulta
+del expediente: la obligación de la LFPDPPP es sobre quién accedió al documento.
+
+### El bucket se comparte: `R2_PREFIX`
+
+El bucket `cames-files` es de la misma cuenta de Cloudflare que el de talentlink
+(`humenta-cv/cvs`), y los expedientes viven en una carpeta suya:
+`cames-files/employes-files/`. De ahí `R2_PREFIX`, que se le pone delante a toda
+clave nueva y admite barras de sobra sin producir `//`.
+
+El id de cuenta es el **subdominio del endpoint S3**, no algo del bucket:
+`https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com/<R2_BUCKET>`. Es el mismo para
+todos los buckets de la cuenta.
+
+La clave completa —prefijo incluido— se guarda en `claveAlmacenamiento`, así que
+cambiar el prefijo después **no pierde** los archivos ya subidos: los viejos
+siguen resolviéndose por su clave guardada. Lo que no se debe hacer es mover
+objetos en el bucket sin actualizar la base.
+
+`npm run r2:check` hace el ciclo completo con un objeto de prueba —escribir,
+firmar, leer, borrar— y traduce los errores de S3 al problema de configuración
+que los causa. Un token de sólo lectura conecta bien y falla en la primera subida
+real, que es el peor momento para enterarse.
+
+### El bug que esto costó, y por qué la prueba tenía que subir dos veces
+
+Al reemplazar un documento se **borraba la clave de las versiones anteriores**: el
+archivo quedaba en R2 pero inalcanzable para siempre — justo lo que el versionado
+existe para evitar. La causa es `select: false`: se leía el expediente sin pedir la
+clave y al guardar, Mongoose reescribía el arreglo de versiones completo y escribía
+`null` en lo que nunca se cargó.
+
+Las pruebas no lo veían porque subían **una** versión y pedían esa misma; la v1 sólo
+se corrompe cuando llega la v2. Lo destapó la prueba en vivo. El arreglo:
+`CAMPOS_OCULTOS` en **toda** lectura que después vaya a guardar, y una prueba de
+regresión que sube dos veces y verifica en la base que las dos claves siguen ahí y
+son distintas.
+
+La lección general: `select: false` protege la lectura, **no** la escritura. En
+cualquier modelo con un campo oculto dentro de un arreglo, leer-modificar-guardar lo
+pierde si no se pidió.
+
+### `avanceExpediente` en el renglón de empleados
+
+Los dos últimos campos que quedaban en `null` «hasta que existan los expedientes»
+ya se llenan: el cruce se hace **dentro de la página** del `$facet` —25 renglones,
+no la colección— y proyecta **sólo `requerido`, `estatus` y `vigenciaHasta`**. Los
+archivos no entran: en una agregación `select: false` no aplica y la clave del
+bucket se filtraría (D-27). El porcentaje se deriva al leer, igual que en el
+expediente.
+
+Un detalle que se ve raro y es correcto: `avance.porcentaje` cuenta sólo lo
+**validado**, así que mientras no exista `POST …/validar` se queda en 0% aunque
+estén todos los archivos. Se le documentó al front, con qué pintar mientras tanto.
+
+### Vigencias
+
+`contrato` **hereda** la `fechaTerminoContrato` más próxima de sus adscripciones
+temporales; los demás documentos usan `hoy + vigenciaMeses` de la plantilla, y el
+front puede mandar `vigenciaHasta` explícita. `expiring` / `expired` y el `avance`
+**se derivan al leer**, nunca se guardan (D-04).
+
+---
+
+## D-42 · Las plantillas dicen qué es obligatorio, no qué se puede subir
+
+**El reporte.** «No se puede cargar ningún documento, y eso depende de las
+plantillas.» Tenía razón, y había dos cosas distintas debajo.
+
+### La causa real: las plantillas de la base no tenían `activo`
+
+`#checklistQueLeToca` consultaba `ChecklistTemplate.find({ activo: true })`. Las
+cuatro plantillas base de la base de desarrollo venían del **modelo anterior**
+—con `clienteId`, sin `empresaId` ni `activo`—, así que ese filtro devolvía
+**cero** plantillas: todo expediente nacía con `documentos: []`, y sin renglones no
+había nada que subir. La semilla no las arreglaba porque es idempotente **por
+`clave`**: las veía existir y no las tocaba.
+
+Tres arreglos, porque cada uno tapa un agujero distinto:
+
+1. **La consulta ahora es `{ activo: { $ne: false } }`**, que es exactamente la
+   regla que ya aplicaba `resolveTemplate` (`p.activo !== false`). Tenerlas
+   distintas era el bug: el dominio toleraba el campo ausente y la consulta no.
+2. **La semilla sanea las plantillas base del modelo anterior**: les pone
+   `activo: true` y les quita `clienteId`. No toca `documentos`, que es donde
+   puede haber ediciones de un `rh_admin`. Ojo con Mongoose: el `$unset` de un
+   campo que ya no está en el esquema **se descarta en silencio** sin
+   `{ strict: false }`.
+3. **Un expediente que quedó vacío se rellena al leerlo.** Si tiene renglones no
+   escribe nada; sólo actúa en el caso roto, porque la causa siempre se corrige
+   después de que el expediente ya existe. `sincronizar` estaba escrito y no lo
+   llamaba nadie.
+
+### El error de diseño: el checklist no puede vetar una subida
+
+Subir un tipo que no estuviera en el checklist resuelto respondía `400`. Está mal,
+y el reporte lo señala: la plantilla define qué es **obligatorio**, no qué se
+**permite guardar**. Un documento que ninguna empresa exige sigue siendo un
+documento que RH necesita en el expediente.
+
+Ahora **se acepta cualquiera de los 12 tipos del catálogo**; si no estaba en el
+checklist, entra como renglón con `requerido: false`. El tipo se sigue validando
+contra el catálogo —no es texto libre—, y `syncChecklist` ya conservaba los
+renglones con versiones, así que no se pierden al re-sincronizar.
+
+El efecto secundario importante: **ninguna falla de plantillas puede volver a
+bloquear la carga de documentos**. Antes, un checklist vacío dejaba el expediente
+inservible; ahora, en el peor caso, todo entra como no requerido y el avance se
+corrige cuando las plantillas se arreglan.
+
+### Lo que NO se hizo: subir primero y clasificar después
+
+Se pidió «subir cualquier documento y luego asignarle el tipo». No se implementó, y
+la razón es que resuelve un problema que ya no existe: con lo de arriba, la subida
+nunca falla por el tipo, y el tipo se elige en el mismo diálogo. Un buzón de
+documentos sin clasificar añade un estado nuevo —archivos que no cuentan para
+ningún avance, que no caducan y que nadie revisa— y hay que decidir quién los
+limpia.
+
+Si de todas formas hace falta guardar cosas fuera del catálogo (una carta, un
+permiso), lo que corresponde es un tipo `otro` con nombre libre, y eso sí es un
+cambio de contrato: **está pendiente de decidir**, no descartado.
+
+### Y un script
+
+`npm run db:expedientes` crea y re-sincroniza el expediente de **todos** los
+empleados. Hace falta para las personas dadas de alta antes de que el módulo
+existiera: sin `record`, el renglón de la tabla sale sin avance hasta que alguien
+abre su expediente. Idempotente y no borra nada.

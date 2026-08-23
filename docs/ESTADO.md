@@ -3,7 +3,7 @@
 Mapa de qué está hecho y qué falta. **Actualízalo al cerrar cada módulo**: es lo
 primero que lee quien llega, humano o agente.
 
-Última actualización: **2026-08-21** · 307 pruebas en verde.
+Última actualización: **2026-08-23** · 436 pruebas en verde.
 
 El modelo autoritativo es [`modelo-datos.md`](./modelo-datos.md) (jerarquía de
 empresas, catálogos compartidos y vínculos) y el contrato es
@@ -45,20 +45,20 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 
 ## Modelo de datos
 
-| Colección             | Modelo              | Estado | Notas                                                                                                  |
-| --------------------- | ------------------- | ------ | ------------------------------------------------------------------------------------------------------ |
-| `companies`           | `Company`           | ✅     | Nombre único normalizado, branding y configuración                                                     |
-| `employees`           | `Employee`          | ✅     | La persona, con `acceso` opcional. Sin contrato ni áreas                                               |
-| `credentials`         | `Credential`        | ✅     | Secreto aislado, 1 a 1 con el empleado (D-27)                                                          |
-| `clients`             | `Client`            | ✅     | Catálogo global, sin empresa dueña                                                                     |
-| `categories`          | `Category`          | ✅     | Catálogo global                                                                                        |
-| `affiliations`        | `Affiliation`       | ✅     | Adscripción empresa ↔ empleado: la relación laboral                                                    |
-| `portfolios`          | `Portfolio`         | ⬜     | Cartera empresa ↔ cliente                                                                              |
-| `assignments`         | `Assignment`        | ⬜     | Asignación proyecto ↔ empleado                                                                         |
-| `projects`            | `Project`           | ⬜     | La única entidad que pertenece a una empresa                                                           |
-| `records`             | `Record`            | ⬜     | Expediente, 1 a 1 con el empleado                                                                      |
-| `checklist_templates` | `ChecklistTemplate` | 🟡     | Existe del modelo anterior; su eje pasa a `empresaId` y la resolución a **unión** de plantillas (§6.2) |
-| `access_logs`         | `AccessLog`         | ⬜     | Bitácora, requisito legal (LFPDPPP)                                                                    |
+| Colección             | Modelo              | Estado | Notas                                                                                                |
+| --------------------- | ------------------- | ------ | ---------------------------------------------------------------------------------------------------- |
+| `companies`           | `Company`           | ✅     | Nombre único normalizado, branding y configuración                                                   |
+| `employees`           | `Employee`          | ✅     | La persona, con `acceso` opcional. Sin contrato ni áreas                                             |
+| `credentials`         | `Credential`        | ✅     | Secreto aislado, 1 a 1 con el empleado (D-27)                                                        |
+| `clients`             | `Client`            | ✅     | Catálogo global, sin empresa dueña                                                                   |
+| `categories`          | `Category`          | ✅     | Catálogo global                                                                                      |
+| `affiliations`        | `Affiliation`       | ✅     | Adscripción empresa ↔ empleado: la relación laboral                                                  |
+| `portfolios`          | `Portfolio`         | ✅     | Cartera empresa ↔ cliente; sacar falla si hay proyectos                                              |
+| `assignments`         | `Assignment`        | ✅     | Índice parcial: histórico + sin duplicado activo                                                     |
+| `projects`            | `Project`           | ✅     | Con aplazamientos en el historial                                                                    |
+| `records`             | `Record`            | ✅     | Expediente, 1 a 1 con el empleado (`empleadoId` único, D-41)                                         |
+| `checklist_templates` | `ChecklistTemplate` | ✅     | Eje en `empresaId`; resolución por **unión** de plantillas, OR en requerido y MIN en vigencia (D-41) |
+| `access_logs`         | `AccessLog`         | ✅     | Bitácora; se escribe en cada URL firmada emitida (LFPDPPP)                                           |
 
 ## API
 
@@ -73,16 +73,16 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 | Empleados — **alta**              | 6.2       | ✅     | Persona + adscripción en transacción, permisos por tipo, duplicados (D-32 a D-34)                         |
 | Categorías                        | 6.2       | ✅     | CRUD con `tipo`, alta idempotente por nombre                                                              |
 | Empleados — edición y baja        | 6.2       | ✅     | Editar: quien puede crear ese tipo. Baja: `rh_admin`. El acceso y las adscripciones tienen su propia ruta |
-| Clientes                          | 6.2       | ✅     | CRUD con baja lógica; sin filtrar por cartera todavía (D-36)                                              |
+| Clientes                          | 6.2       | ✅     | CRUD, baja lógica y **acotado por cartera** (D-40)                                                        |
 | Empresas                          | 6.3       | ✅     | Alta sólo admin de plataforma, listado con conteos                                                        |
 | Adscripciones                     | 6.3       | ⬜     | Modelo listo, faltan rutas                                                                                |
-| Carteras                          | 6.3       | ⬜     |                                                                                                           |
-| Proyectos                         | 6.4       | ⬜     | Regla: su cliente debe estar en la cartera de la empresa                                                  |
-| Asignaciones                      | 6.4       | ⬜     |                                                                                                           |
-| Expedientes y documentos          | 6.5       | ⬜     | Checklist por **unión** de plantillas                                                                     |
-| Lógica de dominio                 | modelo §6 | 🟡     | Estatus, avance, semáforo, alertas y vigencias listos y probados; falta la unión de plantillas            |
+| Carteras                          | 6.3       | ✅     | Bajo la empresa; reactiva en vez de duplicar (D-37)                                                       |
+| Proyectos                         | 6.4       | ✅     | CRUD, aplazar, finalizar, reabrir, clonar categorías (D-38)                                               |
+| Asignaciones                      | 6.4       | ✅     | Con `asignables` (§9.3) y cierre con fecha de salida                                                      |
+| Expedientes y documentos          | 6.5       | 🟡     | Consulta, **subida** con versionado y URL firmada. Faltan listado, validar y rechazar (D-42)              |
+| Lógica de dominio                 | modelo §6 | ✅     | Estatus, avance, semáforo, vigencias y la **unión** de plantillas, listos y probados                      |
 | Alertas, métricas y reportes      | 6.6       | ⬜     | Derivados                                                                                                 |
-| Almacenamiento R2                 | 7         | ⬜     | Reutilizar de talentlink                                                                                  |
+| Almacenamiento R2                 | 7         | ✅     | Bucket `cames-files/employes-files`, probado de punta a punta; `npm run r2:check` (D-41)                  |
 | Job diario de vigencias           | 8         | ⬜     | Un correo por persona, idempotente                                                                        |
 | `/usuarios` (modelo anterior)     | —         | ✅     | Responde **410** con las rutas nuevas                                                                     |
 
@@ -94,21 +94,21 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
    duplicados (D-34).
 3. ~~**Edición y baja de empleados**~~ ✅
 4. ~~**Clientes**~~ ✅
-5. **Carteras** (empresa ↔ cliente) y `POST /adscripciones` suelto (mover gente
-   entre empresas sin recrearla). La cartera además desbloquea el filtro por
-   alcance del catálogo de clientes.
-6. **Expedientes**: modelo `records`, plantillas por `empresaId` y resolución del
-   checklist **por unión**, más R2 para los archivos.
-7. **Carteras y proyectos**, con la regla de cliente en cartera.
-8. **Asignaciones** y las agregaciones de `modelo-datos.md` §9.1 y §9.3.
-9. **Alertas, métricas y reportes.**
-10. **Job diario de vigencias** y correos.
+5. ~~**Carteras, proyectos y asignaciones**~~ ✅
+6. ~~**Expedientes**: consulta, subida a R2 con versionado y checklist por unión~~
+   ✅ (D-41)
+7. **Revisión de documentos**: `POST …/validar` y `POST …/rechazar`, y
+   `GET /expedientes` paginado — lo que falta para cerrar §6.5.
+8. **Adscripciones con sus rutas** (`GET/POST /empresas/:id/adscripciones`,
+   `PATCH /adscripciones/:id` y `/estado`): mover gente entre empresas sin
+   recrearla, que hoy sólo se puede al dar de alta.
+9. **Alertas, métricas y reportes**, y el job diario de vigencias con correos.
 
 ## Decisiones abiertas
 
-1. **¿El expediente se comparte entre empresas del grupo?** El modelo dice que sí
-   (es de la persona). Si Urbacames necesita uno por empresa, cambia a expediente
-   por adscripción y **hay que decidirlo antes de implementar expedientes**.
+1. ~~¿El expediente se comparte entre empresas del grupo?~~ **Resuelto:** es de la
+   persona, uno por `empleadoId`, y el checklist es la unión de las plantillas de
+   sus adscripciones activas (D-41).
 2. **¿La CURP es obligatoria desde el alta?** Implementado como opcional con
    índice parcial (D-28); confirmar.
 3. **¿El empleado sube sus propios documentos?** Añadiría un cuarto nivel de

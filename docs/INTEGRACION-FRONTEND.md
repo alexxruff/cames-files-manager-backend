@@ -7,7 +7,7 @@ compartidos, vínculos en sus propias colecciones).
 Cubre lo que está implementado y probado: **sesión** y **administración de
 accesos**. Todo lo demás sigue en `src/mocks/` con `VITE_USE_MOCKS=true`.
 
-> Verificado con 281 pruebas automatizadas. Si algo no coincide con lo que ves, es
+> Verificado con 389 pruebas automatizadas. Si algo no coincide con lo que ves, es
 > un bug del backend: repórtalo con el `X-Request-Id` de la respuesta.
 >
 > Esta guía **reemplaza** la versión anterior: el CRUD de `/usuarios`, el campo
@@ -284,7 +284,7 @@ export interface RenglonEmpleado {
   adscripciones: AdscripcionDeEmpleado[]
   /** Vacío hasta que exista el módulo de proyectos. */
   asignaciones: unknown[]
-  /** null hasta que existan los expedientes. */
+  /** Porcentaje del expediente, 0–100. Ver docs/ENDPOINTS-EXPEDIENTES.md. */
   avanceExpediente: number | null
   expedienteId: string | null
 }
@@ -428,10 +428,11 @@ Query: `?incluirInactivas=true|false` · `?busqueda=`
 ```
 
 Cada quien ve **sus** empresas (las de sus adscripciones activas); el
-administrador de plataforma, todas. Los `conteos` vienen resueltos del servidor
-con agregación: `empleados` es real, y `clientes`, `proyectosActivos` y
-`alertasPendientes` vienen en `null` mientras esos módulos no existan — `null`
-significa «todavía no se sabe», no «cero». Una empresa ajena da `404`.
+administrador de plataforma, todas. Los `conteos` vienen resueltos del servidor con
+agregación: `empleados` (adscripciones activas), `clientes` (cartera activa) y
+`proyectosActivos` (sólo los **en curso**) son reales. `alertasPendientes` sigue en
+`null` porque ese módulo no existe — `null` significa «todavía no se sabe», no
+«cero». Una empresa ajena da `404`.
 
 ### `GET /categorias` · `POST /categorias` · `PATCH /categorias/:id/estado`
 
@@ -823,11 +824,13 @@ curl -s -X POST $BASE/empleados/$ID/acceso -H "Authorization: Bearer $TOKEN" \
 
 ## Referencias
 
-| Qué                                           | Dónde                      |
-| --------------------------------------------- | -------------------------- |
-| **Ajustes concretos que debe hacer el front** | `docs/CAMBIOS-FRONTEND.md` |
-| Modelo de datos autoritativo                  | `docs/modelo-datos.md`     |
-| Contrato de API y catálogo de rutas           | `docs/backend-spec.md`     |
-| Endpoints implementados, al detalle           | `docs/CONTRATO-API.md`     |
-| Decisiones y por qué de cada regla            | `docs/DECISIONES.md`       |
-| Qué está hecho y qué falta                    | `docs/ESTADO.md`           |
+| Qué                                           | Dónde                           |
+| --------------------------------------------- | ------------------------------- |
+| **Ajustes concretos que debe hacer el front** | `docs/CAMBIOS-FRONTEND.md`      |
+| Carteras, proyectos y asignaciones            | `docs/ENDPOINTS-PROYECTOS.md`   |
+| Expedientes: consulta y subida                | `docs/ENDPOINTS-EXPEDIENTES.md` |
+| Modelo de datos autoritativo                  | `docs/modelo-datos.md`          |
+| Contrato de API y catálogo de rutas           | `docs/backend-spec.md`          |
+| Endpoints implementados, al detalle           | `docs/CONTRATO-API.md`          |
+| Decisiones y por qué de cada regla            | `docs/DECISIONES.md`            |
+| Qué está hecho y qué falta                    | `docs/ESTADO.md`                |
