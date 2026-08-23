@@ -52,6 +52,10 @@ exports.listClientsValidation = [
     .optional()
     .isIn(['nombre_asc', 'nombre_desc'])
     .withMessage('El orden debe ser nombre_asc o nombre_desc'),
+  query('catalogoCompleto')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('catalogoCompleto debe ser true o false'),
   query('pagina')
     .optional()
     .isInt({ min: 1 })

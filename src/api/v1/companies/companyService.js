@@ -1,6 +1,8 @@
 const mongoose = require('mongoose')
 const Company = require('./companyModel')
 const Affiliation = require('../affiliations/affiliationModel')
+const Portfolio = require('../portfolios/portfolioModel')
+const Project = require('../projects/projectModel')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { normalize } = require('../../../utils/text')
 
@@ -97,34 +99,57 @@ class CompanyService {
   }
 
   /**
-   * Conteos por empresa para las tarjetas de Organización.
+   * Conteos por empresa para las tarjetas de Organización, resueltos con tres
+   * agregaciones en paralelo. Pedirlos desde el navegador serían N+1 peticiones
+   * por tarjeta.
    *
-   * `empleados` sale de las adscripciones activas. Los otros tres van en `null`
-   * y no en `0` a propósito: `0` diría «no tiene ninguno» y la verdad es «el
-   * módulo todavía no existe». Cuando existan, se llenan sin cambiar la forma.
+   * `alertasPendientes` sigue en `null` —y no en `0`— porque el módulo de alertas
+   * no existe: `0` diría «no tiene ninguna» y sería mentira.
    */
   async #conteosPorEmpresa(ids) {
     if (ids.length === 0) return new Map()
 
-    const porEmpresa = await Affiliation.aggregate([
-      { $match: { empresaId: { $in: ids }, activo: true } },
-      { $group: { _id: '$empresaId', empleados: { $addToSet: '$empleadoId' } } },
-      { $project: { empleados: { $size: '$empleados' } } }
+    const [empleados, clientes, proyectos] = await Promise.all([
+      // Personas con adscripción activa, sin contar dos veces a nadie.
+      Affiliation.aggregate([
+        { $match: { empresaId: { $in: ids }, activo: true } },
+        { $group: { _id: '$empresaId', valor: { $addToSet: '$empleadoId' } } },
+        { $project: { valor: { $size: '$valor' } } }
+      ]),
+      // Clientes en la cartera activa.
+      Portfolio.aggregate([
+        { $match: { empresaId: { $in: ids }, activo: true } },
+        { $group: { _id: '$empresaId', valor: { $sum: 1 } } }
+      ]),
+      // Sólo los proyectos en curso: es lo que la tarjeta anuncia.
+      Project.aggregate([
+        { $match: { empresaId: { $in: ids }, estado: 'en_curso' } },
+        { $group: { _id: '$empresaId', valor: { $sum: 1 } } }
+      ])
     ])
 
-    return new Map(
-      porEmpresa.map((fila) => [
-        fila._id.toString(),
-        { ...this.#conteosVacios(), empleados: fila.empleados }
-      ])
-    )
+    const porEmpresa = new Map(ids.map((id) => [id.toString(), this.#conteosVacios()]))
+    const volcar = (filas, campo) => {
+      for (const fila of filas) {
+        const clave = fila._id.toString()
+        const actual = porEmpresa.get(clave) || this.#conteosVacios()
+        porEmpresa.set(clave, { ...actual, [campo]: fila.valor })
+      }
+    }
+
+    volcar(empleados, 'empleados')
+    volcar(clientes, 'clientes')
+    volcar(proyectos, 'proyectosActivos')
+
+    return porEmpresa
   }
 
   #conteosVacios() {
     return {
       empleados: 0,
-      clientes: null,
-      proyectosActivos: null,
+      clientes: 0,
+      proyectosActivos: 0,
+      // Pendiente: el módulo de alertas no existe. `null` = «todavía no se sabe».
       alertasPendientes: null
     }
   }

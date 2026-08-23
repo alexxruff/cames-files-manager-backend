@@ -5,6 +5,7 @@ const categoryService = require('../categories/categoryService')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { normalize, escapeRegex } = require('../../../utils/text')
 const { today } = require('../../../utils/dates')
+const { computeProgress } = require('../../../utils/domain/progress')
 const {
   areasVisibles,
   empresaEsVisible
@@ -182,7 +183,36 @@ class EmployeeService {
         // El orden se calcula sobre el total y DESPUÉS se corta la página.
         $facet: {
           total: [{ $count: 'valor' }],
-          pagina: [{ $skip: (pagina - 1) * porPagina }, { $limit: porPagina }]
+          pagina: [
+            { $skip: (pagina - 1) * porPagina },
+            { $limit: porPagina },
+            /*
+             * El expediente se cruza DENTRO de la página: son 25 renglones, no
+             * la colección entera.
+             *
+             * Se proyectan sólo los tres campos que necesita el avance. Nada de
+             * archivos: en una agregación `select: false` no aplica y la clave
+             * de almacenamiento se filtraría (D-27, D-41).
+             */
+            {
+              $lookup: {
+                from: 'records',
+                let: { empleado: '$_id' },
+                pipeline: [
+                  { $match: { $expr: { $eq: ['$empleadoId', '$$empleado'] } } },
+                  {
+                    $project: {
+                      'documentos.requerido': 1,
+                      'documentos.estatus': 1,
+                      'documentos.vigenciaHasta': 1
+                    }
+                  }
+                ],
+                as: 'expediente'
+              }
+            },
+            { $unwind: { path: '$expediente', preserveNullAndEmptyArrays: true } }
+          ]
         }
       }
     )
@@ -298,6 +328,20 @@ class EmployeeService {
             { session: sesion }
           )
         }
+
+        /*
+         * Y su expediente, en la misma transacción (backend-spec §6.2). El
+         * checklist sale de la unión de las plantillas de sus adscripciones, así
+         * que se crea DESPUÉS de la adscripción para que ya la vea.
+         */
+        /*
+         * `require` aquí y no arriba: `recordService` requiere a su vez a este
+         * módulo (necesita `getById` para el alcance), y con los dos `require` en
+         * el encabezado uno de los dos captura un objeto vacío según el orden de
+         * carga. Pedirlo en el momento de usarlo rompe el ciclo.
+         */
+        const recordService = require('../records/recordService')
+        await recordService.asegurarParaEmpleado(creado._id, { session: sesion })
       })
     } finally {
       await sesion.endSession()
@@ -629,10 +673,17 @@ class EmployeeService {
         fechaTerminoContrato: a.fechaTerminoContrato ?? null,
         activo: a.activo
       })),
-      // Pendientes hasta que existan sus módulos; la forma ya es la definitiva.
+      // Pendiente hasta que el listado cruce proyectos; la forma es la definitiva.
       asignaciones: [],
-      avanceExpediente: null,
-      expedienteId: null
+      /*
+       * El porcentaje se deriva al leer, como en el expediente mismo (D-04): un
+       * documento vencido baja el avance sin que nadie escriba en la base.
+       * `null` sólo si no tiene expediente, que no debería pasar desde D-41.
+       */
+      avanceExpediente: doc.expediente
+        ? computeProgress(doc.expediente.documentos || []).porcentaje
+        : null,
+      expedienteId: doc.expediente ? doc.expediente._id.toString() : null
     }
   }
 }

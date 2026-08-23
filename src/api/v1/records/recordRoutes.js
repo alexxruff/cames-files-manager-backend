@@ -1,0 +1,56 @@
+const express = require('express')
+const recordController = require('./recordController')
+const asyncHandler = require('../../../utils/asyncHandler')
+const validateRequest = require('../../../middlewares/validateRequest')
+const { protect, requireCapability } = require('../../../middlewares/authMiddleware')
+const { applyScope } = require('../../../middlewares/scopeMiddleware')
+const { recibirArchivo } = require('../../../middlewares/uploadMiddleware')
+const { CAPABILITIES } = require('../../../utils/permissions')
+const {
+  recordIdValidation,
+  uploadDocumentValidation,
+  documentVersionValidation
+} = require('../../../validations/recordValidation')
+
+const router = express.Router()
+
+router.use(protect, applyScope)
+
+router.get(
+  '/:id',
+  requireCapability(CAPABILITIES.VIEW_EMPLOYEES),
+  recordIdValidation,
+  validateRequest,
+  asyncHandler(recordController.porId)
+)
+
+/*
+ * Subir: `rh_admin` y `rh_consulta`. El jefe de área ve el expediente pero no
+ * sube documentos (matriz §8.2).
+ *
+ * `recibirArchivo` va ANTES de las validaciones: hasta que multer no procesa el
+ * multipart, `req.body` está vacío y `vigenciaHasta` no existiría.
+ */
+router.post(
+  '/:id/documentos/:tipo',
+  requireCapability(CAPABILITIES.UPLOAD_DOCUMENTS),
+  recibirArchivo,
+  uploadDocumentValidation,
+  validateRequest,
+  asyncHandler(recordController.subirDocumento)
+)
+
+/*
+ * Abrir un archivo. No lleva capacidad fija: cualquiera que vea el expediente
+ * puede abrir los documentos NO sensibles, y el servicio niega los sensibles a
+ * quien no puede abrirlos (el jefe de área). Cada emisión queda en la bitácora.
+ */
+router.get(
+  '/:id/documentos/:tipo/versiones/:version/url',
+  requireCapability(CAPABILITIES.VIEW_EMPLOYEES),
+  documentVersionValidation,
+  validateRequest,
+  asyncHandler(recordController.urlDeVersion)
+)
+
+module.exports = router

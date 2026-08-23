@@ -45,3 +45,28 @@ describe('utils/text — búsqueda insensible a acentos', () => {
     expect(compareNames('Ángel', 'Bruno')).toBeLessThan(0)
   })
 })
+
+describe('utils/ids — referencias populadas o no', () => {
+  const { idAString, idsAString } = require('../../src/utils/ids')
+  const mongoose = require('mongoose')
+
+  it('devuelve lo mismo con el id pelón que con el documento populado', () => {
+    const id = new mongoose.Types.ObjectId()
+
+    expect(idAString(id)).toBe(id.toString())
+    // Lo que llega tras un populate(): con `.toString()` esto daba
+    // "[object Object]" y se publicaba al front.
+    expect(idAString({ _id: id, nombre: 'Ana' })).toBe(id.toString())
+    expect(idAString(id.toString())).toBe(id.toString())
+  })
+
+  it('tolera nulos y listas', () => {
+    expect(idAString(null)).toBeNull()
+    expect(idAString(undefined)).toBeNull()
+    expect(idsAString(null)).toEqual([])
+
+    const uno = new mongoose.Types.ObjectId()
+    const dos = new mongoose.Types.ObjectId()
+    expect(idsAString([uno, { _id: dos }])).toEqual([uno.toString(), dos.toString()])
+  })
+})

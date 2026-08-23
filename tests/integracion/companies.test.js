@@ -7,6 +7,9 @@ const {
   crearEmpleado,
   crearEmpleadoConSesion,
   adscribir,
+  crearCliente,
+  agregarACartera,
+  crearProyecto,
   auth
 } = require('../helpers/factories')
 
@@ -32,8 +35,9 @@ describe('POST /api/v1/empresas', () => {
     })
     expect(res.body.data.conteos).toEqual({
       empleados: 0,
-      clientes: null,
-      proyectosActivos: null,
+      clientes: 0,
+      proyectosActivos: 0,
+      // Sigue en null: el módulo de alertas no existe, y 0 diría "ninguna".
       alertasPendientes: null
     })
   })
@@ -133,7 +137,7 @@ describe('GET /api/v1/empresas', () => {
     ])
   })
 
-  it('trae el conteo de empleados resuelto en el servidor', async () => {
+  it('trae los conteos resueltos en el servidor', async () => {
     const empresa = await crearEmpresa()
     const { token } = await crearEmpleadoConSesion({ empresa })
 
@@ -145,14 +149,57 @@ describe('GET /api/v1/empresas', () => {
     const tres = await crearEmpleado()
     await adscribir(empresa, tres, { activo: false, motivoBaja: 'Renuncia' })
 
+    // Dos clientes en cartera —uno sacado, que no cuenta— y dos proyectos, uno
+    // ya finalizado: la tarjeta anuncia los que están en curso.
+    const cliente = await crearCliente()
+    await agregarACartera(empresa, cliente)
+    await agregarACartera(empresa, await crearCliente(), { activo: false })
+    // `sinCartera` porque el vínculo ya existe y es único por par empresa+cliente.
+    await crearProyecto(empresa, { cliente, nombre: 'En curso', sinCartera: true })
+    await crearProyecto(empresa, {
+      cliente,
+      nombre: 'Terminado',
+      sinCartera: true,
+      estado: 'finalizado',
+      fechaFinReal: '2026-12-01'
+    })
+
     const res = await request(app).get(RUTA).set(auth(token))
     const fila = res.body.data.empresas[0]
 
     // Los dos nuevos más el propio usuario de la sesión.
     expect(fila.conteos.empleados).toBe(3)
-    // Lo que todavía no existe va en null, no en 0: no es lo mismo.
-    expect(fila.conteos.proyectosActivos).toBeNull()
-    expect(fila.conteos.clientes).toBeNull()
+    // Sólo la cartera activa.
+    expect(fila.conteos.clientes).toBe(1)
+    // Sólo los proyectos en curso.
+    expect(fila.conteos.proyectosActivos).toBe(1)
+    // Lo único que sigue pendiente.
+    expect(fila.conteos.alertasPendientes).toBeNull()
+  })
+
+  it('los conteos son de cada empresa, no del grupo', async () => {
+    const propia = await crearEmpresa({ nombre: 'Propia' })
+    const otra = await crearEmpresa({ nombre: 'Otra' })
+    const { token, empleado } = await crearEmpleadoConSesion({
+      alcanceGlobal: true,
+      empresa: propia
+    })
+    await adscribir(otra, empleado)
+
+    // Propia: sólo un cliente en cartera. Otra: sólo un proyecto. Así cada
+    // contador se comprueba por separado.
+    await agregarACartera(propia, await crearCliente())
+    await crearProyecto(otra, { nombre: 'De la otra', sinCartera: true })
+
+    const res = await request(app).get(RUTA).set(auth(token))
+    const porNombre = Object.fromEntries(
+      res.body.data.empresas.map((e) => [e.empresa.nombre, e.conteos])
+    )
+
+    expect(porNombre.Propia.clientes).toBe(1)
+    expect(porNombre.Propia.proyectosActivos).toBe(0)
+    expect(porNombre.Otra.clientes).toBe(0)
+    expect(porNombre.Otra.proyectosActivos).toBe(1)
   })
 
   it('oculta las inactivas salvo que se pidan', async () => {

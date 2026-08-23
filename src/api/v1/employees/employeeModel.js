@@ -2,6 +2,7 @@ const mongoose = require('mongoose')
 const { ACCESS_LEVELS, EMPLOYEE_TYPES } = require('../../../constants')
 const { normalize } = require('../../../utils/text')
 const { isCalendarDate } = require('../../../utils/dates')
+const { idAString } = require('../../../utils/ids')
 
 /**
  * Empleado: LA PERSONA. Catálogo compartido (modelo-datos §5.2).
@@ -135,7 +136,7 @@ const employeeSchema = new mongoose.Schema(
           fechaNacimiento: ret.fechaNacimiento ?? null,
           email: ret.email ?? null,
           telefono: ret.telefono ?? null,
-          categoriaId: ret.categoriaId ? ret.categoriaId.toString() : null,
+          categoriaId: idAString(ret.categoriaId),
           tipo: ret.tipo,
           acceso: ret.acceso
             ? {

@@ -25,10 +25,14 @@
     "db:indices": "node scripts/syncIndexes.js",
     "seed:admin": "node scripts/seedAdminUser.js",
     "seed:plantillas": "node scripts/seedChecklistTemplates.js",
+    "db:expedientes": "node scripts/syncRecords.js",
+    "r2:check": "node scripts/checkR2.js",
     "migrate:usuarios": "node scripts/migrateUsersToEmployees.js",
     "db:status": "docker compose exec mongo mongosh --port 27018 --quiet --eval 'rs.status().members.map(m => m.name + \" \" + m.stateStr)'"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1116.0",
+    "@aws-sdk/s3-request-presigner": "^3.1116.0",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.5",
     "cors": "^2.8.5",
@@ -39,6 +43,7 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.5",
+    "multer": "^2.2.0",
     "winston": "^3.17.0",
     "zod": "^3.24.1"
   },

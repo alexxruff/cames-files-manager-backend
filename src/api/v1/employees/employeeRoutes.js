@@ -1,5 +1,6 @@
 const express = require('express')
 const employeeController = require('./employeeController')
+const recordController = require('../records/recordController')
 const asyncHandler = require('../../../utils/asyncHandler')
 const validateRequest = require('../../../middlewares/validateRequest')
 const { protect, requireCapability } = require('../../../middlewares/authMiddleware')
@@ -68,6 +69,15 @@ router.patch(
   employeeEstadoValidation,
   validateRequest,
   asyncHandler(employeeController.setEstado)
+)
+
+// El expediente de la persona. Se crea solo si no existía.
+router.get(
+  '/:id/expediente',
+  requireCapability(CAPABILITIES.VIEW_EMPLOYEES),
+  employeeIdValidation,
+  validateRequest,
+  asyncHandler(recordController.porEmpleado)
 )
 
 // ─── Accesos: sub-recurso del empleado (sólo `rh_admin`) ─────────────────────

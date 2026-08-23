@@ -5,6 +5,10 @@ const Credential = require('../../src/api/v1/credentials/credentialModel')
 const Company = require('../../src/api/v1/companies/companyModel')
 const Category = require('../../src/api/v1/categories/categoryModel')
 const Affiliation = require('../../src/api/v1/affiliations/affiliationModel')
+const Client = require('../../src/api/v1/clients/clientModel')
+const Portfolio = require('../../src/api/v1/portfolios/portfolioModel')
+const Project = require('../../src/api/v1/projects/projectModel')
+const Assignment = require('../../src/api/v1/assignments/assignmentModel')
 
 /**
  * Fábricas para el modelo nuevo: empresas, empleados, adscripciones y accesos.
@@ -138,6 +142,56 @@ async function crearEmpleadoConSesion(datos = {}) {
   }
 }
 
+async function crearCliente(datos = {}) {
+  return Client.create({ nombre: datos.nombre || `Cliente ${siguiente()}`, ...datos })
+}
+
+/** Mete un cliente a la cartera de una empresa. Sin esto no hay proyecto posible. */
+async function agregarACartera(empresa, cliente, datos = {}) {
+  return Portfolio.create({
+    empresaId: empresa._id,
+    clienteId: cliente._id,
+    activo: datos.activo ?? true,
+    ...datos
+  })
+}
+
+/**
+ * Proyecto listo para usar: crea el cliente y su cartera si no se pasan, porque
+ * el servicio exige que el cliente esté en la cartera activa de la empresa.
+ */
+async function crearProyecto(empresa, datos = {}) {
+  const cliente = datos.cliente || (await crearCliente())
+  if (!datos.sinCartera) await agregarACartera(empresa, cliente)
+
+  const categoria = datos.categoria || (await crearCategoria(undefined, 'mano_de_obra'))
+
+  const proyecto = await Project.create({
+    empresaId: empresa._id,
+    clienteId: cliente._id,
+    nombre: datos.nombre || `Proyecto ${siguiente()}`,
+    fechaInicio: datos.fechaInicio || '2026-09-01',
+    fechaFinEstimada: datos.fechaFinEstimada || '2027-03-01',
+    categorias: datos.categorias || [categoria._id],
+    estado: datos.estado || 'en_curso',
+    fechaFinReal: datos.fechaFinReal ?? null
+  })
+
+  return { proyecto, cliente, categoria }
+}
+
+/** Asigna a alguien a un proyecto, saltándose las validaciones del servicio. */
+async function asignar(proyecto, empleado, categoriaId, datos = {}) {
+  return Assignment.create({
+    proyectoId: proyecto._id,
+    empleadoId: empleado._id,
+    categoriaId: categoriaId || proyecto.categorias[0],
+    fechaAsignacion: datos.fechaAsignacion || '2026-09-15',
+    fechaSalida: datos.fechaSalida ?? null,
+    activo: datos.activo ?? true
+  })
+}
+
 const auth = (token) => ({ Authorization: `Bearer ${token}` })
 
 module.exports = {
@@ -147,5 +201,9 @@ module.exports = {
   crearEmpleado,
   adscribir,
   crearEmpleadoConSesion,
+  crearCliente,
+  agregarACartera,
+  crearProyecto,
+  asignar,
   auth
 }

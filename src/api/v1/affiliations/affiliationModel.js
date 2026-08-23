@@ -1,6 +1,7 @@
 const mongoose = require('mongoose')
 const { AREAS, CONTRACT_TYPES, isTemporaryContract } = require('../../../constants')
 const { isCalendarDate, isAfter } = require('../../../utils/dates')
+const { idAString } = require('../../../utils/ids')
 
 /**
  * Adscripción: el vínculo empresa ↔ empleado (modelo-datos §5b.1).
@@ -73,8 +74,8 @@ const affiliationSchema = new mongoose.Schema(
       transform(doc, ret) {
         return {
           _id: ret._id.toString(),
-          empresaId: ret.empresaId ? ret.empresaId.toString() : null,
-          empleadoId: ret.empleadoId ? ret.empleadoId.toString() : null,
+          empresaId: idAString(ret.empresaId),
+          empleadoId: idAString(ret.empleadoId),
           areas: ret.areas || [],
           tipoContrato: ret.tipoContrato,
           fechaIngreso: ret.fechaIngreso,

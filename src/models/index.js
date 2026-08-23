@@ -22,7 +22,12 @@ const modelos = {
   Client: require('../api/v1/clients/clientModel'),
   Category: require('../api/v1/categories/categoryModel'),
   Affiliation: require('../api/v1/affiliations/affiliationModel'),
-  ChecklistTemplate: require('../api/v1/checklistTemplates/checklistTemplateModel')
+  Portfolio: require('../api/v1/portfolios/portfolioModel'),
+  Project: require('../api/v1/projects/projectModel'),
+  Assignment: require('../api/v1/assignments/assignmentModel'),
+  ChecklistTemplate: require('../api/v1/checklistTemplates/checklistTemplateModel'),
+  Record: require('../api/v1/records/recordModel'),
+  AccessLog: require('../api/v1/accessLogs/accessLogModel')
 }
 
 /** Nombres que deben estar registrados. Lo usa la prueba de humo. */

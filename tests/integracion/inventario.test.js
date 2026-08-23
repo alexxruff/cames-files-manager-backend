@@ -40,20 +40,18 @@ describe('GET /api/v1 — inventario de la API', () => {
     )
   })
 
-  it('no anuncia como implementado nada del dominio de expedientes', async () => {
+  it('no anuncia como implementado nada de los dominios que faltan', async () => {
     const { body } = await request(app).get('/api/v1')
     const rutas = body.data.implementados.map((r) => r.ruta).join(' ')
 
     // Dominios que todavía NO tienen rutas. Al implementar uno, quítalo de aquí:
     // esta prueba es el candado que avisa si el inventario se desincroniza.
     for (const pendiente of [
-      'expedientes',
       'alertas',
       'plantillas',
       'reportes',
-      'proyectos',
       'adscripciones',
-      'carteras'
+      'organizacion'
     ]) {
       expect(rutas).not.toContain(pendiente)
     }
@@ -103,7 +101,7 @@ describe('GET /api/v1 — inventario de la API', () => {
     const { body } = await request(app).get('/api/v1')
     expect(body.data.nota).toMatch(/NO IMPLEMENTADO/)
 
-    const inexistente = await request(app).get('/api/v1/expedientes')
+    const inexistente = await request(app).get('/api/v1/no-existe-esta-ruta')
     const sinSesion = await request(app).get('/api/v1/empleados')
     const movida = await request(app).get('/api/v1/usuarios')
 

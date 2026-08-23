@@ -53,6 +53,36 @@ const schema = z.object({
   // Zona horaria de negocio: las fechas de calendario se interpretan aquí.
   TIMEZONE: z.string().default('America/Mexico_City'),
 
+  // ─── Almacenamiento de archivos (Cloudflare R2) ───────────────────────────
+  // El bucket es PRIVADO y distinto al de talentlink: nunca se expone una URL
+  // pública, cada apertura pasa por una URL firmada de corta vida.
+  //
+  // `memoria` guarda los archivos en el proceso: sirve para desarrollar y probar
+  // sin credenciales, y se pierde al reiniciar. En producción, `r2`.
+  STORAGE_DRIVER: z.enum(['r2', 'memoria']).default('r2'),
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_BUCKET: z.string().optional(),
+  /*
+   * Carpeta dentro del bucket, sin barras al inicio ni al final: el bucket se
+   * comparte con otros proyectos (como `humenta-cv/cvs` en talentlink). Vacío =
+   * la raíz del bucket.
+   */
+  R2_PREFIX: z
+    .string()
+    .default('')
+    .transform((valor) => valor.replace(/^\/+|\/+$/g, '')),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  /** Vida de la URL firmada, en segundos. 10 minutos por defecto (spec §7). */
+  R2_SIGNED_URL_TTL: z.coerce.number().int().positive().default(600),
+
+  /** Tamaño máximo de un documento del expediente. 10 MB (spec §6.5). */
+  MAX_UPLOAD_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(10 * 1024 * 1024),
+
   // ─── Administrador inicial (bootstrap) ────────────────────────────────────
   // Se crea SOLO si la colección de usuarios está vacía, en la primera corrida.
   // Es la única forma de entrar a un sistema recién instalado: no hay registro

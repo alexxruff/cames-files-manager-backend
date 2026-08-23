@@ -71,7 +71,11 @@ describe('POST /api/v1/empleados — el alta', () => {
     })
     // Forma estable: lo que falta viene vacío, no ausente.
     expect(renglon.asignaciones).toEqual([])
-    expect(renglon.avanceExpediente).toBeNull()
+    // El alta crea el expediente en la misma transacción (D-41), así que el
+    // renglón ya trae su id y su avance. Aquí sale 100% porque este escenario no
+    // siembra plantillas: un checklist sin requeridos está completo.
+    expect(renglon.expedienteId).toEqual(expect.any(String))
+    expect(renglon.avanceExpediente).toBe(100)
   })
 
   it('lo escribe todo en una transacción: sin adscripción no queda persona huérfana', async () => {

@@ -1,0 +1,492 @@
+const mongoose = require('mongoose')
+const Record = require('./recordModel')
+const Employee = require('../employees/employeeModel')
+const Affiliation = require('../affiliations/affiliationModel')
+const ChecklistTemplate = require('../checklistTemplates/checklistTemplateModel')
+const AccessLog = require('../accessLogs/accessLogModel')
+const employeeService = require('../employees/employeeService')
+const storage = require('../../../services/storageService')
+const { AppError } = require('../../../middlewares/errorHandler')
+const { detectarTipo, pareceHeic, TIPOS_PERMITIDOS } = require('../../../utils/fileTypes')
+const { isCalendarDate, addMonths, today, compare } = require('../../../utils/dates')
+const {
+  construirChecklist,
+  documentoEnBlanco,
+  syncChecklist,
+  unirRenglones,
+  resolveTemplate,
+  computeProgress,
+  resolveDocuments
+} = require('../../../utils/domain')
+const {
+  EXPIRING_DOCUMENT_TYPES,
+  documentLabel,
+  isSensitiveDocument
+} = require('../../../constants')
+const { can, CAPABILITIES } = require('../../../utils/permissions')
+
+/**
+ * Expedientes y sus documentos (backend-spec §6.5).
+ *
+ * **Uno por empleado**, creado a partir de la unión de las plantillas de sus
+ * adscripciones activas. El expediente se crea con la persona; si alguien quedó
+ * sin él —por haberse dado de alta antes de que esto existiera— se crea al
+ * primer acceso, así que no hace falta una migración.
+ */
+/**
+ * `claveAlmacenamiento` es `select: false`, así que no viene si no se pide. Hay
+ * que pedirla **en toda lectura que después vaya a guardar**: al modificar el
+ * arreglo de versiones, Mongoose lo reescribe completo, y lo que no se cargó se
+ * guarda vacío. Sin esto, reemplazar un documento borraba la clave de las
+ * versiones anteriores y sus archivos quedaban inalcanzables para siempre — que
+ * es justo lo que el versionado existe para evitar. Ver D-41.
+ */
+const CAMPOS_OCULTOS =
+  '+documentos.archivo.claveAlmacenamiento +documentos.versiones.archivo.claveAlmacenamiento'
+
+class RecordService {
+  /**
+   * Devuelve el expediente del empleado, creándolo si no existe. Idempotente.
+   *
+   * @param {string} empleadoId
+   * @param {object} [opciones]
+   * @param {import('mongoose').ClientSession} [opciones.session] para crearlo
+   *   dentro de la transacción del alta del empleado.
+   */
+  async asegurarParaEmpleado(empleadoId, { session } = {}) {
+    const existente = await Record.findOne({ empleadoId })
+      .select(CAMPOS_OCULTOS)
+      .session(session || null)
+    if (existente) return existente
+
+    const { documentos, plantillas } = await this.#checklistQueLeToca(empleadoId, session)
+
+    try {
+      const [creado] = await Record.create([{ empleadoId, plantillas, documentos }], {
+        session
+      })
+      return creado
+    } catch (error) {
+      // Otra petición lo creó en paralelo: el índice único lo impidió.
+      if (error.code === 11000) {
+        return Record.findOne({ empleadoId })
+          .select(CAMPOS_OCULTOS)
+          .session(session || null)
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Re-sincroniza el checklist con lo que hoy exigen sus adscripciones, sin
+   * perder trabajo hecho (modelo-datos §6.2).
+   */
+  /**
+   * Como `asegurarParaEmpleado`, pero además rellena el checklist si quedó
+   * vacío. Un expediente sin renglones no se puede llenar: no sale en los
+   * faltantes y —antes de D-42— tampoco aceptaba subidas.
+   *
+   * Se sana **al leer** porque la causa siempre es que el checklist no se pudo
+   * resolver al crearlo (plantillas mal guardadas, o alta sin adscripción
+   * activa), y esa causa se corrige después. No es un `sincronizar` en cada
+   * lectura: si ya tiene renglones, no escribe nada.
+   */
+  async #asegurarConChecklist(empleadoId) {
+    const expediente = await this.asegurarParaEmpleado(empleadoId)
+    return this.#rellenarSiEstaVacio(expediente)
+  }
+
+  async #rellenarSiEstaVacio(expediente) {
+    if (expediente.documentos.length > 0) return expediente
+    return this.sincronizar(expediente.empleadoId)
+  }
+
+  async sincronizar(empleadoId, { session } = {}) {
+    const expediente = await this.asegurarParaEmpleado(empleadoId, { session })
+    const { documentos, plantillas } = await this.#checklistQueLeToca(empleadoId, session)
+
+    expediente.documentos = syncChecklist(
+      expediente.documentos.map((d) => d.toObject()),
+      documentos.map((d) => ({
+        tipo: d.tipo,
+        requerido: d.requerido,
+        vigenciaMeses: d.vigenciaMeses
+      }))
+    )
+    expediente.plantillas = plantillas
+    await expediente.save({ session })
+
+    return expediente
+  }
+
+  /** El expediente de un empleado visible, con su avance derivado. */
+  async porEmpleado(empleadoId, contexto = {}) {
+    // 404 si el empleado no existe o no es visible para quien pregunta.
+    const renglon = await employeeService.getById(empleadoId, contexto)
+    const expediente = await this.#asegurarConChecklist(empleadoId)
+
+    return this.#formatear(expediente, renglon)
+  }
+
+  async porId(expedienteId, contexto = {}) {
+    if (!mongoose.isValidObjectId(expedienteId)) {
+      throw new AppError(400, 'El expediente indicado no es válido')
+    }
+    const expediente = await Record.findById(expedienteId)
+    if (!expediente) throw AppError.notFound('El expediente no existe')
+
+    // El alcance es el del empleado: si no lo ve, el expediente no existe para él.
+    const renglon = await employeeService.getById(expediente.empleadoId, contexto)
+    return this.#formatear(await this.#rellenarSiEstaVacio(expediente), renglon)
+  }
+
+  /**
+   * Sube (o reemplaza) un documento del checklist.
+   *
+   * Reglas del spec §6.5:
+   * - Subir se permite **desde cualquier estatus**: así se reemplaza uno
+   *   rechazado o uno que venció.
+   * - La versión nueva se numera, se inserta **al inicio**, marca
+   *   `reemplazadaEn` en la anterior, pone el documento en `in_review` y
+   *   **limpia el rechazo anterior**: no debe contaminar la entrega nueva.
+   * - Un empleado dado de baja **del sistema** tiene el expediente en sólo
+   *   lectura. La baja de una sola adscripción no lo bloquea: sigue trabajando
+   *   en otra empresa.
+   */
+  async subirDocumento(expedienteId, tipo, datos, contexto = {}) {
+    const { expediente, empleado } = await this.#paraEscritura(expedienteId, contexto)
+
+    /*
+     * Se puede subir cualquiera de los 12 tipos del catálogo, esté o no en su
+     * checklist: la plantilla define qué es OBLIGATORIO, no qué se permite
+     * guardar. Si no estaba, entra como renglón **no requerido**.
+     *
+     * Antes esto era un 400, y era un error de diseño con consecuencias: si las
+     * plantillas fallaban —o la persona no tenía adscripción activa— el
+     * expediente nacía vacío y no se podía subir NADA. Un documento que nadie
+     * exige sigue siendo un documento que RH necesita guardar. `syncChecklist`
+     * conserva estos renglones. Ver D-42.
+     */
+    let documento = expediente.documento(tipo)
+    if (!documento) {
+      expediente.documentos.push(documentoEnBlanco({ tipo, requerido: false }))
+      documento = expediente.documento(tipo)
+    }
+
+    // 1. El tipo real del archivo, por contenido. Ni la extensión ni el
+    //    Content-Type sirven: los controla quien sube.
+    const archivo = datos.archivo
+    if (!archivo?.buffer?.length) {
+      throw AppError.validation('Adjunta el archivo del documento', [
+        { msg: 'El archivo es requerido', path: 'archivo' }
+      ])
+    }
+
+    const tipoReal = detectarTipo(archivo.buffer)
+    if (!tipoReal) {
+      const pista = pareceHeic(archivo.buffer)
+        ? ' Las fotos de iPhone (HEIC) no se pueden abrir en todos los navegadores: conviértela a JPG o PDF.'
+        : ''
+      throw new AppError(
+        415,
+        `El archivo no es un ${TIPOS_PERMITIDOS.join(', ')}.${pista}`
+      )
+    }
+
+    // 2. La vigencia, si este documento caduca.
+    const vigenciaHasta = await this.#resolverVigencia(documento, empleado, datos)
+
+    // 3. Al almacenamiento primero, a la base después.
+    const version = (documento.versiones?.length || 0) + 1
+    const clave = storage.construirClave({
+      empleadoId: empleado._id,
+      tipo,
+      version,
+      extension: tipoReal.extension
+    })
+
+    await storage.subir({
+      buffer: archivo.buffer,
+      clave,
+      contentType: tipoReal.mime
+    })
+
+    const registroArchivo = {
+      nombre: archivo.nombreOriginal || `${tipo}.${tipoReal.extension}`,
+      mime: tipoReal.mime,
+      tamanoBytes: archivo.buffer.length,
+      // El NOMBRE de quien sube, no sólo el id: es histórico.
+      subidoPor: contexto.user?.nombre || 'Sistema',
+      subidoPorId: contexto.user?._id,
+      subidoEn: new Date(),
+      claveAlmacenamiento: clave
+    }
+
+    try {
+      // La versión anterior queda marcada como reemplazada.
+      if (documento.versiones?.length > 0) {
+        documento.versiones[0].reemplazadaEn = new Date()
+      }
+
+      documento.versiones.unshift({
+        version,
+        archivo: registroArchivo,
+        estatus: 'in_review',
+        vigenciaHasta
+      })
+
+      documento.estatus = 'in_review'
+      documento.archivo = registroArchivo
+      documento.vigenciaHasta = vigenciaHasta
+      // El rechazo anterior no debe contaminar la entrega nueva.
+      documento.motivoRechazo = null
+      documento.revisadoPor = null
+      documento.revisadoEn = null
+
+      await expediente.save()
+    } catch (error) {
+      // Si la base falla, el objeto ya subido quedaría huérfano. Se limpia.
+      await storage.borrar(clave)
+      throw error
+    }
+
+    return this.#formatear(
+      expediente,
+      await employeeService.getById(empleado._id, contexto)
+    )
+  }
+
+  /**
+   * URL firmada para abrir una versión concreta, y **registro en bitácora**.
+   *
+   * El bucket es privado: no hay URL pública. Cada apertura pasa por aquí, que
+   * comprueba permisos, firma por 10 minutos y deja rastro — requisito legal, no
+   * un extra.
+   */
+  async urlDeVersion(expedienteId, tipo, version, contexto = {}) {
+    const expediente = await Record.findById(expedienteId).select(
+      '+documentos.versiones.archivo.claveAlmacenamiento'
+    )
+    if (!expediente) throw AppError.notFound('El expediente no existe')
+
+    const renglon = await employeeService.getById(expediente.empleadoId, contexto)
+    const documento = expediente.documento(tipo)
+    if (!documento) throw AppError.notFound('Ese documento no está en el expediente')
+
+    // El jefe de área ve que está entregado, pero no puede abrir los sensibles.
+    if (isSensitiveDocument(tipo) && !this.#puedeAbrirSensibles(contexto)) {
+      throw AppError.forbidden(
+        `"${documentLabel(tipo)}" contiene datos personales sensibles y no tienes permiso para abrirlo`
+      )
+    }
+
+    const laVersion = (documento.versiones || []).find(
+      (v) => v.version === Number(version)
+    )
+    if (!laVersion) throw AppError.notFound('Esa versión del documento no existe')
+
+    const url = await storage.urlDeDescarga(laVersion.archivo.claveAlmacenamiento, {
+      nombreArchivo: laVersion.archivo.nombre,
+      descargar: contexto.descargar === true
+    })
+
+    await AccessLog.create({
+      empleadoId: contexto.user?._id,
+      usuarioNombre: contexto.user?.nombre || 'Sistema',
+      accion: contexto.descargar ? 'descargar_documento' : 'ver_documento',
+      expedienteId: expediente._id,
+      sujetoId: expediente.empleadoId,
+      sujetoNombre: renglon.empleado.nombre,
+      tipoDocumento: tipo,
+      version: Number(version),
+      ip: contexto.ip || null,
+      userAgent: contexto.userAgent || null
+    })
+
+    return {
+      url,
+      expiraEnSegundos: contexto.ttlSegundos || undefined,
+      archivo: {
+        nombre: laVersion.archivo.nombre,
+        mime: laVersion.archivo.mime,
+        tamanoBytes: laVersion.archivo.tamanoBytes
+      }
+    }
+  }
+
+  // ─── Internos ──────────────────────────────────────────────────────────────
+
+  /** El checklist que le toca hoy, por unión de sus adscripciones activas. */
+  async #checklistQueLeToca(empleadoId, session) {
+    const [adscripciones, plantillas] = await Promise.all([
+      Affiliation.find({ empleadoId, activo: true })
+        .select('empresaId areas tipoContrato activo')
+        .session(session || null),
+      /*
+       * `$ne: false`, no `=== true`: es la misma regla que aplica
+       * `resolveTemplate` (`p.activo !== false`). Con `activo: true` una
+       * plantilla guardada antes de que el campo existiera queda invisible, y
+       * como el checklist sale de aquí, TODO el expediente nace vacío y no se
+       * puede subir nada. Pasó en la base de desarrollo. Ver D-42.
+       */
+      ChecklistTemplate.find({ activo: { $ne: false } }).session(session || null)
+    ])
+
+    const planas = plantillas.map((p) => ({
+      _id: p._id,
+      clave: p.clave,
+      activo: p.activo,
+      empresaId: p.empresaId,
+      areas: p.areas,
+      tiposContrato: p.tiposContrato,
+      documentos: (p.documentos || []).map((d) => ({
+        tipo: d.tipo,
+        requerido: d.requerido,
+        vigenciaMeses: d.vigenciaMeses ?? null
+      }))
+    }))
+
+    /*
+     * Sin adscripciones activas no hay de dónde sacar el checklist: se usa la
+     * plantilla general como red de seguridad, para que el expediente exista y
+     * se pueda empezar a llenar. Al adscribirlo se re-sincroniza.
+     */
+    if (adscripciones.length === 0) {
+      const general = resolveTemplate(planas, { tipoContrato: 'indeterminado' })
+      if (!general) return { documentos: [], plantillas: [] }
+      const renglones = unirRenglones([general.documentos])
+      return {
+        documentos: renglones.map((r) => ({
+          tipo: r.tipo,
+          requerido: r.requerido,
+          estatus: 'pending',
+          vigenciaMeses: r.vigenciaMeses,
+          vigenciaHasta: null,
+          archivo: null,
+          motivoRechazo: null,
+          revisadoPor: null,
+          revisadoEn: null,
+          versiones: []
+        })),
+        plantillas: [general._id]
+      }
+    }
+
+    return construirChecklist(
+      adscripciones.map((a) => ({
+        empresaId: a.empresaId,
+        areas: a.areas,
+        tipoContrato: a.tipoContrato,
+        activo: a.activo
+      })),
+      planas
+    )
+  }
+
+  /** Expediente + empleado, comprobando que se pueda escribir en él. */
+  async #paraEscritura(expedienteId, contexto) {
+    if (!mongoose.isValidObjectId(expedienteId)) {
+      throw new AppError(400, 'El expediente indicado no es válido')
+    }
+    const expediente = await Record.findById(expedienteId).select(CAMPOS_OCULTOS)
+    if (!expediente) throw AppError.notFound('El expediente no existe')
+
+    // Alcance: si no ve al empleado, para él el expediente no existe.
+    await employeeService.getById(expediente.empleadoId, contexto)
+
+    const empleado = await Employee.findById(expediente.empleadoId)
+    if (!empleado.activo) {
+      throw new AppError(
+        400,
+        'Esta persona está dada de baja del sistema: su expediente es de sólo lectura'
+      )
+    }
+
+    return { expediente, empleado }
+  }
+
+  /**
+   * La vigencia con la que queda la versión nueva (spec §6.5 y §7.7 del modelo
+   * anterior, que se conserva):
+   *
+   * - `contrato`: la fecha de término de su contrato **temporal más próximo**. Si
+   *   todos sus contratos son indeterminados, no lleva vigencia.
+   * - Los demás que caducan: la que manden, o hoy + `vigenciaMeses` como
+   *   propuesta si no la mandan.
+   */
+  async #resolverVigencia(documento, empleado, datos) {
+    const caduca = EXPIRING_DOCUMENT_TYPES.includes(documento.tipo)
+
+    if (datos.vigenciaHasta) {
+      if (!isCalendarDate(datos.vigenciaHasta)) {
+        throw AppError.validation('La vigencia debe tener el formato AAAA-MM-DD', [
+          { msg: 'Fecha con formato inválido', path: 'vigenciaHasta' }
+        ])
+      }
+      if (!caduca) {
+        throw AppError.validation(
+          `"${documentLabel(documento.tipo)}" no lleva vigencia`,
+          [{ msg: 'Este documento no caduca', path: 'vigenciaHasta' }]
+        )
+      }
+      return datos.vigenciaHasta
+    }
+
+    if (!caduca) return null
+
+    if (documento.tipo === 'contrato') {
+      const temporales = await Affiliation.find({
+        empleadoId: empleado._id,
+        activo: true,
+        fechaTerminoContrato: { $ne: null }
+      }).select('fechaTerminoContrato')
+
+      if (temporales.length === 0) return null // indeterminado: no vence
+      // La más próxima: es la condición más estricta.
+      return temporales
+        .map((a) => a.fechaTerminoContrato)
+        .sort((a, b) => compare(a, b))[0]
+    }
+
+    if (documento.vigenciaMeses) {
+      return addMonths(today(), documento.vigenciaMeses)
+    }
+
+    throw AppError.validation(
+      `"${documentLabel(documento.tipo)}" necesita fecha de vigencia`,
+      [{ msg: 'Indica hasta cuándo es vigente', path: 'vigenciaHasta' }]
+    )
+  }
+
+  #puedeAbrirSensibles(contexto) {
+    return can(contexto.user?.acceso, CAPABILITIES.OPEN_SENSITIVE_DOCUMENTS)
+  }
+
+  /**
+   * Expediente + empleado + avance derivado, listo para responder.
+   *
+   * `empleado` es el **RenglonEmpleado** completo, la misma forma que devuelven
+   * `/empleados` y las rutas de acceso: así `data.empleado` significa siempre lo
+   * mismo y la pantalla del expediente tiene a mano su empresa y su contrato.
+   *
+   * Los estatus `expiring` y `expired` se derivan aquí al leer; en la base sólo
+   * viven los cuatro persistibles.
+   */
+  /**
+   * Forma de respuesta única de todo el módulo. `empleado` es **el mismo renglón
+   * que devuelve `GET /empleados/:id`** —con categoría y adscripciones—, en las
+   * tres rutas: la del alta del documento incluida. Si una devolviera sólo la
+   * persona, el front tendría que ramificar por endpoint.
+   */
+  #formatear(expediente, renglonEmpleado) {
+    const json = expediente.toJSON()
+
+    return {
+      expediente: { ...json, documentos: resolveDocuments(json.documentos) },
+      empleado: renglonEmpleado,
+      avance: computeProgress(json.documentos)
+    }
+  }
+}
+
+module.exports = new RecordService()

@@ -18,8 +18,27 @@ async function ensureBaseChecklistTemplates() {
   const claves = BASE_TEMPLATES.map((p) => p.clave)
   const existentes = await ChecklistTemplate.find({
     clave: { $in: claves },
-    clienteId: null
+    empresaId: null
   }).select('clave')
+
+  /*
+   * Sanea las plantillas base que se guardaron con el modelo anterior: les
+   * falta `activo` (y `empresaId`), y como la resolución del checklist filtra
+   * por esos campos, una plantilla así deja los expedientes VACÍOS. No toca
+   * `documentos`: ahí sí puede haber ediciones de un rh_admin. Ver D-42.
+   */
+  const saneadas = await ChecklistTemplate.updateMany(
+    { esBase: true, $or: [{ activo: { $exists: false } }, { activo: null }] },
+    { $set: { activo: true }, $unset: { clienteId: '' } },
+    // `strict: false` es obligatorio: `clienteId` ya no está en el esquema y
+    // Mongoose descarta en silencio el `$unset` de un campo que no conoce.
+    { strict: false }
+  )
+  if (saneadas.modifiedCount > 0) {
+    logger.warn('Plantillas base del modelo anterior saneadas (les faltaba `activo`)', {
+      cantidad: saneadas.modifiedCount
+    })
+  }
 
   const yaEstan = new Set(existentes.map((p) => p.clave))
   const faltantes = BASE_TEMPLATES.filter((p) => !yaEstan.has(p.clave))

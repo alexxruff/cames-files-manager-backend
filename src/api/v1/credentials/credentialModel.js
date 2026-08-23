@@ -1,5 +1,6 @@
 const mongoose = require('mongoose')
 const bcrypt = require('bcryptjs')
+const { idAString } = require('../../../utils/ids')
 
 /**
  * Credencial: el material secreto de un acceso. Uno a uno con `Employee`.
@@ -60,7 +61,7 @@ const credentialSchema = new mongoose.Schema(
       transform(doc, ret) {
         return {
           _id: ret._id.toString(),
-          empleadoId: ret.empleadoId ? ret.empleadoId.toString() : null,
+          empleadoId: idAString(ret.empleadoId),
           ultimoAccesoEn: ret.ultimoAccesoEn ?? null,
           intentosFallidos: ret.intentosFallidos,
           bloqueadaHasta: ret.bloqueadaHasta ?? null,

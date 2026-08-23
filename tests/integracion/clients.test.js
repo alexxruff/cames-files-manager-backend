@@ -2,7 +2,12 @@ const request = require('supertest')
 const mongoose = require('mongoose')
 const app = require('../../src/app')
 const Client = require('../../src/api/v1/clients/clientModel')
-const { crearEmpleadoConSesion, auth } = require('../helpers/factories')
+const {
+  crearEmpleadoConSesion,
+  crearEmpresa,
+  agregarACartera,
+  auth
+} = require('../helpers/factories')
 
 const RUTA = '/api/v1/clientes'
 
@@ -16,6 +21,14 @@ const nuevo = {
 
 /** Sesión de un nivel que puede administrar clientes. */
 const sesionAdmin = () => crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+
+/**
+ * Administrador de plataforma: ve el catálogo completo. Se usa en las pruebas de
+ * paginación, orden y búsqueda para que midan eso y no el filtro por cartera,
+ * que tiene su propio bloque más abajo.
+ */
+const sesionGlobal = () =>
+  crearEmpleadoConSesion({ alcanceGlobal: true, sinAdscripcion: true })
 
 describe('POST /api/v1/clientes', () => {
   beforeAll(() => Client.init())
@@ -123,22 +136,24 @@ describe('POST /api/v1/clientes', () => {
 })
 
 describe('GET /api/v1/clientes', () => {
-  it('cualquiera con sesión lee el catálogo: puebla los selectores', async () => {
-    await Client.create({ nombre: 'Grupo Alvarado' })
+  it('cualquiera con sesión lee los clientes de la cartera de su empresa', async () => {
+    const cliente = await Client.create({ nombre: 'Grupo Alvarado' })
 
     for (const nivel of ['rh_admin', 'rh_consulta', 'jefe_area']) {
-      const { token } = await crearEmpleadoConSesion({
+      const { token, empresa } = await crearEmpleadoConSesion({
         nivelAcceso: nivel,
         areas: ['obra']
       })
+      await agregarACartera(empresa, cliente)
+
       const res = await request(app).get(RUTA).set(auth(token))
       expect(res.status).toBe(200)
-      expect(res.body.data.clientes).toHaveLength(1)
+      expect(res.body.data.clientes.map((c) => c.nombre)).toEqual(['Grupo Alvarado'])
     }
   })
 
   it('devuelve total, pagina y porPagina, y corta después de ordenar', async () => {
-    const { token } = await sesionAdmin()
+    const { token } = await sesionGlobal()
     for (const nombre of ['Cliente C', 'Cliente A', 'Cliente B']) {
       await Client.create({ nombre })
     }
@@ -157,7 +172,7 @@ describe('GET /api/v1/clientes', () => {
   })
 
   it('una página más allá del final devuelve lista vacía y el total real', async () => {
-    const { token } = await sesionAdmin()
+    const { token } = await sesionGlobal()
     await Client.create({ nombre: 'Grupo Alvarado' })
 
     const res = await request(app).get(`${RUTA}?pagina=99`).set(auth(token))
@@ -166,7 +181,7 @@ describe('GET /api/v1/clientes', () => {
   })
 
   it('busca ignorando acentos y con coincidencia parcial', async () => {
-    const { token } = await sesionAdmin()
+    const { token } = await sesionGlobal()
     await Client.create({ nombre: 'Constructora Ángeles' })
     await Client.create({ nombre: 'Grupo Alvarado' })
 
@@ -175,7 +190,7 @@ describe('GET /api/v1/clientes', () => {
   })
 
   it('ordena en los dos sentidos con criterio español', async () => {
-    const { token } = await sesionAdmin()
+    const { token } = await sesionGlobal()
     for (const nombre of ['Zamora', 'Ávila', 'Núñez']) await Client.create({ nombre })
 
     const asc = await request(app).get(`${RUTA}?orden=nombre_asc`).set(auth(token))
@@ -194,7 +209,7 @@ describe('GET /api/v1/clientes', () => {
   })
 
   it('oculta los inactivos salvo que se pidan', async () => {
-    const { token } = await sesionAdmin()
+    const { token } = await sesionGlobal()
     await Client.create({ nombre: 'Activo' })
     await Client.create({ nombre: 'Desactivado', activo: false })
 
@@ -208,7 +223,7 @@ describe('GET /api/v1/clientes', () => {
   })
 
   it('400 con parámetros inválidos', async () => {
-    const { token } = await sesionAdmin()
+    const { token } = await sesionGlobal()
     for (const ruta of [
       `${RUTA}?pagina=0`,
       `${RUTA}?porPagina=500`,
@@ -220,7 +235,7 @@ describe('GET /api/v1/clientes', () => {
   })
 
   it('el detalle existe y 404 si no', async () => {
-    const { token } = await sesionAdmin()
+    const { token } = await sesionGlobal()
     const cliente = await Client.create({ nombre: 'Grupo Alvarado' })
 
     const existe = await request(app).get(`${RUTA}/${cliente._id}`).set(auth(token))
@@ -356,7 +371,7 @@ describe('PATCH /api/v1/clientes/:id/estado — la "eliminación"', () => {
   })
 
   it('desaparece del listado normal y vuelve al reactivarlo', async () => {
-    const { token } = await sesionAdmin()
+    const { token } = await sesionGlobal()
     const cliente = await Client.create({ nombre: 'Grupo Alvarado' })
 
     await request(app)
@@ -409,5 +424,115 @@ describe('PATCH /api/v1/clientes/:id/estado — la "eliminación"', () => {
 
     expect(sinCampo.status).toBe(400)
     expect(noExiste.status).toBe(404)
+  })
+})
+
+describe('Alcance del catálogo de clientes', () => {
+  it('sólo se ven los clientes de las carteras de sus empresas', async () => {
+    const { token, empresa } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+    const enCartera = await Client.create({ nombre: 'En mi cartera' })
+    await agregarACartera(empresa, enCartera)
+
+    // De otra empresa del grupo, y uno que no está en ninguna cartera.
+    const otra = await crearEmpresa()
+    const deOtra = await Client.create({ nombre: 'De otra empresa' })
+    await agregarACartera(otra, deOtra)
+    await Client.create({ nombre: 'Sin cartera' })
+
+    const res = await request(app).get(RUTA).set(auth(token))
+
+    expect(res.body.data.clientes.map((c) => c.nombre)).toEqual(['En mi cartera'])
+    expect(res.body.data.total).toBe(1)
+  })
+
+  it('un cliente sacado de la cartera deja de verse', async () => {
+    const { token, empresa } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+    const cliente = await Client.create({ nombre: 'Sacado' })
+    await agregarACartera(empresa, cliente, { activo: false })
+
+    const res = await request(app).get(RUTA).set(auth(token))
+    expect(res.body.data.clientes).toEqual([])
+  })
+
+  it('el administrador de plataforma ve el catálogo completo', async () => {
+    const { token } = await crearEmpleadoConSesion({
+      alcanceGlobal: true,
+      sinAdscripcion: true
+    })
+    await Client.create({ nombre: 'Sin cartera de nadie' })
+
+    const res = await request(app).get(RUTA).set(auth(token))
+    expect(res.body.data.total).toBe(1)
+  })
+
+  it('quien administra clientes puede pedir el catálogo completo', async () => {
+    // Es lo que evita crear duplicados al meter un cliente a la cartera: hay que
+    // poder comprobar si ya existe en el grupo.
+    const { token } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+    await Client.create({ nombre: 'Ya existe en el grupo' })
+
+    const suCartera = await request(app).get(RUTA).set(auth(token))
+    const catalogo = await request(app)
+      .get(`${RUTA}?catalogoCompleto=true`)
+      .set(auth(token))
+
+    expect(suCartera.body.data.total).toBe(0)
+    expect(catalogo.body.data.clientes.map((c) => c.nombre)).toEqual([
+      'Ya existe en el grupo'
+    ])
+  })
+
+  it('el jefe de área también, porque también da de alta clientes', async () => {
+    const { token } = await crearEmpleadoConSesion({
+      nivelAcceso: 'jefe_area',
+      areas: ['obra']
+    })
+    await Client.create({ nombre: 'Del catálogo' })
+
+    const res = await request(app).get(`${RUTA}?catalogoCompleto=true`).set(auth(token))
+    expect(res.status).toBe(200)
+    expect(res.body.data.total).toBe(1)
+  })
+
+  it('403 si rh_consulta pide el catálogo completo', async () => {
+    const { token } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_consulta' })
+
+    const res = await request(app).get(`${RUTA}?catalogoCompleto=true`).set(auth(token))
+    expect(res.status).toBe(403)
+    expect(res.body.message).toMatch(/catálogo completo/i)
+  })
+
+  it('el detalle de un cliente fuera de su cartera responde 404 a rh_consulta', async () => {
+    const cliente = await Client.create({ nombre: 'Ajeno' })
+
+    const consulta = await crearEmpleadoConSesion({ nivelAcceso: 'rh_consulta' })
+    const fuera = await request(app)
+      .get(`${RUTA}/${cliente._id}`)
+      .set(auth(consulta.token))
+    expect(fuera.status).toBe(404)
+
+    // Quien administra clientes sí lo ve: necesita el catálogo para no duplicar.
+    const admin = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+    const conAdmin = await request(app)
+      .get(`${RUTA}/${cliente._id}`)
+      .set(auth(admin.token))
+    expect(conAdmin.status).toBe(200)
+  })
+
+  it('rh_consulta sí ve el detalle de un cliente de su cartera', async () => {
+    const { token, empresa } = await crearEmpleadoConSesion({
+      nivelAcceso: 'rh_consulta'
+    })
+    const cliente = await Client.create({ nombre: 'En mi cartera' })
+    await agregarACartera(empresa, cliente)
+
+    const res = await request(app).get(`${RUTA}/${cliente._id}`).set(auth(token))
+    expect(res.status).toBe(200)
+  })
+
+  it('400 con catalogoCompleto inválido', async () => {
+    const { token } = await sesionAdmin()
+    const res = await request(app).get(`${RUTA}?catalogoCompleto=quizas`).set(auth(token))
+    expect(res.status).toBe(400)
   })
 })

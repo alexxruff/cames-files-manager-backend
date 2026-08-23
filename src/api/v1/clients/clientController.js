@@ -3,21 +3,29 @@ const { ok, created } = require('../../../utils/response')
 
 /** HTTP de clientes (backend-spec §6.2). */
 class ClientController {
-  /** GET /clientes?busqueda=&incluirInactivos=&orden=&pagina=&porPagina= */
+  #contexto(req) {
+    return { user: req.user, empresasVisibles: req.empresasVisibles }
+  }
+
+  /** GET /clientes?busqueda=&incluirInactivos=&orden=&catalogoCompleto=&pagina=&porPagina= */
   list = async (req, res) => {
-    const datos = await clientService.list({
-      busqueda: req.query.busqueda,
-      incluirInactivos: req.query.incluirInactivos === 'true',
-      orden: req.query.orden,
-      pagina: req.query.pagina,
-      porPagina: req.query.porPagina
-    })
+    const datos = await clientService.list(
+      {
+        busqueda: req.query.busqueda,
+        incluirInactivos: req.query.incluirInactivos === 'true',
+        orden: req.query.orden,
+        catalogoCompleto: req.query.catalogoCompleto === 'true',
+        pagina: req.query.pagina,
+        porPagina: req.query.porPagina
+      },
+      this.#contexto(req)
+    )
     return ok(res, datos)
   }
 
   /** GET /clientes/:id */
   getById = async (req, res) => {
-    const datos = await clientService.getById(req.params.id)
+    const datos = await clientService.getById(req.params.id, this.#contexto(req))
     return ok(res, datos)
   }
 

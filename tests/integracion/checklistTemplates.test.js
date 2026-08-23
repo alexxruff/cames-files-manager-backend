@@ -49,7 +49,8 @@ describe('Plantillas base del checklist — spec 6.5', () => {
 
       for (const plantilla of plantillas) {
         expect(plantilla.esBase).toBe(true)
-        expect(plantilla.clienteId).toBeNull()
+        expect(plantilla.empresaId).toBeNull()
+        expect(plantilla.activo).toBe(true)
       }
     })
 
@@ -120,7 +121,7 @@ describe('Plantillas base del checklist — spec 6.5', () => {
       expect(plantilla.toJSON().areas).toBeNull()
     })
 
-    it('no permite dos plantillas con la misma clave en el mismo cliente', async () => {
+    it('no permite dos plantillas con la misma clave en la misma empresa', async () => {
       await ensureBaseChecklistTemplates()
       await expect(
         ChecklistTemplate.create({
@@ -141,8 +142,10 @@ describe('Plantillas base del checklist — spec 6.5', () => {
       plantillas = (await ChecklistTemplate.find()).map((p) => p.toJSON())
     })
 
+    // `areas` en plural: una adscripción puede tener varias, y empata si
+    // cualquiera coincide.
     const clave = (area, tipoContrato) =>
-      resolveTemplate(plantillas, { area, tipoContrato }).clave
+      resolveTemplate(plantillas, { areas: [area], tipoContrato }).clave
 
     it('obra con indeterminado usa la de obra, no la general', () => {
       expect(clave('obra', 'indeterminado')).toBe('plantilla-obra')
@@ -167,7 +170,7 @@ describe('Plantillas base del checklist — spec 6.5', () => {
 
     it('genera un checklist completo y en blanco a partir de la plantilla resuelta', () => {
       const plantilla = resolveTemplate(plantillas, {
-        area: 'obra',
+        areas: ['obra'],
         tipoContrato: 'indeterminado'
       })
       const documentos = createChecklist(plantilla)

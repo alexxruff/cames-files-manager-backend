@@ -6,6 +6,10 @@ const employeeRoutes = require('../employees/employeeRoutes')
 const companyRoutes = require('../companies/companyRoutes')
 const categoryRoutes = require('../categories/categoryRoutes')
 const clientRoutes = require('../clients/clientRoutes')
+const projectRoutes = require('../projects/projectRoutes')
+const portfolioRoutes = require('../portfolios/portfolioRoutes')
+const assignmentRoutes = require('../assignments/assignmentRoutes')
+const recordRoutes = require('../records/recordRoutes')
 const goneRoutes = require('../users/goneRoutes')
 
 const router = express.Router()
@@ -48,19 +52,20 @@ router.get('/ready', (req, res) => {
  */
 const RUTAS_PENDIENTES = Object.freeze([
   // Catálogos compartidos
-  { metodos: ['GET'], ruta: '/api/v1/empleados/:id/expediente', spec: '6.2' },
   { metodos: ['GET'], ruta: '/api/v1/empleados/:id/adscripciones', spec: '6.2' },
   { metodos: ['GET'], ruta: '/api/v1/empleados/:id/asignaciones', spec: '6.2' },
   // Empresas y vínculos
   { metodos: ['GET', 'POST'], ruta: '/api/v1/adscripciones', spec: '6.3' },
-  { metodos: ['GET', 'POST'], ruta: '/api/v1/carteras', spec: '6.3' },
   // Proyectos, expedientes y derivados
-  { metodos: ['GET', 'POST'], ruta: '/api/v1/proyectos', spec: '6.4' },
-  { metodos: ['GET', 'POST'], ruta: '/api/v1/asignaciones', spec: '6.4' },
-  { metodos: ['GET'], ruta: '/api/v1/expedientes/:id', spec: '6.5' },
+  { metodos: ['GET'], ruta: '/api/v1/expedientes', spec: '6.5' },
   {
     metodos: ['POST'],
-    ruta: '/api/v1/expedientes/:id/documentos/:tipo',
+    ruta: '/api/v1/expedientes/:id/documentos/:tipo/validar',
+    spec: '6.5'
+  },
+  {
+    metodos: ['POST'],
+    ruta: '/api/v1/expedientes/:id/documentos/:tipo/rechazar',
     spec: '6.5'
   },
   { metodos: ['GET'], ruta: '/api/v1/alertas', spec: '6.6' },
@@ -101,16 +106,20 @@ router.use('/empleados', employeeRoutes)
 router.use('/empresas', companyRoutes)
 router.use('/categorias', categoryRoutes)
 router.use('/clientes', clientRoutes)
+router.use('/proyectos', projectRoutes)
+router.use('/carteras', portfolioRoutes)
+router.use('/asignaciones', assignmentRoutes)
+router.use('/expedientes', recordRoutes)
 
 // Movida al modelo nuevo: responde 410 con la ruta que la sustituye.
 router.use('/usuarios', goneRoutes)
 
-// Pendientes (spec 9.3 a 9.8). Se montarán aquí conforme se implementen:
-//   router.use('/expedientes', recordRoutes)
+// Pendientes (backend-spec §6.5 y §6.6). Se montarán aquí conforme se
+// implementen; `GET /api/v1` los anuncia mientras tanto en `pendientes`:
 //   router.use('/alertas', alertRoutes)
 //   router.use('/plantillas-checklist', checklistTemplateRoutes)
 //   router.use('/reportes', reportRoutes)
 //   router.use('/dashboard', dashboardRoutes)
-//   router.use('/clientes', clientRoutes)      // fase 2
+//   router.use('/organizacion', organizationRoutes)
 
 module.exports = router

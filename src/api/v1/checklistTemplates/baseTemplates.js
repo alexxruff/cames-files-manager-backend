@@ -8,7 +8,7 @@ const { DOCUMENT_TYPES } = require('../../../constants')
  * vigencias. Si cambian de un lado, hay que cambiarlas del otro, porque el front
  * las muestra en la pantalla de configuración.
  *
- * `esBase: true` ⟹ no se pueden borrar. `clienteId: null` ⟹ son globales.
+ * `esBase: true` ⟹ no se pueden borrar. `empresaId: null` ⟹ son globales.
  */
 
 /**
@@ -33,7 +33,7 @@ const BASE_TEMPLATES = Object.freeze([
     areas: null,
     documentos: renglones([], { examen_medico: 12 }),
     esBase: true,
-    clienteId: null
+    empresaId: null
   },
   {
     clave: 'plantilla-temporal',
@@ -46,7 +46,7 @@ const BASE_TEMPLATES = Object.freeze([
       examen_medico: 12
     }),
     esBase: true,
-    clienteId: null
+    empresaId: null
   },
   {
     clave: 'plantilla-obra',
@@ -64,7 +64,7 @@ const BASE_TEMPLATES = Object.freeze([
       examen_medico: 6
     }),
     esBase: true,
-    clienteId: null
+    empresaId: null
   },
   {
     clave: 'plantilla-prueba',
@@ -78,7 +78,7 @@ const BASE_TEMPLATES = Object.freeze([
       { examen_medico: 12 }
     ),
     esBase: true,
-    clienteId: null
+    empresaId: null
   }
 ])
 

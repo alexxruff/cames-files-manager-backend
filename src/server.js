@@ -4,6 +4,7 @@ const logger = require('./utils/logger')
 const { connect, disconnect } = require('./config/database')
 const { ensureBootstrapAdmin } = require('./services/bootstrapAdmin')
 const { ensureBaseChecklistTemplates } = require('./services/seedChecklistTemplates')
+const { advertirSiNoHayBucket } = require('./services/storageService')
 
 /**
  * Arranque y apagado del proceso.
@@ -41,6 +42,9 @@ async function iniciar() {
       error: error.message
     })
   }
+
+  // Configuración del almacenamiento: si falta el bucket, que se vea en el log.
+  advertirSiNoHayBucket()
 
   server = app.listen(env.PORT, () => {
     logger.info('Servidor escuchando', {

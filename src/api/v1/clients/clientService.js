@@ -1,7 +1,9 @@
 const mongoose = require('mongoose')
 const Client = require('./clientModel')
+const Portfolio = require('../portfolios/portfolioModel')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { normalize, escapeRegex } = require('../../../utils/text')
+const { CAPABILITIES, can, isPlatformAdmin } = require('../../../utils/permissions')
 
 /**
  * Clientes — catálogo compartido (backend-spec §6.2, modelo-datos §5.3).
@@ -9,23 +11,38 @@ const { normalize, escapeRegex } = require('../../../utils/text')
  * NO pertenece a ninguna empresa: es el mismo cliente para todo el grupo. Qué
  * empresa lo usa se registrará en `carteras`, que todavía no existe.
  *
- * ALCANCE, PENDIENTE: según modelo-datos §8.1, el listado debería mostrar «los
- * clientes de las carteras de mis empresas». Sin `carteras` eso no se puede
- * filtrar, así que hoy cualquiera con sesión ve el catálogo completo. Cuando
- * exista, el listado se acota y el front verá menos clientes que ahora — está
- * avisado en la guía para que no lo tome por un bug.
+ * ALCANCE (modelo-datos §8.1). El listado devuelve **los clientes de las carteras
+ * activas de las empresas visibles**, no el catálogo completo. El administrador de
+ * plataforma ve todo, porque administra el catálogo.
+ *
+ * Con una excepción necesaria: `catalogoCompleto=true` devuelve el catálogo global
+ * y **exige poder administrar clientes**. Sin esa salida, quien va a meter un
+ * cliente a su cartera no puede comprobar si ya existe en el grupo y termina
+ * creando un duplicado — que es justo lo que el catálogo compartido viene a
+ * evitar.
  */
 const POR_PAGINA_DEFECTO = 25
 const POR_PAGINA_MAXIMO = 100
 
 class ClientService {
-  /** Listado paginado. Mismos parámetros que `/empleados`, por consistencia. */
-  async list({
-    busqueda,
-    incluirInactivos = false,
-    orden = 'nombre_asc',
-    ...paginacion
-  } = {}) {
+  /**
+   * Listado paginado, acotado por alcance.
+   *
+   * @param {object} filtros
+   * @param {boolean} [filtros.catalogoCompleto] Ver el catálogo global en vez de
+   *   sólo los clientes de las carteras propias. Exige administrar clientes.
+   * @param {object} contexto `{ user, empresasVisibles }`
+   */
+  async list(
+    {
+      busqueda,
+      incluirInactivos = false,
+      orden = 'nombre_asc',
+      catalogoCompleto = false,
+      ...paginacion
+    } = {},
+    contexto = {}
+  ) {
     const pagina = Math.max(1, Number(paginacion.pagina) || 1)
     const porPagina = Math.min(
       POR_PAGINA_MAXIMO,
@@ -37,6 +54,14 @@ class ClientService {
     if (busqueda) {
       const termino = normalize(busqueda)
       if (termino) filtro.nombreNormalizado = new RegExp(escapeRegex(termino), 'i')
+    }
+
+    const idsPermitidos = await this.#idsEnAlcance(contexto, catalogoCompleto)
+    if (idsPermitidos !== null) {
+      if (idsPermitidos.length === 0) {
+        return { total: 0, pagina, porPagina, clientes: [] }
+      }
+      filtro._id = { $in: idsPermitidos }
     }
 
     const [total, clientes] = await Promise.all([
@@ -51,12 +76,66 @@ class ClientService {
     return { total, pagina, porPagina, clientes: clientes.map((c) => c.toJSON()) }
   }
 
-  async getById(id) {
+  /**
+   * Los ids de cliente que este usuario puede ver, o `null` si no hay límite.
+   *
+   * `null` = sin filtro: administrador de plataforma, o alguien que pidió el
+   * catálogo completo y puede administrar clientes.
+   */
+  async #idsEnAlcance({ user, empresasVisibles = null } = {}, catalogoCompleto = false) {
+    if (isPlatformAdmin(user?.acceso)) return null
+
+    if (catalogoCompleto) {
+      if (!can(user?.acceso, CAPABILITIES.MANAGE_CLIENTS)) {
+        throw AppError.forbidden(
+          'No tienes permiso para consultar el catálogo completo de clientes'
+        )
+      }
+      return null
+    }
+
+    // Los de las carteras ACTIVAS de sus empresas.
+    const carteras = await Portfolio.find({
+      empresaId: {
+        $in: (empresasVisibles || []).map((id) => new mongoose.Types.ObjectId(id))
+      },
+      activo: true
+    }).select('clienteId')
+
+    return [...new Set(carteras.map((c) => String(c.clienteId)))].map(
+      (id) => new mongoose.Types.ObjectId(id)
+    )
+  }
+
+  /**
+   * Un cliente por id. Visible si está en una cartera propia, o si quien pregunta
+   * administra clientes (necesita ver el catálogo para no duplicar).
+   */
+  async getById(id, contexto = {}) {
     if (!mongoose.isValidObjectId(id)) {
       throw new AppError(400, 'El cliente indicado no es válido')
     }
     const cliente = await Client.findById(id)
     if (!cliente) throw AppError.notFound('El cliente no existe')
+
+    const acceso = contexto.user?.acceso
+    const puedeVerCatalogo =
+      isPlatformAdmin(acceso) || can(acceso, CAPABILITIES.MANAGE_CLIENTS)
+
+    if (!puedeVerCatalogo) {
+      const enSuCartera = await Portfolio.exists({
+        clienteId: cliente._id,
+        activo: true,
+        empresaId: {
+          $in: (contexto.empresasVisibles || []).map(
+            (empresaId) => new mongoose.Types.ObjectId(empresaId)
+          )
+        }
+      })
+      // Fuera de alcance: 404, no 403.
+      if (!enSuCartera) throw AppError.notFound('El cliente no existe')
+    }
+
     return { cliente: cliente.toJSON() }
   }
 

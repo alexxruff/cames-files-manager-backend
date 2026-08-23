@@ -12,6 +12,7 @@ vigencias, alertas y reportes de auditoría.
 - Endpoints: [`docs/CONTRATO-API.md`](./docs/CONTRATO-API.md)
 - Guía para el equipo de front: [`docs/INTEGRACION-FRONTEND.md`](./docs/INTEGRACION-FRONTEND.md)
 - Ajustes pendientes del front: [`docs/CAMBIOS-FRONTEND.md`](./docs/CAMBIOS-FRONTEND.md)
+- Carteras, proyectos y asignaciones: [`docs/ENDPOINTS-PROYECTOS.md`](./docs/ENDPOINTS-PROYECTOS.md)
 - Qué está hecho y qué falta: [`docs/ESTADO.md`](./docs/ESTADO.md)
 
 ## Requisitos
