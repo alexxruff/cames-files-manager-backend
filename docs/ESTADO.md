@@ -3,7 +3,7 @@
 Mapa de qué está hecho y qué falta. **Actualízalo al cerrar cada módulo**: es lo
 primero que lee quien llega, humano o agente.
 
-Última actualización: **2026-08-23** · 436 pruebas en verde.
+Última actualización: **2026-08-23** · 445 pruebas en verde.
 
 El modelo autoritativo es [`modelo-datos.md`](./modelo-datos.md) (jerarquía de
 empresas, catálogos compartidos y vínculos) y el contrato es
@@ -79,7 +79,7 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 | Carteras                          | 6.3       | ✅     | Bajo la empresa; reactiva en vez de duplicar (D-37)                                                       |
 | Proyectos                         | 6.4       | ✅     | CRUD, aplazar, finalizar, reabrir, clonar categorías (D-38)                                               |
 | Asignaciones                      | 6.4       | ✅     | Con `asignables` (§9.3) y cierre con fecha de salida                                                      |
-| Expedientes y documentos          | 6.5       | 🟡     | Consulta, **subida** con versionado y URL firmada. Faltan listado, validar y rechazar (D-42)              |
+| Expedientes y documentos          | 6.5       | 🟡     | Consulta, subida y **revisar** (valida y rechaza). Falta el listado (D-42, D-43)                          |
 | Lógica de dominio                 | modelo §6 | ✅     | Estatus, avance, semáforo, vigencias y la **unión** de plantillas, listos y probados                      |
 | Alertas, métricas y reportes      | 6.6       | ⬜     | Derivados                                                                                                 |
 | Almacenamiento R2                 | 7         | ✅     | Bucket `cames-files/employes-files`, probado de punta a punta; `npm run r2:check` (D-41)                  |

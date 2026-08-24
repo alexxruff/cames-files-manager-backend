@@ -70,13 +70,13 @@ describe('utils/permissions — matriz de modelo-datos §8.2', () => {
     expect(can(jefe, CAPABILITIES.MANAGE_AFFILIATIONS)).toBe(false)
   })
 
-  it('rh_consulta sube documentos pero no los valida ni administra accesos', () => {
+  it('rh_consulta sube y revisa documentos, pero no administra accesos (D-44)', () => {
     expect(can(consulta, CAPABILITIES.VIEW_EMPLOYEES)).toBe(true)
     expect(can(consulta, CAPABILITIES.UPLOAD_DOCUMENTS)).toBe(true)
+    expect(can(consulta, CAPABILITIES.REVIEW_DOCUMENTS)).toBe(true)
     expect(can(consulta, CAPABILITIES.OPEN_SENSITIVE_DOCUMENTS)).toBe(true)
     expect(can(consulta, CAPABILITIES.GENERATE_REPORTS)).toBe(true)
 
-    expect(can(consulta, CAPABILITIES.REVIEW_DOCUMENTS)).toBe(false)
     expect(can(consulta, CAPABILITIES.MANAGE_ACCESS)).toBe(false)
     expect(can(consulta, CAPABILITIES.DEACTIVATE_EMPLOYEES)).toBe(false)
     expect(can(consulta, CAPABILITIES.MANAGE_AFFILIATIONS)).toBe(false)
@@ -115,10 +115,10 @@ describe('utils/permissions — matriz de modelo-datos §8.2', () => {
 
   it('el alcance global no otorga capacidades que su nivel no tenga', () => {
     // Un rh_consulta con alcanceGlobal (que el modelo no permite) tampoco
-    // podría validar documentos: el nivel manda, el alcance sólo amplía el
+    // podría administrar accesos: el nivel manda, el alcance sólo amplía el
     // universo de datos.
     const raro = { nivelAcceso: 'rh_consulta', alcanceGlobal: true }
-    expect(can(raro, CAPABILITIES.REVIEW_DOCUMENTS)).toBe(false)
+    expect(can(raro, CAPABILITIES.MANAGE_ACCESS)).toBe(false)
     expect(can(raro, CAPABILITIES.MANAGE_COMPANIES)).toBe(false)
     expect(can(raro, CAPABILITIES.MANAGE_CATEGORIES)).toBe(false)
   })

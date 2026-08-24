@@ -26,6 +26,23 @@ exports.uploadDocumentValidation = [
     })
 ]
 
+exports.reviewDocumentValidation = [
+  param('id').isMongoId().withMessage('El expediente indicado no es válido'),
+  param('tipo')
+    .isIn(DOCUMENT_TYPES)
+    .withMessage('Ese tipo de documento no existe en el checklist'),
+  body('aprobado').isBoolean().withMessage('Indica si se aprueba: true o false'),
+  /*
+   * `motivo` sólo aplica al rechazo. Con `aprobado: true` no se exige, aunque
+   * venga: no tiene sentido guardar un motivo en un documento validado.
+   */
+  body('motivo')
+    .if(body('aprobado').equals('false'))
+    .trim()
+    .isLength({ min: 10 })
+    .withMessage('El motivo del rechazo debe tener al menos 10 caracteres')
+]
+
 exports.documentVersionValidation = [
   param('id').isMongoId().withMessage('El expediente indicado no es válido'),
   param('tipo')

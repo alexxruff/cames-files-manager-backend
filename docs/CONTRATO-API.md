@@ -79,6 +79,7 @@ Sólo estas cuatro: `POST /auth/login`, `GET /api/v1` (inventario), `GET /health
 | GET    | `/expedientes/:id`                                         | ver empleados                | Lo mismo por id de expediente; 404 si el empleado no es visible                         |
 | POST   | `/expedientes/:id/documentos/:tipo`                        | subir documentos             | `multipart`, campo `archivo`. Versiona; 413 >10 MB, 415 si no es PDF/JPG/PNG/WEBP       |
 | GET    | `/expedientes/:id/documentos/:tipo/versiones/:version/url` | ver documentos               | URL firmada temporal; **queda en la bitácora** (D-41)                                   |
+| POST   | `/expedientes/:id/documentos/:tipo/revisar`                | `rh_admin` · `rh_consulta`   | `{ aprobado, motivo? }`: valida o rechaza la versión en revisión (D-43, D-44)           |
 | ALL    | `/usuarios*`                                               | —                            | **410** con las rutas nuevas (se borra cuando el front migre)                           |
 
 ### `AuthUser`

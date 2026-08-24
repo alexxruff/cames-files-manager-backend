@@ -1005,3 +1005,48 @@ cambio de contrato: **está pendiente de decidir**, no descartado.
 empleados. Hace falta para las personas dadas de alta antes de que el módulo
 existiera: sin `record`, el renglón de la tabla sale sin avance hasta que alguien
 abre su expediente. Idempotente y no borra nada.
+
+---
+
+## D-43 · Un solo endpoint para validar y rechazar: `POST …/revisar`
+
+El spec (§6.5) proponía dos rutas, `…/validar` sin cuerpo y `…/rechazar` con
+`{ motivo }`. Se implementó así primero y se corrigió a una sola ruta,
+`POST /expedientes/:id/documentos/:tipo/revisar`, con `{ aprobado, motivo? }`:
+son la misma acción —cerrar una revisión pendiente— con dos resultados, no dos
+acciones distintas, y el front tiene un solo lugar del que colgar el botón de
+"Aprobar/Rechazar" en vez de pegarle a dos rutas según el caso. **Desviación
+del spec, documentada aquí como pide `CLAUDE.md`.**
+
+`REVIEW_DOCUMENTS` ya existía en la matriz (§8.2) y sólo la tiene `rh_admin` —
+quien sube (`rh_consulta` también puede) no es necesariamente quien revisa. La
+ruta reutiliza esa capacidad tal cual, sin negociar nada nuevo.
+
+Revisa `versiones[0]` (la última subida), no un número de versión explícito: no
+tiene sentido revisar una versión vieja que ya fue reemplazada, y pedir el número
+sólo abriría la puerta a hacerlo por error. El candado es el estatus del
+documento: sólo actúa si está `in_review`; `pending` (nada subido) o ya revisado
+(`validated` o `rejected`) responden `400`.
+
+`motivo` se exige (10+ caracteres) sólo cuando `aprobado: false`, con
+`.if(body('aprobado').equals('false'))` en el validador — mismo mínimo que el
+spec le pedía a `…/rechazar`. Al aprobar se limpia cualquier `motivoRechazo`
+colgado de una entrega anterior; al rechazar, `motivoRechazo` es el `motivo` que
+mandaron. Para levantar un rechazo, la persona sube una entrega nueva (vuelve a
+`in_review`) y se revisa otra vez — no hay una acción de "deshacer rechazo".
+
+---
+
+## D-44 · `rh_consulta` también revisa documentos
+
+**Corrección confirmada con Urbacames.** `REVIEW_DOCUMENTS` era exclusivo de
+`rh_admin`; ahora también la tiene `rh_consulta` (la analista de RH), que ya
+podía subir documentos (`UPLOAD_DOCUMENTS`) pero no revisar los suyos ni los de
+nadie más. El `jefe_area` sigue sin poder: no sube ni revisa.
+
+El "administrador general de la plataforma" que se pidió sumar **ya podía**: es
+`rh_admin` con `acceso.alcanceGlobal: true` (D-21), y `alcanceGlobal` no acota
+`REVIEW_DOCUMENTS` en la matriz —sólo lo hacen las capacidades marcadas
+`'global'`, como `manageCompanies`—, así que cualquier `rh_admin` ya revisaba,
+tenga o no alcance de plataforma. El cambio real de este ajuste es sólo la fila
+de `rh_consulta`.

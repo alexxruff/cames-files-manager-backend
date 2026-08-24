@@ -454,6 +454,166 @@ describe('POST /api/v1/expedientes/:id/documentos/:tipo — subir', () => {
   })
 })
 
+describe('POST /api/v1/expedientes/:id/documentos/:tipo/revisar', () => {
+  const preparar = async (datos = {}) => {
+    const contexto = await escenario(datos)
+    const abierto = await request(app)
+      .get(`/api/v1/empleados/${contexto.persona._id}/expediente`)
+      .set(auth(contexto.token))
+    const expedienteId = abierto.body.data.expediente._id
+    await subir(contexto.token, expedienteId, 'ine', PDF)
+    return { ...contexto, expedienteId }
+  }
+
+  const revisar = (token, expedienteId, tipo, cuerpo) =>
+    request(app)
+      .post(`/api/v1/expedientes/${expedienteId}/documentos/${tipo}/revisar`)
+      .set(auth(token))
+      .send(cuerpo)
+
+  it('aprobado: true valida — documento y versión quedan validated', async () => {
+    const { token, expedienteId, empleado } = await preparar()
+
+    const res = await revisar(token, expedienteId, 'ine', { aprobado: true })
+
+    expect(res.status).toBe(200)
+    const doc = res.body.data.expediente.documentos.find((d) => d.tipo === 'ine')
+    expect(doc.estatus).toBe('validated')
+    expect(doc.motivoRechazo).toBeNull()
+    expect(doc.revisadoPor).toBe(empleado.nombre)
+    expect(doc.revisadoEn).toEqual(expect.any(String))
+    expect(doc.versiones[0]).toMatchObject({ version: 1, estatus: 'validated' })
+
+    // Y el avance ya cuenta el documento como entregado.
+    expect(res.body.data.avance.entregados).toBeGreaterThan(0)
+    expect(res.body.data.avance.enRevision).toBe(0)
+  })
+
+  it('aprobado: false con motivo rechaza — documento y versión quedan rejected', async () => {
+    const { token, expedienteId, empleado } = await preparar()
+
+    const res = await revisar(token, expedienteId, 'ine', {
+      aprobado: false,
+      motivo: 'La foto del INE está ilegible'
+    })
+
+    expect(res.status).toBe(200)
+    const doc = res.body.data.expediente.documentos.find((d) => d.tipo === 'ine')
+    expect(doc.estatus).toBe('rejected')
+    expect(doc.motivoRechazo).toBe('La foto del INE está ilegible')
+    expect(doc.revisadoPor).toBe(empleado.nombre)
+    expect(doc.versiones[0]).toMatchObject({
+      version: 1,
+      estatus: 'rejected',
+      motivoRechazo: 'La foto del INE está ilegible'
+    })
+    expect(res.body.data.avance.rechazados).toBe(1)
+  })
+
+  it('400 si rechaza sin motivo, o con uno de menos de 10 caracteres', async () => {
+    const { token, expedienteId } = await preparar()
+
+    const sinMotivo = await revisar(token, expedienteId, 'ine', { aprobado: false })
+    expect(sinMotivo.status).toBe(400)
+
+    const corto = await revisar(token, expedienteId, 'ine', {
+      aprobado: false,
+      motivo: 'corto'
+    })
+    expect(corto.status).toBe(400)
+  })
+
+  it('400 si `aprobado` no viene o no es booleano', async () => {
+    const { token, expedienteId } = await preparar()
+    expect((await revisar(token, expedienteId, 'ine', {})).status).toBe(400)
+    expect((await revisar(token, expedienteId, 'ine', { aprobado: 'sí' })).status).toBe(
+      400
+    )
+  })
+
+  it('400 si el documento no está en revisión (pendiente o ya revisado)', async () => {
+    const { token, expedienteId } = await preparar()
+
+    const pendiente = await revisar(token, expedienteId, 'curp', { aprobado: true })
+    expect(pendiente.status).toBe(400)
+
+    await revisar(token, expedienteId, 'ine', { aprobado: true })
+    const yaRevisado = await revisar(token, expedienteId, 'ine', { aprobado: true })
+    expect(yaRevisado.status).toBe(400)
+  })
+
+  it('subir de nuevo tras un rechazo permite volver a revisar', async () => {
+    const { token, expedienteId } = await preparar()
+    await revisar(token, expedienteId, 'ine', {
+      aprobado: false,
+      motivo: 'La foto del INE está ilegible'
+    })
+
+    await subir(token, expedienteId, 'ine', PDF)
+    const res = await revisar(token, expedienteId, 'ine', { aprobado: true })
+
+    expect(res.status).toBe(200)
+    const doc = res.body.data.expediente.documentos.find((d) => d.tipo === 'ine')
+    expect(doc.estatus).toBe('validated')
+    expect(doc.motivoRechazo).toBeNull()
+  })
+
+  it('403 sólo para jefe_area: no sube ni revisa (D-44)', async () => {
+    const { expedienteId } = await preparar()
+
+    const jefe = await crearEmpleadoConSesion({ nivelAcceso: 'jefe_area' })
+    expect(
+      (await revisar(jefe.token, expedienteId, 'ine', { aprobado: true })).status
+    ).toBe(403)
+  })
+
+  it('rh_consulta también revisa, y un rh_admin con alcanceGlobal también (D-44)', async () => {
+    const { empresa, expedienteId } = await preparar()
+
+    const consulta = await crearEmpleadoConSesion({
+      nivelAcceso: 'rh_consulta',
+      empresa
+    })
+    expect(
+      (await revisar(consulta.token, expedienteId, 'ine', { aprobado: true })).status
+    ).toBe(200)
+
+    // Levanta la aprobación anterior para poder probar el segundo caso.
+    await subir(consulta.token, expedienteId, 'ine', PDF)
+
+    const admin = await crearEmpleadoConSesion({
+      nivelAcceso: 'rh_admin',
+      alcanceGlobal: true,
+      empresa
+    })
+    expect(
+      (await revisar(admin.token, expedienteId, 'ine', { aprobado: true })).status
+    ).toBe(200)
+  })
+
+  it('404 si el expediente no existe, o el empleado no es visible; 401 sin sesión', async () => {
+    const { token, expedienteId } = await preparar()
+
+    const inexistente = await revisar(
+      token,
+      new mongoose.Types.ObjectId().toString(),
+      'ine',
+      { aprobado: true }
+    )
+    expect(inexistente.status).toBe(404)
+
+    const otro = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+    expect(
+      (await revisar(otro.token, expedienteId, 'ine', { aprobado: true })).status
+    ).toBe(404)
+
+    const sinSesion = await request(app)
+      .post(`/api/v1/expedientes/${expedienteId}/documentos/ine/revisar`)
+      .send({ aprobado: true })
+    expect(sinSesion.status).toBe(401)
+  })
+})
+
 describe('GET /api/v1/expedientes/:id/documentos/:tipo/versiones/:v/url', () => {
   const preparar = async (datos = {}) => {
     const contexto = await escenario(datos)

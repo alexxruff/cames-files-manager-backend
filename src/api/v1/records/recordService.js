@@ -257,6 +257,53 @@ class RecordService {
   }
 
   /**
+   * POST /expedientes/:id/documentos/:tipo/revisar (backend-spec §6.5, D-43).
+   * `rh_admin` y `rh_consulta` (`REVIEW_DOCUMENTS`, D-44). Un solo endpoint para
+   * validar y rechazar: `aprobado` decide cuál de las dos.
+   *
+   * Revisa la **versión vigente** (la última subida, `versiones[0]`), que es la
+   * única que tiene sentido revisar. Pasa el documento y esa versión a
+   * `validated` o `rejected`, con quién y cuándo.
+   *
+   * `estatus: 'in_review'` es un candado, no un detalle: evita revisar un
+   * documento vacío (`pending`) o uno que ya se revisó.
+   */
+  async revisarDocumento(expedienteId, tipo, { aprobado, motivo } = {}, contexto = {}) {
+    const { expediente } = await this.#paraEscritura(expedienteId, contexto)
+
+    const documento = expediente.documento(tipo)
+    if (!documento || documento.estatus !== 'in_review') {
+      throw AppError.validation(
+        `"${documentLabel(tipo)}" no tiene una entrega pendiente de revisión`,
+        [{ msg: 'Este documento no está en revisión', path: 'tipo' }]
+      )
+    }
+
+    const revisadoPor = contexto.user?.nombre || 'Sistema'
+    const revisadoEn = new Date()
+    const nuevoEstatus = aprobado ? 'validated' : 'rejected'
+    const motivoRechazo = aprobado ? null : motivo
+
+    documento.estatus = nuevoEstatus
+    documento.motivoRechazo = motivoRechazo
+    documento.revisadoPor = revisadoPor
+    documento.revisadoEn = revisadoEn
+
+    const version = documento.versiones[0]
+    version.estatus = nuevoEstatus
+    version.motivoRechazo = motivoRechazo
+    version.revisadoPor = revisadoPor
+    version.revisadoEn = revisadoEn
+
+    await expediente.save()
+
+    return this.#formatear(
+      expediente,
+      await employeeService.getById(expediente.empleadoId, contexto)
+    )
+  }
+
+  /**
    * URL firmada para abrir una versión concreta, y **registro en bitácora**.
    *
    * El bucket es privado: no hay URL pública. Cada apertura pasa por aquí, que

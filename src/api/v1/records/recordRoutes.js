@@ -9,6 +9,7 @@ const { CAPABILITIES } = require('../../../utils/permissions')
 const {
   recordIdValidation,
   uploadDocumentValidation,
+  reviewDocumentValidation,
   documentVersionValidation
 } = require('../../../validations/recordValidation')
 
@@ -38,6 +39,18 @@ router.post(
   uploadDocumentValidation,
   validateRequest,
   asyncHandler(recordController.subirDocumento)
+)
+
+/*
+ * Revisar: `rh_admin` y `rh_consulta` (`REVIEW_DOCUMENTS`, D-44). Un endpoint
+ * para validar y rechazar (D-43): `{ aprobado: true|false, motivo? }`.
+ */
+router.post(
+  '/:id/documentos/:tipo/revisar',
+  requireCapability(CAPABILITIES.REVIEW_DOCUMENTS),
+  reviewDocumentValidation,
+  validateRequest,
+  asyncHandler(recordController.revisarDocumento)
 )
 
 /*

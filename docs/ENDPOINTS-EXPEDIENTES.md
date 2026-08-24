@@ -1,6 +1,6 @@
-# Expedientes: consulta y subida de documentos
+# Expedientes: consulta, subida y revisión de documentos
 
-Referencia de los **4 endpoints nuevos** y de **un cambio** en algo que ya
+Referencia de los **5 endpoints nuevos** y de **un cambio** en algo que ya
 consumen (`RenglonEmpleado`). Nada más cambió.
 
 Base: `/api/v1`. Envelope, códigos y convenciones generales:
@@ -12,6 +12,7 @@ Base: `/api/v1`. Envelope, códigos y convenciones generales:
 | 2   | `GET /expedientes/:id`                                         | quien ve empleados         |
 | 3   | `POST /expedientes/:id/documentos/:tipo`                       | `rh_admin` · `rh_consulta` |
 | 4   | `GET /expedientes/:id/documentos/:tipo/versiones/:version/url` | quien ve el expediente     |
+| 5   | `POST /expedientes/:id/documentos/:tipo/revisar`               | `rh_admin` · `rh_consulta` |
 
 > **El expediente es de la persona, no del contrato.** Uno por empleado. Alguien
 > adscrito a dos empresas tiene **un** expediente: su INE es la misma. El
@@ -223,6 +224,49 @@ navegador.
 
 ---
 
+## 5. Validar o rechazar un documento
+
+### `POST /expedientes/:id/documentos/:tipo/revisar`
+
+`rh_admin` y `rh_consulta` (D-44) — el `jefe_area` no. **Un solo endpoint para
+las dos acciones**: lo decide `aprobado`, no dos rutas distintas.
+
+```jsonc
+// aprobar
+{ "aprobado": true }
+
+// rechazar — motivo obligatorio, mínimo 10 caracteres
+{ "aprobado": false, "motivo": "La foto del INE está ilegible" }
+```
+
+Revisa la **versión vigente** (la última que se subió) del documento indicado.
+Responde **`200`** con la **misma forma** que el `GET` (`expediente`, `empleado`,
+`avance`).
+
+- Sólo funciona si el documento está en **`in_review`**: recién subido, sin
+  revisar todavía. Si está `pending` (nada subido) o ya revisado (`validated` o
+  `rejected`), responde `400`.
+- **Aprobar** deja el documento y su versión en `validated`, con `revisadoPor`
+  (nombre de quien revisó) y `revisadoEn`, y limpia cualquier rechazo anterior.
+- **Rechazar** los deja en `rejected`, con `motivoRechazo` (lo que mandaste en
+  `motivo`), `revisadoPor` y `revisadoEn`. Para levantarlo, la persona sube una
+  entrega nueva (endpoint 3): eso vuelve a dejarlo en `in_review` y ya se puede
+  revisar otra vez.
+- **A partir de una aprobación el avance sube**: antes de eso, `avance.porcentaje`
+  cuenta 0 aunque todo esté subido, porque sólo cuenta lo validado.
+
+### Errores
+
+| Código | Cuándo                                                       |
+| ------ | ------------------------------------------------------------ |
+| `400`  | El documento no tiene una entrega esperando revisión         |
+| `400`  | `aprobado` no viene o no es booleano                         |
+| `400`  | `aprobado: false` sin `motivo`, o con menos de 10 caracteres |
+| `403`  | El `jefe_area` (sólo `rh_admin` y `rh_consulta` revisan)     |
+| `404`  | El expediente no existe **o el empleado no es visible**      |
+
+---
+
 ## Cambio en algo que ya consumen
 
 `RenglonEmpleado` tenía dos campos en `null` «hasta que existan los
@@ -251,8 +295,6 @@ Responden `404` con `"La ruta … no existe"`, y `GET /api/v1` los lista en
 `pendientes`:
 
 - `GET /expedientes` (listado paginado de todos los expedientes)
-- `POST /expedientes/:id/documentos/:tipo/validar`
-- `POST /expedientes/:id/documentos/:tipo/rechazar`
 
 ### Un caso de `400` que sí pueden ver
 
@@ -262,14 +304,13 @@ plantilla) o, para `contrato`, de la fecha de término del contrato. Si el tipo
 **no** estaba en el checklist no hay de dónde sacarla: responde `400`
 «Indica hasta cuándo es vigente» y hay que mandar `vigenciaHasta`.
 
-### Consecuencia importante mientras no exista `validar`
+### `avance.porcentaje` sólo cuenta lo validado
 
-`avance.porcentaje` sólo cuenta lo **validado y vigente** (`validated` y
-`expiring`). Como hoy todo lo que se sube se queda en `in_review`, **el porcentaje
-se va a quedar en 0 % aunque el expediente esté completo de archivos**, y
-`avance.estatus` en `incomplete`.
+Cuenta lo **validado y vigente** (`validated` y `expiring`), no lo subido: un
+documento en `in_review` no suma. Ya existe el endpoint 5 para aprobarlo, así que
+el flujo completo es subir → `POST …/revisar` con `aprobado: true` → el
+porcentaje sube solo.
 
-No es un error: es que falta el paso de revisión. Para que la UI no se vea rota
-mientras tanto, usa **`entregados + enRevision` sobre `requeridos`** para la barra,
-o pinta `enRevision` como un tramo aparte. Cuando exista `validar`, `porcentaje`
-empieza a moverse solo y puedes volver a él.
+Mientras un lote no se haya validado, la barra puede verse en 0% con archivos ya
+subidos; si quieres reflejar «ya está todo, falta revisar», usa
+`entregados + enRevision` sobre `requeridos` para un indicador aparte.

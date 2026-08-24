@@ -58,16 +58,6 @@ const RUTAS_PENDIENTES = Object.freeze([
   { metodos: ['GET', 'POST'], ruta: '/api/v1/adscripciones', spec: '6.3' },
   // Proyectos, expedientes y derivados
   { metodos: ['GET'], ruta: '/api/v1/expedientes', spec: '6.5' },
-  {
-    metodos: ['POST'],
-    ruta: '/api/v1/expedientes/:id/documentos/:tipo/validar',
-    spec: '6.5'
-  },
-  {
-    metodos: ['POST'],
-    ruta: '/api/v1/expedientes/:id/documentos/:tipo/rechazar',
-    spec: '6.5'
-  },
   { metodos: ['GET'], ruta: '/api/v1/alertas', spec: '6.6' },
   { metodos: ['GET'], ruta: '/api/v1/dashboard/metricas', spec: '6.6' },
   { metodos: ['GET'], ruta: '/api/v1/reportes/expedientes', spec: '6.6' },

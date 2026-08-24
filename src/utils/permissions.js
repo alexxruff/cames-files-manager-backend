@@ -75,7 +75,9 @@ const PERMISSION_MATRIX = Object.freeze({
     manageAdminEmployees: false,
     manageAffiliations: false,
     uploadDocuments: true,
-    reviewDocuments: false,
+    // Corrección confirmada con Urbacames (D-44): la analista también revisa lo
+    // que ella misma sube, no sólo `rh_admin`.
+    reviewDocuments: true,
     openSensitiveDocuments: true,
     manageProjects: false,
     assignToProjects: false,

@@ -54,6 +54,29 @@ class RecordController {
   }
 
   /**
+   * POST /expedientes/:id/documentos/:tipo/revisar — `{ aprobado, motivo? }`.
+   * Un solo endpoint para validar y rechazar (D-43): `aprobado: true` valida,
+   * `aprobado: false` rechaza con `motivo`.
+   */
+  revisarDocumento = async (req, res) => {
+    const { aprobado, motivo } = req.body
+    const datos = await recordService.revisarDocumento(
+      req.params.id,
+      req.params.tipo,
+      { aprobado, motivo },
+      this.#contexto(req)
+    )
+
+    req.log.info('Documento revisado', {
+      expedienteId: req.params.id,
+      tipo: req.params.tipo,
+      aprobado
+    })
+
+    return ok(res, datos, aprobado ? 'Documento validado.' : 'Documento rechazado.')
+  }
+
+  /**
    * GET /expedientes/:id/documentos/:tipo/versiones/:version/url
    *
    * URL firmada de corta vida. `?descargar=true` para forzar la descarga en vez
