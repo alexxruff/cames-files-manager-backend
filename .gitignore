@@ -12,3 +12,10 @@ tmp/
 .vscode/
 !.vscode/extensions.json
 .claude/settings.local.json
+
+# Archivos de nómina para importar (.xlsx). Traen CURP, NSS, salarios y cuentas
+# bancarias de personas reales: se procesan y se descartan, no se versionan.
+# Las pruebas generan los suyos (tests/helpers/nominaWorkbook.js). Ver D-46.
+docs/Colaboradores_*.xlsx
+*.xlsx
+!tests/fixtures/*.xlsx

@@ -1,6 +1,6 @@
-# Expedientes: consulta, subida y revisión de documentos
+# Expedientes: listado, consulta, subida y revisión de documentos
 
-Referencia de los **5 endpoints nuevos** y de **un cambio** en algo que ya
+Referencia de los **6 endpoints nuevos** y de **un cambio** en algo que ya
 consumen (`RenglonEmpleado`). Nada más cambió.
 
 Base: `/api/v1`. Envelope, códigos y convenciones generales:
@@ -8,6 +8,7 @@ Base: `/api/v1`. Envelope, códigos y convenciones generales:
 
 | #   | Endpoint                                                       | Quién                      |
 | --- | -------------------------------------------------------------- | -------------------------- |
+| 0   | `GET /expedientes`                                             | quien ve empleados         |
 | 1   | `GET /empleados/:id/expediente`                                | quien ve empleados         |
 | 2   | `GET /expedientes/:id`                                         | quien ve empleados         |
 | 3   | `POST /expedientes/:id/documentos/:tipo`                       | `rh_admin` · `rh_consulta` |
@@ -21,6 +22,47 @@ Base: `/api/v1`. Envelope, códigos y convenciones generales:
 >
 > **No hay que crearlo.** Nace con `POST /empleados`. El `GET` lo devuelve
 > siempre.
+
+---
+
+## 0. Listado paginado
+
+### `GET /expedientes`
+
+**Mismos filtros que `GET /empleados`, más `estatus`.**
+
+| Query                 | Nota                                                                                                                 |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `busqueda`            | Por nombre                                                                                                           |
+| `empresaId`           | Acota dentro de lo visible; `404` si esa empresa no es tuya                                                          |
+| `area`                |                                                                                                                      |
+| `tipo`                | `mano_de_obra` / `administrativo`                                                                                    |
+| `estatus`             | `incomplete` · `complete` · `expiring` · `expired` (el semáforo)                                                     |
+| `incluirInactivos`    | Incluye a quien ya no está activo en el sistema                                                                      |
+| `orden`               | `nombre_asc` / `nombre_desc`. **Por defecto: lo más urgente primero** (vencido → incompleto → por vencer → completo) |
+| `pagina`, `porPagina` | Igual que en `/empleados` (máx. 100)                                                                                 |
+
+```jsonc
+// data
+{
+  "total": 42,
+  "pagina": 1,
+  "porPagina": 25,
+  "expedientes": [
+    {
+      "expediente": {/* igual que GET /expedientes/:id */},
+      "empleado": {/* RenglonEmpleado */},
+      "avance": {/* … */}
+    }
+  ]
+}
+```
+
+Cada renglón es **exactamente** lo que devuelve `GET /expedientes/:id`: se puede
+navegar de la tabla al detalle sin transformar nada.
+
+Errores: `400` con un `estatus` que no existe; `404` si `empresaId` no es
+visible; `401` sin sesión.
 
 ---
 

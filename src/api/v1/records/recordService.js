@@ -20,10 +20,22 @@ const {
 } = require('../../../utils/domain')
 const {
   EXPIRING_DOCUMENT_TYPES,
+  RECORD_STATUS_SEVERITY,
   documentLabel,
   isSensitiveDocument
 } = require('../../../constants')
 const { can, CAPABILITIES } = require('../../../utils/permissions')
+
+const POR_PAGINA_DEFECTO = 25
+const POR_PAGINA_MAXIMO = 100
+/*
+ * Tope interno para `employeeService.list` cuando se pide `estatus` (D-45): no
+ * es el límite de una página, es "traer todo lo que hay que evaluar antes de
+ * paginar". 2000 es generoso para el tamaño de plantilla de un solo grupo
+ * empresarial; si algún día se queda corto, el síntoma es que `total` deja de
+ * crecer aunque existan más expedientes con ese estatus.
+ */
+const LIMITE_PARA_FILTRAR_POR_ESTATUS = 2000
 
 /**
  * Expedientes y sus documentos (backend-spec §6.5).
@@ -117,6 +129,84 @@ class RecordService {
     await expediente.save({ session })
 
     return expediente
+  }
+
+  /**
+   * GET /expedientes — listado paginado (backend-spec §6.5). Mismos filtros que
+   * `/empleados`, más `estatus` (el semáforo derivado).
+   *
+   * `estatus` no se puede filtrar en Mongo sin duplicar en el pipeline la
+   * lógica de vigencias (D-10; modelo-datos §9.1 lo pide evitar explícitamente:
+   * "el avance no se calcula en el pipeline"). Así que se resuelve el avance de
+   * TODOS los que cumplen los demás filtros —sin paginar en la base— y se
+   * filtra, ordena y pagina aquí. Ver D-45.
+   */
+  async list(filtros = {}, contexto = {}) {
+    const estatus = filtros.estatus || null
+    const pagina = Math.max(1, Number(filtros.pagina) || 1)
+    const porPagina = Math.min(
+      POR_PAGINA_MAXIMO,
+      Math.max(1, Number(filtros.porPagina) || POR_PAGINA_DEFECTO)
+    )
+
+    // El alcance, la búsqueda y los filtros de persona son los mismos que
+    // `/empleados`: se reutiliza tal cual, con el tope alto de arriba.
+    const { empleados } = await employeeService.list(
+      {
+        busqueda: filtros.busqueda,
+        empresaId: filtros.empresaId,
+        area: filtros.area,
+        tipo: filtros.tipo,
+        incluirInactivos: filtros.incluirInactivos,
+        pagina: 1,
+        porPagina: LIMITE_PARA_FILTRAR_POR_ESTATUS,
+        limitePorPagina: LIMITE_PARA_FILTRAR_POR_ESTATUS
+      },
+      contexto
+    )
+
+    const ids = empleados.map((renglon) => renglon.empleado._id)
+    const registros =
+      ids.length === 0 ? [] : await Record.find({ empleadoId: { $in: ids } })
+    const porEmpleado = new Map(registros.map((r) => [r.empleadoId.toString(), r]))
+
+    let filas = empleados
+      .map((renglon) => {
+        const expediente = porEmpleado.get(renglon.empleado._id)
+        // No debería faltar —D-41/D-42 garantizan uno por persona—, pero si
+        // faltara no hay nada que mostrar para esa fila.
+        return expediente ? this.#formatear(expediente, renglon) : null
+      })
+      .filter(Boolean)
+
+    if (estatus) filas = filas.filter((fila) => fila.avance.estatus === estatus)
+
+    filas.sort((a, b) => {
+      if (filtros.orden === 'nombre_desc') {
+        return b.empleado.empleado.nombre.localeCompare(a.empleado.empleado.nombre)
+      }
+      if (filtros.orden === 'nombre_asc') {
+        return a.empleado.empleado.nombre.localeCompare(b.empleado.empleado.nombre)
+      }
+      // Por defecto, lo más urgente primero: vencido, incompleto, por vencer,
+      // completo (RECORD_STATUS_SEVERITY).
+      const diferencia =
+        RECORD_STATUS_SEVERITY[a.avance.estatus] -
+        RECORD_STATUS_SEVERITY[b.avance.estatus]
+      return diferencia !== 0
+        ? diferencia
+        : a.empleado.empleado.nombre.localeCompare(b.empleado.empleado.nombre)
+    })
+
+    const total = filas.length
+    const inicio = (pagina - 1) * porPagina
+
+    return {
+      total,
+      pagina,
+      porPagina,
+      expedientes: filas.slice(inicio, inicio + porPagina)
+    }
   }
 
   /** El expediente de un empleado visible, con su avance derivado. */

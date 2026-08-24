@@ -67,8 +67,16 @@ class EmployeeService {
     } = filtros
 
     const pagina = Math.max(1, Number(filtros.pagina) || 1)
+    /*
+     * `filtros.limitePorPagina` es un tope interno, NO parte del contrato HTTP:
+     * `employeeController.list` arma `filtros` campo por campo desde `req.query`
+     * y no lo incluye, así que nadie puede pedirlo por la ruta pública. Existe
+     * para `recordService.list` (`GET /expedientes`, D-45): necesita traer a
+     * TODOS los que cumplen los demás filtros —sin cortar en 100— porque
+     * `estatus` es derivado y se filtra después, en memoria.
+     */
     const porPagina = Math.min(
-      POR_PAGINA_MAXIMO,
+      filtros.limitePorPagina || POR_PAGINA_MAXIMO,
       Math.max(1, Number(filtros.porPagina) || POR_PAGINA_DEFECTO)
     )
 

@@ -15,6 +15,11 @@ const {
   listPortfolioValidation,
   addToPortfolioValidation
 } = require('../../../validations/portfolioValidation')
+const affiliationController = require('../affiliations/affiliationController')
+const {
+  listAffiliationsValidation,
+  addAffiliationValidation
+} = require('../../../validations/affiliationValidation')
 
 const router = express.Router()
 
@@ -53,6 +58,30 @@ router
     addToPortfolioValidation,
     validateRequest,
     asyncHandler(portfolioController.add)
+  )
+
+/*
+ * La ADSCRIPCIÓN empresa ↔ empleado: vincula a alguien que ya existe en el
+ * catálogo compartido, en vez de darlo de alta otra vez. Vive bajo la empresa
+ * porque siempre se adscribe desde una empresa concreta; editar un vínculo que
+ * ya existe es `/adscripciones/:id` (D-45).
+ *
+ * Leer: quien ve empleados. Adscribir: exclusivo de `rh_admin`
+ * (`MANAGE_AFFILIATIONS`), igual que en el alta.
+ */
+router
+  .route('/:id/adscripciones')
+  .get(
+    requireCapability(CAPABILITIES.VIEW_EMPLOYEES),
+    listAffiliationsValidation,
+    validateRequest,
+    asyncHandler(affiliationController.list)
+  )
+  .post(
+    requireCapability(CAPABILITIES.MANAGE_AFFILIATIONS),
+    addAffiliationValidation,
+    validateRequest,
+    asyncHandler(affiliationController.add)
   )
 
 module.exports = router

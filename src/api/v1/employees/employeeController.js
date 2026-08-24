@@ -1,7 +1,10 @@
 const employeeService = require('./employeeService')
 const accessService = require('./accessService')
+const employeeImportService = require('./employeeImportService')
 const { ok, created, noContent } = require('../../../utils/response')
 const { empresaFiltro } = require('../../../middlewares/scopeMiddleware')
+const { AppError } = require('../../../middlewares/errorHandler')
+const { CAMPO } = require('../../../middlewares/uploadMiddleware')
 
 /**
  * HTTP del catálogo de empleados y de sus accesos.
@@ -96,6 +99,66 @@ class EmployeeController {
       req.body.activo
         ? 'Empleado reactivado. Si necesita entrar a la plataforma, vuelve a darle acceso.'
         : 'Empleado dado de baja. Su expediente y su historial se conservan.'
+    )
+  }
+
+  // ─── Importación desde .xlsx (D-46) ──────────────────────────────────────
+
+  /** El archivo, o un 400 que dice cómo mandarlo. */
+  #archivo(req) {
+    if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
+      throw AppError.validation(`Adjunta el archivo de nómina en el campo "${CAMPO}"`, [
+        { msg: 'El archivo es requerido', path: CAMPO }
+      ])
+    }
+    return req.file.buffer
+  }
+
+  /** En `multipart` todo llega como cadena: `'true'` es verdadero. */
+  #esVerdadero(valor) {
+    return valor === true || ['true', '1', 'on'].includes(String(valor).toLowerCase())
+  }
+
+  /** POST /empleados/importar/previsualizar — no escribe nada */
+  previewImport = async (req, res) => {
+    const resultado = await employeeImportService.previsualizar(
+      this.#archivo(req),
+      { empresaId: req.body.empresaId },
+      this.#contexto(req)
+    )
+
+    req.log.info('Importación previsualizada', {
+      empresaId: req.body.empresaId,
+      filas: resultado.resumen.filas,
+      nuevos: resultado.resumen.nuevos,
+      conError: resultado.resumen.conError
+    })
+
+    return ok(res, resultado)
+  }
+
+  /** POST /empleados/importar — aplica */
+  import = async (req, res) => {
+    const resultado = await employeeImportService.importar(
+      this.#archivo(req),
+      {
+        empresaId: req.body.empresaId,
+        confirmarRfcDistinto: this.#esVerdadero(req.body.confirmarRfcDistinto)
+      },
+      this.#contexto(req)
+    )
+
+    const { resumen } = resultado
+    req.log.info('Importación aplicada', {
+      empresaId: req.body.empresaId,
+      ...resumen,
+      categoriasNuevas: resultado.categoriasNuevas.length
+    })
+
+    return created(
+      res,
+      resultado,
+      `${resumen.nuevos} ${resumen.nuevos === 1 ? 'persona nueva' : 'personas nuevas'}, ${resumen.yaExisten} ya ${resumen.yaExisten === 1 ? 'existía' : 'existían'} y ${resumen.conError} ${resumen.conError === 1 ? 'fila no se pudo importar' : 'filas no se pudieron importar'}`
     )
   }
 

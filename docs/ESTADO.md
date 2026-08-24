@@ -3,7 +3,7 @@
 Mapa de qué está hecho y qué falta. **Actualízalo al cerrar cada módulo**: es lo
 primero que lee quien llega, humano o agente.
 
-Última actualización: **2026-08-23** · 445 pruebas en verde.
+Última actualización: **2026-08-24** · 472 pruebas en verde.
 
 El modelo autoritativo es [`modelo-datos.md`](./modelo-datos.md) (jerarquía de
 empresas, catálogos compartidos y vínculos) y el contrato es
@@ -75,12 +75,13 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 | Empleados — edición y baja        | 6.2       | ✅     | Editar: quien puede crear ese tipo. Baja: `rh_admin`. El acceso y las adscripciones tienen su propia ruta |
 | Clientes                          | 6.2       | ✅     | CRUD, baja lógica y **acotado por cartera** (D-40)                                                        |
 | Empresas                          | 6.3       | ✅     | Alta sólo admin de plataforma, listado con conteos                                                        |
-| Adscripciones                     | 6.3       | ⬜     | Modelo listo, faltan rutas                                                                                |
+| Adscripciones                     | 6.3       | ✅     | Alta, edición y baja de esa empresa; baja cierra sus asignaciones ahí (D-45)                              |
 | Carteras                          | 6.3       | ✅     | Bajo la empresa; reactiva en vez de duplicar (D-37)                                                       |
 | Proyectos                         | 6.4       | ✅     | CRUD, aplazar, finalizar, reabrir, clonar categorías (D-38)                                               |
 | Asignaciones                      | 6.4       | ✅     | Con `asignables` (§9.3) y cierre con fecha de salida                                                      |
-| Expedientes y documentos          | 6.5       | 🟡     | Consulta, subida y **revisar** (valida y rechaza). Falta el listado (D-42, D-43)                          |
+| Expedientes y documentos          | 6.5       | ✅     | Listado paginado, consulta, subida y **revisar** (valida y rechaza) (D-42, D-43, D-45)                    |
 | Lógica de dominio                 | modelo §6 | ✅     | Estatus, avance, semáforo, vigencias y la **unión** de plantillas, listos y probados                      |
+| Importar colaboradores (.xlsx)    | —         | ✅     | Previsualizar y aplicar; idempotente al re-subir; crea puestos y adscripciones (D-46)                     |
 | Alertas, métricas y reportes      | 6.6       | ⬜     | Derivados                                                                                                 |
 | Almacenamiento R2                 | 7         | ✅     | Bucket `cames-files/employes-files`, probado de punta a punta; `npm run r2:check` (D-41)                  |
 | Job diario de vigencias           | 8         | ⬜     | Un correo por persona, idempotente                                                                        |
@@ -97,12 +98,17 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 5. ~~**Carteras, proyectos y asignaciones**~~ ✅
 6. ~~**Expedientes**: consulta, subida a R2 con versionado y checklist por unión~~
    ✅ (D-41)
-7. **Revisión de documentos**: `POST …/validar` y `POST …/rechazar`, y
-   `GET /expedientes` paginado — lo que falta para cerrar §6.5.
-8. **Adscripciones con sus rutas** (`GET/POST /empresas/:id/adscripciones`,
-   `PATCH /adscripciones/:id` y `/estado`): mover gente entre empresas sin
-   recrearla, que hoy sólo se puede al dar de alta.
-9. **Alertas, métricas y reportes**, y el job diario de vigencias con correos.
+7. ~~**Revisión de documentos**: validar y rechazar~~ ✅ un solo endpoint,
+   `POST …/revisar` (D-43, D-44)
+8. ~~**`GET /expedientes` paginado**~~ ✅ §6.5 queda cerrado (D-45)
+9. ~~**Adscripciones con sus rutas**~~ ✅ alta, edición y baja de esa empresa,
+   sin recrear a la persona (D-45)
+10. ~~**Importación de colaboradores desde .xlsx**~~ ✅ los dos endpoints,
+    idempotente al re-subir el mismo archivo (D-46). No estaba en el backlog
+    original: lo pidió Urbacames para no capturar a mano a los 145 que ya tienen
+    en nómina.
+11. **Alertas, métricas y reportes**, y el job diario de vigencias con correos.
+    Lo único que queda del backlog original.
 
 ## Decisiones abiertas
 
@@ -125,3 +131,19 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 9. ~~¿Quién puede editar a un empleado?~~ **Resuelto:** quien puede crear a
    alguien de un `tipo` puede también editarlo (D-32). La baja sigue siendo de
    `rh_admin`.
+10. **¿Quién puede ver el salario, el SBC y la cuenta bancaria?** La importación
+    los guarda en `affiliations.nomina` (D-46) porque el archivo de nómina los
+    trae y sirven para no volver a capturarlos, pero **hoy ninguna respuesta de la
+    API los devuelve**: son datos personales sensibles bajo la LFPDPPP y, sin una
+    regla, los vería cualquiera que pueda ver la adscripción —incluido
+    `jefe_area` en sus áreas—. El mecanismo ya existe (capacidad propia +
+    bitácora de accesos, como los documentos sensibles); falta la decisión de
+    negocio. **Está bloqueando** que el front pueda mostrar nómina.
+11. **La lista de puestos que cuentan como mano de obra**
+    (`PALABRAS_MANO_DE_OBRA` en `utils/domain/employeeImport.js`). Con los 19
+    puestos del archivo de Maquinaria Cames clasifica bien, y el catálogo manda
+    cuando el puesto ya existe, pero conviene revisarla contra los puestos reales
+    de todas las empresas del grupo. Es una constante de una línea.
+12. **Las 99 fechas de término de contrato pendientes.** Entran marcadas en
+    `datosPendientes` (D-46) y mientras lo estén su documento `contrato` no
+    deriva vigencia. Falta capturarlas, y falta decidir si se avisa en el tablero.

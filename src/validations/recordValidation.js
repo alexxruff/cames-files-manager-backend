@@ -1,9 +1,44 @@
-const { body, param } = require('express-validator')
-const { DOCUMENT_TYPES } = require('../constants')
+const { body, param, query } = require('express-validator')
+const { AREAS, DOCUMENT_TYPES, EMPLOYEE_TYPES, RECORD_STATUSES } = require('../constants')
 const { isCalendarDate } = require('../utils/dates')
 
 exports.recordIdValidation = [
   param('id').isMongoId().withMessage('El expediente indicado no es válido')
+]
+
+/** GET /expedientes — mismos filtros que /empleados (D-45), más `estatus`. */
+exports.listRecordsValidation = [
+  query('busqueda')
+    .optional()
+    .trim()
+    .isLength({ max: 120 })
+    .withMessage('La búsqueda no puede exceder 120 caracteres'),
+  query('empresaId')
+    .optional()
+    .isMongoId()
+    .withMessage('La empresa indicada no es válida'),
+  query('area').optional().isIn(AREAS).withMessage('Selecciona un área válida'),
+  query('tipo').optional().isIn(EMPLOYEE_TYPES).withMessage('Selecciona un tipo válido'),
+  query('estatus')
+    .optional()
+    .isIn(RECORD_STATUSES)
+    .withMessage(`estatus debe ser uno de: ${RECORD_STATUSES.join(', ')}`),
+  query('incluirInactivos')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('incluirInactivos debe ser true o false'),
+  query('orden')
+    .optional()
+    .isIn(['nombre_asc', 'nombre_desc'])
+    .withMessage('El orden debe ser nombre_asc o nombre_desc'),
+  query('pagina')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('La página debe ser 1 o mayor'),
+  query('porPagina')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage('porPagina debe estar entre 1 y 100')
 ]
 
 exports.uploadDocumentValidation = [

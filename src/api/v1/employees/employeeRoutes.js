@@ -5,7 +5,11 @@ const asyncHandler = require('../../../utils/asyncHandler')
 const validateRequest = require('../../../middlewares/validateRequest')
 const { protect, requireCapability } = require('../../../middlewares/authMiddleware')
 const { applyScope } = require('../../../middlewares/scopeMiddleware')
+const { recibirArchivo } = require('../../../middlewares/uploadMiddleware')
 const { CAPABILITIES } = require('../../../utils/permissions')
+const {
+  importEmployeesValidation
+} = require('../../../validations/employeeImportValidation')
 const {
   listEmployeesValidation,
   createEmployeeValidation,
@@ -42,6 +46,49 @@ router
     validateRequest,
     asyncHandler(employeeController.create)
   )
+
+// ─── Importación desde el archivo de nómina (.xlsx) — D-46 ───────────────────
+/*
+ * Va ANTES de `/:id`: aunque hoy no chocarían (`/:id` no declara POST), dejarlo
+ * después dependería de ese detalle, y basta con que alguien agregue un
+ * `POST /:id` para que `/empleados/importar` empiece a responder "empleado no
+ * válido" sin que nadie entienda por qué.
+ *
+ * ─── El permiso ────────────────────────────────────────────────────────────
+ * Se exigen DOS capacidades, las dos exclusivas de `rh_admin`: importar mueve
+ * gente entre empresas (`MANAGE_AFFILIATIONS`) y da de alta personal
+ * administrativo (`MANAGE_ADMIN_EMPLOYEES`) —de los 145 del archivo, buena parte
+ * lo es—. Un alta masiva sobre el catálogo compartido no es trabajo de
+ * `rh_consulta` ni de `jefe_area`.
+ *
+ * DESVIACIÓN ANOTADA: la importación crea las categorías que falten, y crear
+ * categorías a mano exige `alcanceGlobal` (`MANAGE_CATEGORIES`). Aquí no se
+ * exige: el puesto llega en una columna del archivo, no es una decisión de
+ * catálogo, y pedir al administrador de plataforma para importar la nómina de
+ * una empresa dejaría la función inservible. Ver D-46.
+ */
+const importarPersonal = [
+  requireCapability(CAPABILITIES.MANAGE_AFFILIATIONS),
+  requireCapability(CAPABILITIES.MANAGE_ADMIN_EMPLOYEES)
+]
+
+router.post(
+  '/importar/previsualizar',
+  importarPersonal,
+  recibirArchivo,
+  importEmployeesValidation,
+  validateRequest,
+  asyncHandler(employeeController.previewImport)
+)
+
+router.post(
+  '/importar',
+  importarPersonal,
+  recibirArchivo,
+  importEmployeesValidation,
+  validateRequest,
+  asyncHandler(employeeController.import)
+)
 
 router
   .route('/:id')

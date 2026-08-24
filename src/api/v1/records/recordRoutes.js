@@ -8,6 +8,7 @@ const { recibirArchivo } = require('../../../middlewares/uploadMiddleware')
 const { CAPABILITIES } = require('../../../utils/permissions')
 const {
   recordIdValidation,
+  listRecordsValidation,
   uploadDocumentValidation,
   reviewDocumentValidation,
   documentVersionValidation
@@ -16,6 +17,15 @@ const {
 const router = express.Router()
 
 router.use(protect, applyScope)
+
+/** GET /expedientes — listado paginado (D-45). Mismos filtros que /empleados. */
+router.get(
+  '/',
+  requireCapability(CAPABILITIES.VIEW_EMPLOYEES),
+  listRecordsValidation,
+  validateRequest,
+  asyncHandler(recordController.list)
+)
 
 router.get(
   '/:id',

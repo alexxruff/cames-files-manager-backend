@@ -1,6 +1,7 @@
 const recordService = require('./recordService')
 const { ok, created } = require('../../../utils/response')
 const { CAMPO } = require('../../../middlewares/uploadMiddleware')
+const { empresaFiltro } = require('../../../middlewares/scopeMiddleware')
 
 /** HTTP de expedientes y sus documentos (backend-spec §6.5). */
 class RecordController {
@@ -12,6 +13,28 @@ class RecordController {
       ip: req.ip,
       userAgent: req.get('user-agent') || null
     }
+  }
+
+  /** GET /expedientes — paginado, con los mismos filtros que /empleados */
+  list = async (req, res) => {
+    // Valida que la empresa pedida esté dentro del alcance (404 si no).
+    if (req.query.empresaId) empresaFiltro(req, req.query.empresaId)
+
+    const datos = await recordService.list(
+      {
+        busqueda: req.query.busqueda,
+        empresaId: req.query.empresaId,
+        area: req.query.area,
+        tipo: req.query.tipo,
+        estatus: req.query.estatus,
+        incluirInactivos: req.query.incluirInactivos === 'true',
+        orden: req.query.orden,
+        pagina: req.query.pagina,
+        porPagina: req.query.porPagina
+      },
+      this.#contexto(req)
+    )
+    return ok(res, datos)
   }
 
   /** GET /empleados/:id/expediente */

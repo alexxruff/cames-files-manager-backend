@@ -10,6 +10,7 @@ const projectRoutes = require('../projects/projectRoutes')
 const portfolioRoutes = require('../portfolios/portfolioRoutes')
 const assignmentRoutes = require('../assignments/assignmentRoutes')
 const recordRoutes = require('../records/recordRoutes')
+const affiliationRoutes = require('../affiliations/affiliationRoutes')
 const goneRoutes = require('../users/goneRoutes')
 
 const router = express.Router()
@@ -51,13 +52,11 @@ router.get('/ready', (req, res) => {
  * front qué falta sin que nadie tenga que consultar un documento aparte.
  */
 const RUTAS_PENDIENTES = Object.freeze([
-  // Catálogos compartidos
+  // Catálogos compartidos. `/empleados/:id/adscripciones` no se implementó
+  // aparte: `GET /empleados/:id` ya trae sus adscripciones embebidas.
   { metodos: ['GET'], ruta: '/api/v1/empleados/:id/adscripciones', spec: '6.2' },
   { metodos: ['GET'], ruta: '/api/v1/empleados/:id/asignaciones', spec: '6.2' },
-  // Empresas y vínculos
-  { metodos: ['GET', 'POST'], ruta: '/api/v1/adscripciones', spec: '6.3' },
   // Proyectos, expedientes y derivados
-  { metodos: ['GET'], ruta: '/api/v1/expedientes', spec: '6.5' },
   { metodos: ['GET'], ruta: '/api/v1/alertas', spec: '6.6' },
   { metodos: ['GET'], ruta: '/api/v1/dashboard/metricas', spec: '6.6' },
   { metodos: ['GET'], ruta: '/api/v1/reportes/expedientes', spec: '6.6' },
@@ -100,6 +99,7 @@ router.use('/proyectos', projectRoutes)
 router.use('/carteras', portfolioRoutes)
 router.use('/asignaciones', assignmentRoutes)
 router.use('/expedientes', recordRoutes)
+router.use('/adscripciones', affiliationRoutes)
 
 // Movida al modelo nuevo: responde 410 con la ruta que la sustituye.
 router.use('/usuarios', goneRoutes)

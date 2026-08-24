@@ -76,7 +76,8 @@ Mapa de nombres (modelo → colección → nombre en el spec):
 src/
   api/v1/
     auth/               login, me, logout, cambiar-password (+ authUser.js)
-    employees/          catálogo de personas + accesos (sub-recurso)
+    employees/          catálogo de personas + accesos (sub-recurso) +
+                        importación desde el .xlsx de nómina (D-46)
     credentials/        material secreto, aislado (D-27)
     companies/          empresas: la entidad raíz
     affiliations/       adscripción empresa ↔ empleado: la relación laboral
@@ -90,9 +91,9 @@ src/
   middlewares/          authMiddleware · scopeMiddleware · validateRequest ·
                         errorHandler · requestContext · rateLimiters
   utils/                response (envelope) · asyncHandler · dates · text ·
-                        permissions · logger · routeInventory
-  utils/domain/         reglas de expedientes, PURAS: documentStatus · progress ·
-                        alerts · checklist · expiry
+                        permissions · logger · routeInventory · spreadsheet
+  utils/domain/         reglas PURAS: documentStatus · progress · alerts ·
+                        checklist · expiry · employeeImport
   services/             bootstrapAdmin · seedChecklistTemplates
 scripts/                semillas, índices y migración
 tests/                  unitarias/ · integracion/ · helpers/
@@ -157,15 +158,22 @@ imposible acabar con dos registros de la misma persona.
 
 ## Estado
 
-**Hecho:** base del proyecto, replica set con transacciones, colecciones del
-modelo nuevo (empresas, empleados, credenciales, clientes, categorías,
-adscripciones), sesión con el `AuthUser` nuevo, administración de accesos,
-listado de empleados con alcance y paginación, migración del modelo anterior, y la
-lógica de dominio de expedientes (`utils/domain/`).
+**Hecho:** base del proyecto, replica set con transacciones, todas las
+colecciones del modelo nuevo, sesión con el `AuthUser` nuevo, administración de
+accesos, empleados (alta con expediente, edición, baja, listado con alcance y
+paginación), empresas, categorías, clientes, carteras, proyectos, asignaciones,
+adscripciones (alta, edición y baja de una empresa), y expedientes completos:
+listado paginado, consulta, subida a R2 con versionado, checklist por unión y
+revisión (validar/rechazar). Y la **importación de colaboradores desde el .xlsx
+de nómina**: previsualizar, aplicar, y volver a subir el mismo archivo sin
+duplicar a nadie (D-46).
 
-**Pendiente:** rutas de empresas y adscripciones, alta de empleados con su
-expediente, clientes y categorías, carteras, proyectos, asignaciones,
-expedientes con checklist por unión, R2, alertas, métricas, reportes y el job de
-vigencias.
+**Pendiente:** alertas, métricas, reportes y el job diario de vigencias — ver
+`docs/ESTADO.md` para el detalle y el orden sugerido.
+
+**Decisión abierta que bloquea al front:** `affiliations.nomina` guarda salario,
+SBC y cuenta bancaria porque el archivo de nómina los trae, pero **ninguna
+respuesta los devuelve** hasta que se decida quién puede verlos (LFPDPPP). No
+"arregles" esto agregándolos al `toJSON`: ver D-46 y `ESTADO.md` #10.
 
 El detalle, con checkboxes y el orden sugerido, está en `docs/ESTADO.md`.

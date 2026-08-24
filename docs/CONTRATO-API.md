@@ -75,12 +75,99 @@ Sólo estas cuatro: `POST /auth/login`, `GET /api/v1` (inventario), `GET /health
 | GET    | `/proyectos/:id/asignables`                                | asignar a proyectos          | El selector: adscritos, activos, con categoría habilitada y sin asignar                 |
 | POST   | `/proyectos/:id/asignaciones`                              | asignar a proyectos          | Exige adscripción activa y categoría habilitada                                         |
 | PATCH  | `/asignaciones/:id/salida`                                 | asignar a proyectos          | Cierra, no borra                                                                        |
+| GET    | `/expedientes`                                             | ver empleados                | Paginado; mismos filtros que `/empleados` **más `estatus`** (D-45)                      |
 | GET    | `/empleados/:id/expediente`                                | ver empleados                | Crea el expediente si no existía; `data: { expediente, empleado, avance }`              |
 | GET    | `/expedientes/:id`                                         | ver empleados                | Lo mismo por id de expediente; 404 si el empleado no es visible                         |
 | POST   | `/expedientes/:id/documentos/:tipo`                        | subir documentos             | `multipart`, campo `archivo`. Versiona; 413 >10 MB, 415 si no es PDF/JPG/PNG/WEBP       |
 | GET    | `/expedientes/:id/documentos/:tipo/versiones/:version/url` | ver documentos               | URL firmada temporal; **queda en la bitácora** (D-41)                                   |
 | POST   | `/expedientes/:id/documentos/:tipo/revisar`                | `rh_admin` · `rh_consulta`   | `{ aprobado, motivo? }`: valida o rechaza la versión en revisión (D-43, D-44)           |
+| GET    | `/empresas/:id/adscripciones`                              | ver empleados                | `?activo=&area=`; el jefe de área sólo ve sus propias áreas (D-45)                      |
+| POST   | `/empresas/:id/adscripciones`                              | `rh_admin`                   | Vincula a alguien que ya existe; 200 si reactiva una adscripción previa (D-45)          |
+| PATCH  | `/adscripciones/:id`                                       | `rh_admin`                   | areas, tipoContrato, fechaIngreso, fechaTerminoContrato; re-sincroniza el checklist     |
+| PATCH  | `/adscripciones/:id/estado`                                | `rh_admin`                   | Baja **de esa empresa**; cierra sus asignaciones abiertas ahí (D-45)                    |
+| POST   | `/empleados/importar/previsualizar`                        | `rh_admin`                   | `multipart`: `archivo` (.xlsx) + `empresaId`. **No escribe nada** (D-46)                |
+| POST   | `/empleados/importar`                                      | `rh_admin`                   | Igual, más `confirmarRfcDistinto?`. Idempotente: re-subir no duplica (D-46)             |
 | ALL    | `/usuarios*`                                               | —                            | **410** con las rutas nuevas (se borra cuando el front migre)                           |
+
+### Importación de colaboradores desde .xlsx
+
+Las dos rutas reciben `multipart/form-data` con el archivo en el campo `archivo`
+y devuelven **la misma forma**: `previsualizar` con `aplicado: false` y sin haber
+escrito nada, `importar` con `aplicado: true` y lo que de verdad pasó. Ver D-46.
+
+```ts
+interface ResultadoImportacion {
+  aplicado: boolean
+  archivo: {
+    hoja: string
+    filaEncabezados: number
+    empresa: string | null // del encabezado del reporte
+    rfc: string | null // del encabezado del reporte
+    filas: number
+  }
+  empresa: {
+    _id: string
+    nombre: string
+    rfc: string | null
+    /** true, false, o null si no se pudo comparar (falta un RFC de los dos). */
+    rfcCoincide: boolean | null
+  }
+  resumen: {
+    filas: number
+    nuevos: number // personas que no existían
+    seAdscriben: number // existían, pero no en esta empresa
+    seReactivan: number // estaban de baja de esta empresa y vuelven
+    seDanDeBaja: number // el archivo dice Baja y estaban activas
+    actualizan: number
+    sinCambios: number
+    yaExisten: number // suma de los cinco anteriores
+    conError: number
+  }
+  categoriasNuevas: { nombre: string; tipo: TipoEmpleado; filas: number }[]
+  nuevos: {
+    fila: number // renglón del .xlsx, para que el usuario lo ubique
+    empleadoId: string | null // null en la previsualización
+    nombre: string
+    curp: string | null
+    numeroEmpleado: string | null
+    puesto: string | null
+    tipo: TipoEmpleado
+    estatus: string | null // 'Alta' | 'Baja' | 'Reingreso', tal como viene
+    areas: Area[]
+    departamento: string | null
+    avisos: string[]
+  }[]
+  yaExisten: {
+    fila: number
+    empleadoId: string
+    nombre: string
+    curp: string | null
+    numeroEmpleado: string | null
+    accion: 'adscribir' | 'reactivar' | 'dar_de_baja' | 'actualizar' | 'sin_cambios'
+    cambios: string[] // qué campos va a cambiar (o cambió)
+    avisos: string[]
+  }[]
+  conError: {
+    fila: number
+    nombre: string | null
+    curp: string | null
+    motivo: string // el primero, mostrable tal cual
+    motivos: string[]
+  }[]
+  avisos: string[] // del archivo entero
+}
+```
+
+**Códigos.** `200` la previsualización · `201` la importación · `400` faltan
+columnas, no viene el archivo o no viene `empresaId` · `403` no es `rh_admin` ·
+`404` la empresa no está en su alcance · `409` con `code: 'RFC_DISTINTO'` cuando
+el RFC del archivo no es el de la empresa (en `data` va la previsualización
+completa; para continuar, reenviar con `confirmarRfcDistinto: true`) · `413` el
+archivo pasa de 10 MB · `415` no es un .xlsx.
+
+**Las filas malas no detienen a las buenas.** Un archivo con 2 filas sin CURP y
+143 correctas responde `201`, importa las 143 y las 2 salen en `conError` con su
+número de renglón.
 
 ### `AuthUser`
 

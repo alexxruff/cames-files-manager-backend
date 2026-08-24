@@ -277,6 +277,15 @@ export interface AdscripcionDeEmpleado {
   activo: boolean
 }
 
+/*
+ * OJO: la adscripción que devuelven `/empresas/:id/adscripciones` y
+ * `/adscripciones/:id` trae TRES campos más —`numeroEmpleado`, `departamento` y
+ * `datosPendientes`— que agregó la importación desde .xlsx (D-46). Son
+ * aditivos: nada cambió de nombre ni de forma. El renglón del listado de
+ * empleados, el de arriba, sigue igual. Detalle en
+ * `docs/ENDPOINTS-ADSCRIPCIONES.md`.
+ */
+
 /** Un renglón del listado. La forma ya es la definitiva. */
 export interface RenglonEmpleado {
   empleado: Empleado
@@ -824,13 +833,15 @@ curl -s -X POST $BASE/empleados/$ID/acceso -H "Authorization: Bearer $TOKEN" \
 
 ## Referencias
 
-| Qué                                           | Dónde                           |
-| --------------------------------------------- | ------------------------------- |
-| **Ajustes concretos que debe hacer el front** | `docs/CAMBIOS-FRONTEND.md`      |
-| Carteras, proyectos y asignaciones            | `docs/ENDPOINTS-PROYECTOS.md`   |
-| Expedientes: consulta y subida                | `docs/ENDPOINTS-EXPEDIENTES.md` |
-| Modelo de datos autoritativo                  | `docs/modelo-datos.md`          |
-| Contrato de API y catálogo de rutas           | `docs/backend-spec.md`          |
-| Endpoints implementados, al detalle           | `docs/CONTRATO-API.md`          |
-| Decisiones y por qué de cada regla            | `docs/DECISIONES.md`            |
-| Qué está hecho y qué falta                    | `docs/ESTADO.md`                |
+| Qué                                               | Dónde                             |
+| ------------------------------------------------- | --------------------------------- |
+| **Ajustes concretos que debe hacer el front**     | `docs/CAMBIOS-FRONTEND.md`        |
+| Carteras, proyectos y asignaciones                | `docs/ENDPOINTS-PROYECTOS.md`     |
+| Expedientes: listado, consulta, subida y revisión | `docs/ENDPOINTS-EXPEDIENTES.md`   |
+| Adscripciones: vincular a alguien que ya existe   | `docs/ENDPOINTS-ADSCRIPCIONES.md` |
+| Importar colaboradores desde el .xlsx de nómina   | `docs/ENDPOINTS-IMPORTACION.md`   |
+| Modelo de datos autoritativo                      | `docs/modelo-datos.md`            |
+| Contrato de API y catálogo de rutas               | `docs/backend-spec.md`            |
+| Endpoints implementados, al detalle               | `docs/CONTRATO-API.md`            |
+| Decisiones y por qué de cada regla                | `docs/DECISIONES.md`              |
+| Qué está hecho y qué falta                        | `docs/ESTADO.md`                  |

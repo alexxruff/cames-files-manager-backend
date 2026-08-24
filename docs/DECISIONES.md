@@ -1050,3 +1050,294 @@ El "administrador general de la plataforma" que se pidió sumar **ya podía**: e
 `'global'`, como `manageCompanies`—, así que cualquier `rh_admin` ya revisaba,
 tenga o no alcance de plataforma. El cambio real de este ajuste es sólo la fila
 de `rh_consulta`.
+
+---
+
+## D-45 · `GET /expedientes` paginado, y adscripciones con sus rutas
+
+Cierran los dos últimos pendientes que quedaban dentro de "expedientes" y de
+"empresas y vínculos" (backend-spec §6.3 y §6.5).
+
+### `GET /expedientes`: `estatus` se resuelve en memoria, no en Mongo
+
+Es el mismo candado que ya impone modelo-datos.md §9.1 para el listado de
+empleados: **"el avance no se calcula en el pipeline"**. `estatus` (el semáforo:
+`incomplete` / `complete` / `expiring` / `expired`) depende de `hoy` y de la
+vigencia de cada documento, así que filtrar por él en una agregación de Mongo
+significaría duplicar esa lógica en un pipeline —justo lo que la nota pide
+evitar, y lo que ya costó un bug (D-41) cuando se intentó algo parecido con
+`select: false`.
+
+**Solución:** se resuelve el alcance y los demás filtros (`busqueda`,
+`empresaId`, `area`, `tipo`) reutilizando `employeeService.list` **sin paginar
+todavía** —con un tope interno alto (2 000, ver `LIMITE_PARA_FILTRAR_POR_ESTATUS`
+en `recordService.js`)—, se calcula el avance de cada quien con la misma función
+que usa el resto del sistema (`computeProgress`), se filtra por `estatus` si lo
+pidieron, y **se pagina al final, en memoria**.
+
+`employeeService.list` gana un parámetro interno, `limitePorPagina`, que **no es
+parte del contrato HTTP**: `employeeController.list` arma `filtros` campo por
+campo desde `req.query` y no lo incluye, así que nadie puede pedirlo por la ruta
+pública. Existe sólo para que `recordService.list` pueda pedir "todo lo que hay
+que evaluar", no una página de 100.
+
+**Orden por defecto: el más urgente primero**, no alfabético. `RECORD_STATUS_SEVERITY`
+—`expired` < `incomplete` < `expiring` < `complete`— ya estaba declarada en
+`constants/statuses.js` sin que nadie la usara todavía; es justo el orden que
+pide un listado de RH: lo vencido antes que lo completo. `?orden=nombre_asc` o
+`nombre_desc` lo cambian a alfabético, igual que en `/empleados`.
+
+### Adscripciones: alta, edición y baja de UNA empresa
+
+`GET/POST /empresas/:id/adscripciones` vive bajo la empresa, y `PATCH
+/adscripciones/:id` y `/estado` identifican el vínculo por sí mismo — mismo
+patrón que carteras (D-37). Reactivar en vez de duplicar cuando la persona ya
+tuvo adscripción a esa empresa y se dio de baja, por la misma razón que en
+carteras: el índice único lo impide, y duplicar perdería el historial.
+
+**Exclusivo de `rh_admin`** (`MANAGE_AFFILIATIONS`, ya existía en la matriz y
+ya lo probaba `permissions.test.js`: "adscribir sigue siendo exclusivo de
+rh_admin"). Adscribir a alguien que ya existe es distinto de darlo de alta:
+mover gente entre empresas del grupo es una decisión de RH, no de quien
+gestiona personal de obra.
+
+**Crear o editar una adscripción re-sincroniza el checklist** de la persona
+(`recordService.sincronizar`), porque el checklist es la unión de sus
+adscripciones activas (D-41): cambiar de área o de tipo de contrato puede
+cambiar qué documentos le tocan.
+
+**Dar de baja de una empresa cierra sus asignaciones abiertas a proyectos de
+ESA empresa**, con el mismo criterio que finalizar un proyecto (D-38): seguir
+"en obra" de una empresa de la que ya no depende no tiene sentido y lo dejaría
+ahí para siempre en los reportes. Se resuelve buscando los proyectos de esa
+empresa y cerrando (`activo: false`, `fechaSalida`) las asignaciones de esa
+persona en esos proyectos, en la misma transacción que la baja. **No** toca sus
+asignaciones en otras empresas del grupo: sigue trabajando ahí.
+
+**El motivo es obligatorio sólo al dar de baja**, igual que en clientes y
+proyectos; reactivar no lo pide.
+
+### Lo que no se implementó
+
+`GET /empleados/:id/adscripciones` se deja **pendiente a propósito**: el
+`RenglonEmpleado` ya trae `adscripciones[]` embebidas en `GET /empleados/:id` y
+en todo lo que devuelve ese renglón, así que la ruta aparte sería exactamente la
+misma información con otro nombre. Si el front necesita paginar las
+adscripciones de alguien con muchas empresas, se implementa entonces.
+
+---
+
+## D-46 · Importación de colaboradores desde el .xlsx de nómina
+
+**Decisión.** Dos endpoints —`POST /empleados/importar/previsualizar` y
+`POST /empleados/importar`— que dan de alta personal a partir del reporte de
+nómina, y que se pueden volver a correr con el mismo archivo tantas veces como se
+quiera sin duplicar a nadie.
+
+Se implementó sobre el archivo real (`docs/Colaboradores_20260824.xlsx`,
+145 colaboradores de Maquinaria Cames). El plan completo, con el análisis del
+archivo, está en `PLAN-IMPORTACION-XLSX.md`.
+
+### Tres capas, y la de en medio es pura
+
+| Archivo                              | Qué hace                                          |
+| ------------------------------------ | ------------------------------------------------- |
+| `utils/spreadsheet.js`               | .xlsx → filas con valores planos. Sabe de FORMATO |
+| `utils/domain/employeeImport.js`     | fila → persona + adscripción. **Puro**            |
+| `employees/employeeImportService.js` | compara contra la base y aplica                   |
+
+La de en medio es pura a propósito: los 19 puestos, los 5 tipos de contrato, los
+3 estatus y **las fechas** se prueban sin levantar Mongo, y son justo lo que se
+equivoca al cambiar el formato del reporte.
+
+### La trampa que este módulo podía reintroducir: D-09
+
+`exceljs` entrega cada fecha como un `Date` a **medianoche UTC** del día civil
+correcto. Extraerla con `getFullYear()/getMonth()/getDate()` —lo primero que uno
+escribe— devuelve el **día anterior** en un servidor al oeste de Greenwich, y
+México lo está: se comprobó contra el archivo real, y salían corridas **las 280
+fechas**. Se extrae en UTC (`toISOString().slice(0, 10)`) y hay una prueba que
+recorre los 366 días de un año bisiesto para que no vuelva.
+
+### La empresa se elige, y el RFC del archivo se valida contra ella
+
+El reporte trae la empresa y su RFC en el encabezado (`EMPRESA | MAQUINARIA
+CAMES`, `RFC | MCA180611HF1`). Se compara con el RFC de la empresa destino:
+
+- Coinciden → adelante.
+- **No coinciden → `409 RFC_DISTINTO`**, con la previsualización completa en
+  `data`. Para continuar hay que reenviar con `confirmarRfcDistinto`.
+- La empresa no tiene RFC capturado → aviso, no bloqueo.
+
+Es lo que evita meter a los 145 de Maquinaria Cames en la empresa equivocada, que
+es un error caro de deshacer: 145 personas, 145 adscripciones y 145 expedientes.
+
+### Contratos temporales sin fecha de término: `datosPendientes`
+
+**El problema.** 99 de las 145 personas tienen contrato temporal y el archivo **no
+trae fecha de término**. La adscripción la exige, porque de ahí sale la vigencia
+del documento `contrato` (D-41). O se rechazaban 99 de 145, o entraban sin ella.
+
+**La solución.** `affiliations.datosPendientes: [String]`. Mientras contenga
+`'fechaTerminoContrato'`, el `pre('validate')` del modelo omite **esa** regla y
+sólo ésa. Dos candados para que no sea una puerta trasera:
+
+1. `datosPendientes` **no está** en la lista blanca de
+   `updateAffiliationValidation`: no se puede poner desde `PATCH
+/adscripciones/:id`. Sólo lo escribe el importador.
+2. En cuanto la fecha se captura, el pendiente **se borra solo**. Se limpia en el
+   `pre('validate')` del modelo y no en el servicio, para que valga por cualquier
+   camino —el `PATCH`, otra importación o un script— y no sólo por el que se
+   acordó de quitarlo.
+
+Consecuencia que hay que asumir: mientras esté pendiente, el documento `contrato`
+de esas 99 personas no deriva vigencia. La lista es lo que permite cerrarlo.
+
+### Quién gana cuando el archivo y la base no coinciden
+
+No es una regla, son dos, y la diferencia es deliberada:
+
+| Qué                     | Quién manda                                   |
+| ----------------------- | --------------------------------------------- |
+| La **persona**          | La base. El archivo sólo **rellena** lo vacío |
+| La **relación laboral** | El archivo                                    |
+
+La persona no se pisa porque el export de nómina se queda viejo: si RH corrigió
+un nombre o un teléfono en la plataforma, volver a subir el archivo del mes
+pasado no debe deshacer la corrección. La adscripción sí, porque es el sistema de
+nómina el que sabe con qué contrato está alguien y cuánto gana.
+
+Dos excepciones dentro de la adscripción: `areas` sólo se rellena si está vacía
+—el archivo no trae áreas, se deducen del departamento, y una curada a mano vale
+más que una deducida—, y `fechaTerminoContrato` no se toca porque el archivo no
+la trae.
+
+**El puesto tampoco se cambia al re-importar.** Mover el `tipo` de una persona
+arrastra la coherencia con la categoría y la regla de «un administrativo necesita
+área»; un cambio de puesto en el archivo se **reporta** y se aplica a mano.
+
+### Cómo se reconoce a alguien que ya existe
+
+**CURP → RFC → número de empleado dentro de esa empresa.** Los 145 traen CURP y
+RFC, así que el tercero es sólo una red para cuando la CURP se capturó mal (y
+avisa cuando se usa). Si la CURP apunta a una persona y el RFC a otra, la fila es
+un error: no se adivina.
+
+La CURP es obligatoria en el importador aunque el modelo la permita nula (D-28).
+Es la llave de la re-importación: sin ella, subir el archivo dos veces duplicaría
+a las 145 personas — que es exactamente lo que este módulo tiene que evitar.
+
+### Lo que la re-importación NUNCA toca
+
+El acceso a la plataforma, el expediente y sus documentos, y las adscripciones a
+**otras** empresas. Y **que alguien desaparezca del archivo no lo da de baja**: el
+archivo no es autoridad para eso.
+
+### La estandarización de puestos ya la resolvía el modelo
+
+No hizo falta nada nuevo: `Category` tiene índice único sobre
+`nombreNormalizado`, y `normalize()` quita acentos, mayúsculas y espacios de más.
+`Peon`, `Peón`, `PEON` y `"Residente "` —con el espacio que trae el archivo—
+colapsan solos a la misma categoría, y la segunda importación la reutiliza.
+
+Si el puesto ya existe **con otro tipo**, manda el catálogo: es un dato que
+alguien decidió, contra una deducción por palabras del puesto
+(`PALABRAS_MANO_DE_OBRA`). El resultado de cada puesto sale en la
+previsualización, para revisarlo antes de aplicar.
+
+**Si el puesto está desactivado, la fila se rechaza.** Desactivar una categoría es
+una decisión —«este puesto ya no se usa»— y `categoryService.setEstado` sólo
+permite desactivar la que nadie tiene, así que no es un descuido. Asignarle 60
+personas en silencio desharía esa decisión sin que nadie se enterara; reactivarla
+sola, igual. Se rechazan esas filas con un mensaje que dice qué hacer, y las demás
+se importan.
+
+### `Departamento` no son todos departamentos
+
+`Axis Zapopan`, `Axis 3`, `Plenares`, `Kulkana` y `FlexPark` son **obras** — 53 de
+las 145 filas. No hay área equivalente, y mapearlas a una sería inventar el dato:
+el área cae al valor por defecto del tipo (`obra` / `administracion`) y el nombre
+original se conserva en `affiliations.departamento`, que es donde de verdad dice
+en qué obra está la persona. Cuando existan proyectos de verdad, de ahí sale la
+asignación — que es una decisión, no un efecto secundario de importar un archivo.
+
+### La nómina se guarda y NO se expone
+
+`affiliations.nomina` guarda los 15 campos del reporte: salario diario, las tres
+partes del SBC, base de cotización, registro patronal, banco, sucursal y cuenta.
+Van en la adscripción porque son de la relación con **esa** empresa.
+
+**Ninguna respuesta de la API los devuelve.** El `toJSON` de la adscripción los
+omite y el campo va con `select: false`, las dos cosas: la lección de D-27 es que
+`select: false` solo no basta, porque las agregaciones lo ignoran. Hay una prueba
+que verifica que el listado de adscripciones no contenga el salario ni la cuenta.
+
+**Por qué no se exponen todavía:** salario, SBC y número de cuenta son datos
+personales sensibles bajo la LFPDPPP, y hoy los vería **cualquiera que pueda ver
+la adscripción**, incluido `jefe_area` en sus áreas. El sistema ya tiene el
+mecanismo para acotarlo —capacidades y bitácora de accesos, como los documentos
+sensibles—, pero **quién puede verlos es una decisión de negocio que no está
+tomada**. Guardarlos sin exponerlos deja el dato capturado y la decisión abierta;
+es la única de las dos cosas que se puede hacer sin adivinar. Queda como decisión
+abierta en `ESTADO.md`.
+
+### El archivo no se guarda
+
+Se procesa en memoria y no va a R2 ni a disco. Trae CURP, NSS, salarios y cuentas
+bancarias de 145 personas: conservarlo sería un segundo lugar del que se pueden
+filtrar, y para eso ya está la base. Por lo mismo **el archivo real no es un
+fixture del repo**: las pruebas generan archivos con la misma estructura y los
+mismos casos borde (`tests/helpers/nominaWorkbook.js`), y hay una prueba extra que
+usa el real **si está presente** y se salta si no.
+
+Se valida por _magic bytes_ (`PK\x03\x04`), no por extensión, igual que los
+documentos del expediente. `esLibroExcel` vive en `spreadsheet.js` y **no** se
+agregó a `utils/fileTypes.js` a propósito: ahí están los tipos que se aceptan como
+documento del expediente, y un .xlsx no debe volverse subible como documento por
+un efecto colateral de esta función.
+
+### Sin estado intermedio entre previsualizar y aplicar
+
+El archivo se manda las dos veces, y las dos pasan por el mismo `#analizar`: es lo
+que garantiza que lo que se ve antes de aplicar sea lo que va a pasar. Con 34 KB
+no vale la pena una colección de importaciones pendientes que además habría que
+limpiar — y que sería otra copia de los datos sensibles.
+
+### Una transacción por persona, no una para las 145
+
+Persona + adscripción + expediente, igual que `POST /empleados` y por la misma
+razón (D-33): sin la adscripción nadie la ve. Pero **una transacción por fila**,
+no una sola para todo el archivo: así una fila que reviente no tumba las otras
+144, y el resumen puede decir con precisión qué pasó con cada una. Una fila que
+falla al aplicar sale en `conError` con su motivo, no se reporta como importada.
+
+### El permiso, y la desviación que trae
+
+Se exigen **dos capacidades, las dos exclusivas de `rh_admin`**:
+`MANAGE_AFFILIATIONS` (importar mueve gente entre empresas) y
+`MANAGE_ADMIN_EMPLOYEES` (buena parte de los 145 es personal administrativo). Ni
+`rh_consulta` ni `jefe_area`: un alta masiva sobre el catálogo compartido no es
+trabajo suyo.
+
+**Desviación anotada:** la importación crea las categorías que falten, y crear una
+categoría a mano exige `alcanceGlobal` (`MANAGE_CATEGORIES`, D-32). Aquí no se
+exige. El puesto llega en una columna del archivo, no es una decisión de catálogo,
+y pedir al administrador de plataforma para importar la nómina de una empresa
+dejaría la función inservible.
+
+### Antes de importar en un entorno que ya existe
+
+`affiliations` gana un índice **único parcial** sobre `(empresaId,
+numeroEmpleado)`: es lo que hace fiable la tercera llave de reconocimiento. En
+producción `autoIndex` está apagado, así que hay que correr **`npm run
+db:indices`** antes de la primera importación. Sin él la importación funciona,
+pero nada impediría dos adscripciones con el mismo número de empleado en la misma
+empresa.
+
+### Lo que este módulo deja fuera a propósito
+
+- **No crea empresas.** La empresa destino se elige.
+- **No crea accesos a la plataforma.** Los 145 entran como personas sin login;
+  dar acceso sigue siendo `POST /empleados/:id/acceso`, uno por uno.
+- **No asigna a proyectos**, aunque el departamento diga `Axis Zapopan`.
+- **No borra a nadie.**
