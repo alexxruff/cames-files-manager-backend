@@ -22,12 +22,19 @@ exports.listEmployeesValidation = [
     .withMessage('La empresa indicada no es válida'),
   query('area').optional().isIn(AREAS).withMessage('Selecciona un área válida'),
   query('tipo').optional().isIn(EMPLOYEE_TYPES).withMessage('Selecciona un tipo válido'),
+  query('categoriaId')
+    .optional()
+    .isMongoId()
+    .withMessage('Selecciona una categoría válida'),
   flagOpcional('soloConAcceso'),
-  flagOpcional('incluirInactivos'),
+  query('activo')
+    .optional()
+    .isIn(['true', 'false', 'todos'])
+    .withMessage('activo debe ser true, false o todos'),
   query('orden')
     .optional()
-    .isIn(['nombre_asc', 'nombre_desc'])
-    .withMessage('El orden debe ser nombre_asc o nombre_desc'),
+    .isIn(['nombre_asc', 'nombre_desc', 'numero_asc', 'numero_desc'])
+    .withMessage('El orden debe ser nombre_asc, nombre_desc, numero_asc o numero_desc'),
   query('pagina')
     .optional()
     .isInt({ min: 1 })
@@ -118,6 +125,18 @@ exports.createEmployeeValidation = [
       }
       return true
     }),
+  /**
+   * En la importación desde .xlsx lo trae el archivo (columna `ID`, D-46); en el
+   * alta manual nadie más lo captura, así que aquí se vuelve obligatorio.
+   */
+  body('adscripcion.numeroEmpleado')
+    .if(body('adscripcion').exists())
+    .trim()
+    .notEmpty()
+    .withMessage('El número de empleado es requerido')
+    .bail()
+    .isLength({ max: 30 })
+    .withMessage('El número de empleado no puede exceder 30 caracteres'),
   fechaCalendario('adscripcion.fechaTerminoContrato', 'La fecha de término'),
   body('adscripcion.areas')
     .optional()

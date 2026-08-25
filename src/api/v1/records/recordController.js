@@ -27,7 +27,7 @@ class RecordController {
         area: req.query.area,
         tipo: req.query.tipo,
         estatus: req.query.estatus,
-        incluirInactivos: req.query.incluirInactivos === 'true',
+        activo: req.query.activo,
         orden: req.query.orden,
         pagina: req.query.pagina,
         porPagina: req.query.porPagina

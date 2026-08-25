@@ -320,14 +320,14 @@ Parámetros de `GET /empleados`:
 
 | Parámetro | Nota |
 | --- | --- |
-| `busqueda` | **Por nombre.** Ignora acentos y mayúsculas, coincidencia parcial |
+| `busqueda` | **Por nombre o número de empleado** (D-51). Ignora acentos y mayúsculas, coincidencia parcial |
 | `empresaId` | Filtra dentro del alcance; nunca lo amplía |
 | `area` | Áreas de la adscripción, no del empleado |
 | `proyectoId` | Con asignación activa a ese proyecto |
 | `tipo` | `administrativo` \| `mano_de_obra` |
 | `soloConAcceso` | Los que entran a la plataforma |
-| `incluirInactivos` | Por defecto `false` |
-| `orden` | `nombre_asc` (defecto) \| `nombre_desc` |
+| `activo` | `true` (defecto, sólo activos) \| `false` (sólo bajas) \| `todos` (D-51) |
+| `orden` | `nombre_asc` (defecto) \| `nombre_desc` \| `numero_asc` \| `numero_desc` (D-51) |
 | `pagina` `porPagina` | Empieza en 1; 25 por defecto |
 
 ```jsonc

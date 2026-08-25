@@ -33,12 +33,12 @@ Base: `/api/v1`. Envelope, códigos y convenciones generales:
 
 | Query                 | Nota                                                                                                                 |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `busqueda`            | Por nombre                                                                                                           |
+| `busqueda`            | Por nombre **o por número de empleado** (D-51)                                                                       |
 | `empresaId`           | Acota dentro de lo visible; `404` si esa empresa no es tuya                                                          |
 | `area`                |                                                                                                                      |
 | `tipo`                | `mano_de_obra` / `administrativo`                                                                                    |
 | `estatus`             | `incomplete` · `complete` · `expiring` · `expired` (el semáforo)                                                     |
-| `incluirInactivos`    | Incluye a quien ya no está activo en el sistema                                                                      |
+| `activo`              | `true` (default, sólo activos) · `false` (sólo bajas) · `todos` — reemplaza a `incluirInactivos` (D-51)              |
 | `orden`               | `nombre_asc` / `nombre_desc`. **Por defecto: lo más urgente primero** (vencido → incompleto → por vencer → completo) |
 | `pagina`, `porPagina` | Igual que en `/empleados` (máx. 100)                                                                                 |
 

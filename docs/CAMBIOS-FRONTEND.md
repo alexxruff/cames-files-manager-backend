@@ -351,13 +351,14 @@ export interface ListadoEmpleados {
 }
 
 export interface FiltrosEmpleados {
-  busqueda?: string
+  busqueda?: string // nombre o número de empleado (D-51)
   empresaId?: string
   area?: string
   tipo?: 'administrativo' | 'mano_de_obra'
+  categoriaId?: string // D-51
   soloConAcceso?: boolean
-  incluirInactivos?: boolean
-  orden?: 'nombre_asc' | 'nombre_desc'
+  activo?: 'true' | 'false' | 'todos' // reemplaza a incluirInactivos (D-51)
+  orden?: 'nombre_asc' | 'nombre_desc' | 'numero_asc' | 'numero_desc' // numero_* exige empresaId (D-51)
   pagina?: number
   porPagina?: number
 }

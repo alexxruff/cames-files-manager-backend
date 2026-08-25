@@ -96,6 +96,7 @@ describe('GET /api/v1/empleados/:id/expediente', () => {
         categoriaId: categoria._id.toString(),
         adscripcion: {
           empresaId: empresa._id.toString(),
+          numeroEmpleado: 'NE-1',
           areas: ['obra'],
           tipoContrato: 'indeterminado',
           fechaIngreso: '2026-09-01'

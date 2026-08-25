@@ -1,5 +1,5 @@
 const { body, param, query } = require('express-validator')
-const { AREAS, CONTRACT_TYPES } = require('../constants')
+const { AREAS, CONTRACT_TYPES, EMPLOYEE_TYPES } = require('../constants')
 const { isCalendarDate } = require('../utils/dates')
 
 /** Campos de la adscripción que se pueden mandar en el alta y en el `PATCH`. */
@@ -40,9 +40,18 @@ exports.listAffiliationsValidation = [
   param('id').isMongoId().withMessage('La empresa indicada no es válida'),
   query('activo')
     .optional()
-    .isIn(['true', 'false'])
-    .withMessage('activo debe ser true o false'),
-  query('area').optional().isIn(AREAS).withMessage('Selecciona un área válida')
+    .isIn(['true', 'false', 'todos'])
+    .withMessage('activo debe ser true, false o todos'),
+  query('area').optional().isIn(AREAS).withMessage('Selecciona un área válida'),
+  query('tipo').optional().isIn(EMPLOYEE_TYPES).withMessage('Selecciona un tipo válido'),
+  query('categoriaId')
+    .optional()
+    .isMongoId()
+    .withMessage('Selecciona una categoría válida'),
+  query('orden')
+    .optional()
+    .isIn(['numero_asc', 'numero_desc'])
+    .withMessage('El orden debe ser numero_asc o numero_desc')
 ]
 
 exports.addAffiliationValidation = [

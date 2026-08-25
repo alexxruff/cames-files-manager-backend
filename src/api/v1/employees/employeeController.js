@@ -33,8 +33,9 @@ class EmployeeController {
         empresaId: req.query.empresaId,
         area: req.query.area,
         tipo: req.query.tipo,
+        categoriaId: req.query.categoriaId,
         soloConAcceso: req.query.soloConAcceso === 'true',
-        incluirInactivos: req.query.incluirInactivos === 'true',
+        activo: req.query.activo,
         orden: req.query.orden,
         pagina: req.query.pagina,
         porPagina: req.query.porPagina

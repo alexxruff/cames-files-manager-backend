@@ -110,7 +110,7 @@ class AlertService {
         empresaId: filtros.empresaId,
         area: filtros.area,
         // Sólo gente activa: un dado de baja no genera pendientes ni cumpleaños.
-        incluirInactivos: false,
+        activo: 'true',
         pagina: 1,
         porPagina: LIMITE_PERSONAS,
         limitePorPagina: LIMITE_PERSONAS

@@ -4,6 +4,7 @@ const {
   crearEmpleado,
   crearEmpleadoConSesion,
   crearEmpresa,
+  crearCategoria,
   adscribir,
   auth
 } = require('../helpers/factories')
@@ -248,6 +249,23 @@ describe('GET /empleados — filtros, orden y paginación', () => {
     expect(parcial.body.data.empleados).toHaveLength(1)
   })
 
+  it('busca también por número de empleado (D-51)', async () => {
+    const empresa = await crearEmpresa()
+    const { token } = await crearEmpleadoConSesion({ empresa })
+    const persona = await crearEmpleado({ nombre: 'Persona Con Número' })
+    await adscribir(empresa, persona, { numeroEmpleado: '0042' })
+
+    const res = await request(app).get(`${RUTA}?busqueda=0042`).set(auth(token))
+    expect(res.body.data.empleados.map((e) => e.empleado.nombre)).toEqual([
+      'Persona Con Número'
+    ])
+
+    const sinCoincidencia = await request(app)
+      .get(`${RUTA}?busqueda=9999`)
+      .set(auth(token))
+    expect(sinCoincidencia.body.data.empleados).toEqual([])
+  })
+
   it('filtra por tipo y por soloConAcceso', async () => {
     const empresa = await crearEmpresa()
     const { token } = await crearEmpleadoConSesion({ empresa })
@@ -267,7 +285,7 @@ describe('GET /empleados — filtros, orden y paginación', () => {
     expect(conAcceso.body.data.empleados[0].empleado.acceso).not.toBeNull()
   })
 
-  it('oculta a los dados de baja salvo que se pidan', async () => {
+  it('oculta a los dados de baja por defecto; activo=false trae sólo esos, sin mezclar (D-51)', async () => {
     const empresa = await crearEmpresa()
     const { token } = await crearEmpleadoConSesion({ empresa })
     const inactivo = await crearEmpleado({
@@ -277,15 +295,20 @@ describe('GET /empleados — filtros, orden y paginación', () => {
     })
     await adscribir(empresa, inactivo)
 
-    const sinInactivos = await request(app).get(RUTA).set(auth(token))
-    const conInactivos = await request(app)
-      .get(`${RUTA}?incluirInactivos=true`)
-      .set(auth(token))
+    const porDefecto = await request(app).get(RUTA).set(auth(token))
+    const soloBajas = await request(app).get(`${RUTA}?activo=false`).set(auth(token))
+    const todos = await request(app).get(`${RUTA}?activo=todos`).set(auth(token))
 
-    expect(sinInactivos.body.data.empleados.map((e) => e.empleado.nombre)).not.toContain(
+    expect(porDefecto.body.data.empleados.map((e) => e.empleado.nombre)).not.toContain(
       'Dado De Baja'
     )
-    expect(conInactivos.body.data.empleados.map((e) => e.empleado.nombre)).toContain(
+
+    // Exclusivo: sólo el dado de baja, sin mezclar con la sesión (activa).
+    expect(soloBajas.body.data.empleados.map((e) => e.empleado.nombre)).toEqual([
+      'Dado De Baja'
+    ])
+
+    expect(todos.body.data.empleados.map((e) => e.empleado.nombre)).toContain(
       'Dado De Baja'
     )
   })
@@ -316,7 +339,9 @@ describe('GET /empleados — filtros, orden y paginación', () => {
       `${RUTA}?orden=por_fecha`,
       `${RUTA}?tipo=inventado`,
       `${RUTA}?area=taller`,
-      `${RUTA}?soloConAcceso=quizas`
+      `${RUTA}?soloConAcceso=quizas`,
+      `${RUTA}?categoriaId=no-es-id`,
+      `${RUTA}?activo=quizas`
     ]
 
     for (const ruta of malos) {
@@ -324,5 +349,66 @@ describe('GET /empleados — filtros, orden y paginación', () => {
       expect(res.status).toBe(400)
       expect(res.body.errors[0].msg).not.toBe('Invalid value')
     }
+  })
+
+  it('filtra por categoriaId', async () => {
+    const empresa = await crearEmpresa()
+    const { token } = await crearEmpleadoConSesion({ empresa })
+    const categoriaAlbanil = await crearCategoria('Albañil', 'mano_de_obra')
+    const albanil = await crearEmpleado({
+      nombre: 'Albañil Uno',
+      categoriaId: categoriaAlbanil._id
+    })
+    await adscribir(empresa, albanil)
+
+    const res = await request(app)
+      .get(`${RUTA}?categoriaId=${categoriaAlbanil._id}`)
+      .set(auth(token))
+
+    expect(res.body.data.empleados.map((e) => e.empleado.nombre)).toEqual(['Albañil Uno'])
+  })
+
+  describe('orden por número de empleado (D-50)', () => {
+    it('exige empresaId: el número es por empresa, no de la persona', async () => {
+      const { token } = await prepararEquipo()
+      const res = await request(app).get(`${RUTA}?orden=numero_asc`).set(auth(token))
+
+      expect(res.status).toBe(400)
+      expect(res.body.errors[0].path).toBe('empresaId')
+    })
+
+    it('ordena por numeroEmpleado en los dos sentidos, dentro de una empresa', async () => {
+      const empresa = await crearEmpresa()
+      // Sin adscripción propia: si no, la sesión también saldría en el listado
+      // con `numeroEmpleado: null` y descuadraría el orden esperado.
+      const { token } = await crearEmpleadoConSesion({
+        alcanceGlobal: true,
+        sinAdscripcion: true
+      })
+
+      for (const [nombre, numeroEmpleado] of [
+        ['Persona C', '0003'],
+        ['Persona A', '0001'],
+        ['Persona B', '0002']
+      ]) {
+        const persona = await crearEmpleado({ nombre })
+        await adscribir(empresa, persona, { numeroEmpleado })
+      }
+
+      const asc = await request(app)
+        .get(`${RUTA}?empresaId=${empresa._id}&orden=numero_asc`)
+        .set(auth(token))
+      const desc = await request(app)
+        .get(`${RUTA}?empresaId=${empresa._id}&orden=numero_desc`)
+        .set(auth(token))
+
+      const numerosAsc = asc.body.data.empleados.map(
+        (e) => e.adscripciones[0].numeroEmpleado
+      )
+      expect(numerosAsc).toEqual(['0001', '0002', '0003'])
+      expect(
+        desc.body.data.empleados.map((e) => e.adscripciones[0].numeroEmpleado)
+      ).toEqual([...numerosAsc].reverse())
+    })
   })
 })

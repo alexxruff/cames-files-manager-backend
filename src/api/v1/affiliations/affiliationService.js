@@ -22,11 +22,18 @@ const {
  */
 class AffiliationService {
   /** Las adscripciones de una empresa, con la persona resuelta. */
-  async list(empresaId, { activo, area } = {}, contexto = {}) {
+  async list(
+    empresaId,
+    { activo = 'true', area, tipo, categoriaId, orden } = {},
+    contexto = {}
+  ) {
     await this.#assertEmpresaVisible(empresaId, contexto)
 
     const filtro = { empresaId: new mongoose.Types.ObjectId(empresaId) }
-    if (activo !== undefined) filtro.activo = activo
+    // Tres estados excluyentes (D-51): `'true'` (default) sólo activas, `'false'`
+    // sólo bajas, `'todos'` sin filtro — nunca mezcladas salvo que se pida.
+    if (activo === 'true') filtro.activo = true
+    else if (activo === 'false') filtro.activo = false
 
     const propias = this.#areasDelJefe(empresaId, contexto)
     if (propias) {
@@ -37,9 +44,23 @@ class AffiliationService {
       filtro.areas = area
     }
 
+    /*
+     * `tipo` y `categoriaId` son de la PERSONA, no de la adscripción: se
+     * resuelven primero contra `employees` y se acotan por `empleadoId`.
+     */
+    if (tipo || categoriaId) {
+      const filtroEmpleado = {}
+      if (tipo) filtroEmpleado.tipo = tipo
+      if (categoriaId)
+        filtroEmpleado.categoriaId = new mongoose.Types.ObjectId(categoriaId)
+      const ids = await Employee.find(filtroEmpleado).select('_id')
+      filtro.empleadoId = { $in: ids.map((e) => e._id) }
+    }
+
     const adscripciones = await Affiliation.find(filtro)
       .populate({ path: 'empleadoId', select: 'nombre tipo activo' })
-      .sort({ createdAt: -1 })
+      // Único dentro de la empresa (D-46, D-50): orden ascendente por defecto.
+      .sort({ numeroEmpleado: orden === 'numero_desc' ? -1 : 1, createdAt: -1 })
 
     return {
       adscripciones: adscripciones

@@ -83,6 +83,7 @@ async function adscribir(empresa, empleado, datos = {}) {
   return Affiliation.create({
     empresaId: empresa._id,
     empleadoId: empleado._id,
+    numeroEmpleado: datos.numeroEmpleado ?? null,
     areas: datos.areas || [],
     tipoContrato: datos.tipoContrato || 'indeterminado',
     fechaIngreso: datos.fechaIngreso || '2026-01-15',

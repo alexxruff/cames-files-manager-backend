@@ -78,10 +78,54 @@ describe('Adscripciones', () => {
       expect(idsActivas).not.toContain(baja._id.toString())
 
       const porArea = await request(app)
-        .get(`/api/v1/empresas/${sesion.empresa._id}/adscripciones?area=mantenimiento`)
+        .get(
+          `/api/v1/empresas/${sesion.empresa._id}/adscripciones?area=mantenimiento&activo=todos`
+        )
         .set(auth(sesion.token))
       expect(porArea.body.data.adscripciones).toHaveLength(1)
       expect(porArea.body.data.adscripciones[0].activo).toBe(false)
+    })
+
+    it('por defecto sólo trae activas; activo=false trae sólo las bajas, sin mezclar (D-51)', async () => {
+      const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+      const categoria = await crearCategoria('Albañil', 'mano_de_obra')
+      const activa = await crearEmpleado({
+        nombre: 'Activa',
+        tipo: 'mano_de_obra',
+        categoriaId: categoria._id
+      })
+      const baja = await crearEmpleado({
+        nombre: 'Dada De Baja',
+        tipo: 'mano_de_obra',
+        categoriaId: categoria._id
+      })
+      await adscribir(sesion.empresa, activa, { areas: ['obra'] })
+      await adscribir(sesion.empresa, baja, {
+        areas: ['obra'],
+        activo: false,
+        motivoBaja: 'Renunció'
+      })
+
+      const porDefecto = await request(app)
+        .get(`/api/v1/empresas/${sesion.empresa._id}/adscripciones`)
+        .set(auth(sesion.token))
+      const nombresPorDefecto = porDefecto.body.data.adscripciones.map(
+        (a) => a.empleado.nombre
+      )
+      expect(nombresPorDefecto).toContain('Activa')
+      expect(nombresPorDefecto).not.toContain('Dada De Baja')
+
+      const soloBajas = await request(app)
+        .get(`/api/v1/empresas/${sesion.empresa._id}/adscripciones?activo=false`)
+        .set(auth(sesion.token))
+      const nombresBajas = soloBajas.body.data.adscripciones.map((a) => a.empleado.nombre)
+      expect(nombresBajas).toEqual(['Dada De Baja'])
+
+      const todas = await request(app)
+        .get(`/api/v1/empresas/${sesion.empresa._id}/adscripciones?activo=todos`)
+        .set(auth(sesion.token))
+      const nombresTodas = todas.body.data.adscripciones.map((a) => a.empleado.nombre)
+      expect(nombresTodas).toEqual(expect.arrayContaining(['Activa', 'Dada De Baja']))
     })
 
     it('el jefe de área sólo ve las adscripciones de sus propias áreas', async () => {
@@ -108,6 +152,87 @@ describe('Adscripciones', () => {
       const ids = res.body.data.adscripciones.map((a) => a.empleadoId)
       expect(ids).toContain(deSuArea._id.toString())
       expect(ids).not.toContain(deOtraArea._id.toString())
+    })
+
+    it('filtra por tipo y por categoriaId', async () => {
+      const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+      const categoriaObra = await crearCategoria('Albañil', 'mano_de_obra')
+      const categoriaOficina = await crearCategoria('Contador', 'administrativo')
+      const obrero = await crearEmpleado({
+        tipo: 'mano_de_obra',
+        categoriaId: categoriaObra._id
+      })
+      const administrativo = await crearEmpleado({
+        tipo: 'administrativo',
+        categoriaId: categoriaOficina._id
+      })
+      await adscribir(sesion.empresa, obrero, { areas: ['obra'] })
+      await adscribir(sesion.empresa, administrativo, { areas: ['administracion'] })
+
+      const porTipo = await request(app)
+        .get(`/api/v1/empresas/${sesion.empresa._id}/adscripciones?tipo=mano_de_obra`)
+        .set(auth(sesion.token))
+      const idsPorTipo = porTipo.body.data.adscripciones.map((a) => a.empleadoId)
+      expect(idsPorTipo).toContain(obrero._id.toString())
+      expect(idsPorTipo).not.toContain(administrativo._id.toString())
+
+      const porCategoria = await request(app)
+        .get(
+          `/api/v1/empresas/${sesion.empresa._id}/adscripciones?categoriaId=${categoriaOficina._id}`
+        )
+        .set(auth(sesion.token))
+      const idsPorCategoria = porCategoria.body.data.adscripciones.map(
+        (a) => a.empleadoId
+      )
+      expect(idsPorCategoria).toContain(administrativo._id.toString())
+      expect(idsPorCategoria).not.toContain(obrero._id.toString())
+    })
+
+    it('ordena por numeroEmpleado ascendente por defecto, y se puede invertir', async () => {
+      const sesion = await crearEmpleadoConSesion({
+        nivelAcceso: 'rh_admin',
+        alcanceGlobal: true
+      })
+      const categoria = await crearCategoria('Albañil', 'mano_de_obra')
+
+      for (const numeroEmpleado of ['0003', '0001', '0002']) {
+        const persona = await crearEmpleado({
+          tipo: 'mano_de_obra',
+          categoriaId: categoria._id
+        })
+        await adscribir(sesion.empresa, persona, { areas: ['obra'], numeroEmpleado })
+      }
+
+      const porDefecto = await request(app)
+        .get(`/api/v1/empresas/${sesion.empresa._id}/adscripciones?tipo=mano_de_obra`)
+        .set(auth(sesion.token))
+      const desc = await request(app)
+        .get(
+          `/api/v1/empresas/${sesion.empresa._id}/adscripciones?tipo=mano_de_obra&orden=numero_desc`
+        )
+        .set(auth(sesion.token))
+
+      const numerosAsc = porDefecto.body.data.adscripciones.map((a) => a.numeroEmpleado)
+      expect(numerosAsc).toEqual(['0001', '0002', '0003'])
+      expect(desc.body.data.adscripciones.map((a) => a.numeroEmpleado)).toEqual(
+        [...numerosAsc].reverse()
+      )
+    })
+
+    it('valida tipo, categoriaId y orden con mensajes en español', async () => {
+      const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+      const malos = [
+        `/api/v1/empresas/${sesion.empresa._id}/adscripciones?tipo=inventado`,
+        `/api/v1/empresas/${sesion.empresa._id}/adscripciones?categoriaId=no-es-id`,
+        `/api/v1/empresas/${sesion.empresa._id}/adscripciones?orden=por_fecha`,
+        `/api/v1/empresas/${sesion.empresa._id}/adscripciones?activo=quizas`
+      ]
+
+      for (const ruta of malos) {
+        const res = await request(app).get(ruta).set(auth(sesion.token))
+        expect(res.status).toBe(400)
+        expect(res.body.errors[0].msg).not.toBe('Invalid value')
+      }
     })
 
     it('404 si la empresa no es visible; 401 sin sesión', async () => {

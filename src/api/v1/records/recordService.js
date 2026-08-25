@@ -157,7 +157,7 @@ class RecordService {
         empresaId: filtros.empresaId,
         area: filtros.area,
         tipo: filtros.tipo,
-        incluirInactivos: filtros.incluirInactivos,
+        activo: filtros.activo,
         pagina: 1,
         porPagina: LIMITE_PARA_FILTRAR_POR_ESTATUS,
         limitePorPagina: LIMITE_PARA_FILTRAR_POR_ESTATUS

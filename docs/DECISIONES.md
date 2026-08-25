@@ -1624,3 +1624,147 @@ tenga que acordarse — mismo patrón que `inventario.test.js`.
   Si se quisiera, sería un `resetExpiraEn` sobre la credencial.
 - **Caducidad periódica de contraseñas.** No se implementó y no la recomiendo:
   obliga a la gente a rotar entre variantes previsibles.
+
+## D-50 · `numeroEmpleado` también se pide al dar de alta a mano
+
+**Decisión.** `adscripcion.numeroEmpleado` — el campo que D-46 agregó para la
+columna `ID` del archivo de nómina — es **obligatorio** en `POST /empleados`
+cuando se manda `adscripcion`. Único **dentro de la empresa** (mismo índice que
+usa la importación); si ya está en uso, `409 NUMERO_EMPLEADO_DUPLICADO` con el
+número en el mensaje.
+
+### Por qué
+
+D-46 sólo lo llenaba el importador; a mano quedaba en `null` para siempre, y
+Urbacames lo usa como el identificador operativo de la persona en esa empresa —
+lo necesitan también para quien se da de alta fuera del archivo de nómina.
+
+### Dónde sí y dónde no
+
+- **`POST /empleados`** (el alta y su primera adscripción, D-33): obligatorio.
+- **`POST /empresas/:id/adscripciones`** (sumarle a alguien que ya existe una
+  segunda empresa, D-45): **sigue sin pedirse**, a propósito — no hay evidencia de
+  que haga falta ahí y se prefirió no ampliar el contrato sin necesidad concreta.
+  Si se necesita, es una decisión aparte.
+- **No es editable.** Ni `PATCH /adscripciones/:id` ni ningún otro camino lo
+  tocan después de creado — mismo candado que ya tenía por D-46. Una corrección
+  hoy exige re-importar esa fila.
+
+### La validación de duplicado va ANTES de la transacción
+
+Igual que la CURP: se busca primero con `Affiliation.findOne({ empresaId,
+numeroEmpleado })` y se responde `409` con un mensaje legible, en vez de dejar que
+la transacción reviente con el índice único y que el manejador genérico de
+`E11000` intente adivinar el campo — con un índice compuesto (`empresaId +
+numeroEmpleado`) habría señalado `empresaId`, que no es el problema.
+
+## D-51 · Las tablas de empleados ordenan y filtran por número, categoría y tipo
+
+**Decisión.** `GET /empleados` y `GET /empresas/:id/adscripciones` —las dos
+tablas de empleados que usa el front, una general y otra por empresa— ganan:
+
+- `orden=numero_asc` / `numero_desc`, sobre `numeroEmpleado` (D-46, D-50).
+- `categoriaId` como filtro, en los dos.
+- `tipo` como filtro en `GET /empresas/:id/adscripciones` (ya existía en `GET
+/empleados`).
+
+### Por qué `numero_asc` es el default en un endpoint y no en el otro
+
+`GET /empresas/:id/adscripciones`: cada renglón **es** una adscripción, con un
+único `numeroEmpleado`. Ahí `numero_asc` pasa a ser el default (antes ordenaba
+por `createdAt` descendente sin que ningún doc lo prometiera como contrato) —
+es lo que pidió Urbacames: la tabla llega ordenada por número.
+
+`GET /empleados`: cada renglón es una **persona**, que puede tener una
+adscripción por empresa y por lo tanto un `numeroEmpleado` distinto en cada una.
+Cambiar el default ahí habría sido ambiguo — ¿el número en cuál empresa? Se deja
+`nombre_asc` como estaba, y `numero_asc`/`numero_desc` como opción **que exige
+`empresaId`**: sin acotar a una empresa, no hay un único valor por el que
+ordenar. Pedirlo sin `empresaId` responde `400` con `errors[0].path:
+"empresaId"`, no un orden inventado.
+
+### `numeroEmpleado` ahora se proyecta en `GET /empleados`
+
+El `$project` dentro del `$lookup` a `affiliations` no lo incluía —nadie lo
+había necesitado ahí— y sin proyectarlo tampoco se podía ordenar por él. Es
+aditivo: no cambia nada de lo que ya devolvía.
+
+### `categoriaId` y `tipo` son de la persona, no de la adscripción
+
+En `GET /empresas/:id/adscripciones` no hay un `categoriaId` ni un `tipo` en el
+propio documento de `Affiliation` — se resuelven primero contra `employees`
+(`Employee.find({ tipo, categoriaId }).select('_id')`) y el resultado acota
+`empleadoId`. Es la misma idea que ya usaba `#areasDelJefe` para acotar por
+área, aplicada a estos dos filtros nuevos.
+
+### El orden compara texto, no número
+
+`numeroEmpleado` es un `String` libre (D-46), no queda garantizado que sea
+numérico. Se ordena como texto: con el archivo de nómina, que rellena con ceros
+a la izquierda (`'0001'`, `'0002'`…), coincide con el orden numérico. Traducirlo
+a número habría sido inventar una garantía que el campo no tiene.
+
+## D-52 · `activo` reemplaza a `incluirInactivos`: tres estados, nunca mezclados
+
+**Decisión.** `GET /empleados`, `GET /expedientes` (que reutiliza los filtros
+de `/empleados`, D-45) y `GET /empresas/:id/adscripciones` cambian su filtro de
+alta/baja de un booleano "incluye también" a un parámetro `activo` de tres
+valores excluyentes: `'true'` (default) sólo activos, `'false'` **sólo** los
+dados de baja, `'todos'` los dos juntos.
+
+### El problema que resolvió
+
+`incluirInactivos=false` (default) ya filtraba bien: sólo activos. Pero
+`incluirInactivos=true` no significaba "dame los de baja", significaba "no
+filtres nada" — devolvía activos e inactivos **mezclados**. No había forma de
+pedir exclusivamente a los que ya se fueron; había que traer todo y filtrar en
+el front. Urbacames lo pidió explícito: por defecto sólo activos, y si se pide
+la baja, sólo la baja.
+
+### Por qué no se llama `estatus`
+
+`GET /expedientes` ya usa `estatus` para el semáforo del documento
+(`incomplete`/`complete`/`expiring`/`expired`), y el archivo de nómina también
+usa esa palabra para `'Alta'|'Baja'|'Reingreso'` (D-46). Reutilizarla para
+"activo o de baja" habría sido una tercera acepción de la misma palabra en el
+mismo sistema. `activo` no colisiona con nada y ya era el nombre exacto del
+campo en los dos modelos (`Employee.activo`, `Affiliation.activo`).
+
+### `GET /empleados`: `activo` es de la PERSONA, no de la adscripción
+
+`match.activo` (la persona, baja del sistema) es el único que cambia con el
+parámetro. El filtro sobre las adscripciones del `$lookup` (`filtroEmpresas`)
+sigue exigiendo `activo: true` **sólo cuando `activo === 'true'`** — para
+`'false'` y `'todos'` NO se restringe, a propósito: dar de baja del sistema
+(`PATCH /empleados/:id/estado`) no cierra las adscripciones (son cosas
+distintas, ver el comentario de `Affiliation.activo`), así que alguien
+system-baja casi siempre conserva una adscripción que nunca se cerró. Exigirla
+activa también en modo `'false'` habría escondido justo a quien ese filtro
+busca encontrar, o peor: para un `rh_admin` con alcance acotado (donde el
+`$match` de "al menos una adscripción visible" es obligatorio, no condicional),
+lo habría sacado del listado por completo.
+
+### `GET /empresas/:id/adscripciones`: mismo nombre, otro campo
+
+Aquí `activo` filtra `Affiliation.activo` (la adscripción a **esa** empresa),
+no la persona — es lo que ya hacía antes de esta decisión, sólo le faltaba el
+default excluyente. Mismo nombre de parámetro en los dos endpoints, cada uno
+sobre el campo que le corresponde a su documento.
+
+### `busqueda` ahora también encuentra por número de empleado
+
+`GET /empleados?busqueda=` sólo comparaba `nombreNormalizado`. Urbacames pidió
+que también funcione con el número de la nómina. Como `numeroEmpleado` vive en
+la adscripción y no en la persona, el `$match` por texto no se puede resolver
+en la primera etapa del pipeline (antes del `$lookup`, donde vivía la búsqueda
+por nombre): se mueve a un `$match` con `$or` **después** de cruzar las
+adscripciones, comparando `nombreNormalizado` o `adscripciones.numeroEmpleado`.
+Con la notación de punto, Mongo compara contra cualquier elemento del arreglo:
+basta que UNA adscripción visible tenga ese número.
+
+### Efecto en otros llamadores internos
+
+`recordService.list` (`GET /expedientes`) y `alertService.#entradas` reutilizan
+`employeeService.list` — los dos se actualizaron para mandar `activo` en vez de
+`incluirInactivos`. `alertService` manda `activo: 'true'` fijo: un dado de baja
+no genera alertas de documentación ni de cumpleaños.

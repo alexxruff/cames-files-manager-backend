@@ -23,10 +23,10 @@ exports.listRecordsValidation = [
     .optional()
     .isIn(RECORD_STATUSES)
     .withMessage(`estatus debe ser uno de: ${RECORD_STATUSES.join(', ')}`),
-  query('incluirInactivos')
+  query('activo')
     .optional()
-    .isIn(['true', 'false'])
-    .withMessage('incluirInactivos debe ser true o false'),
+    .isIn(['true', 'false', 'todos'])
+    .withMessage('activo debe ser true, false o todos'),
   query('orden')
     .optional()
     .isIn(['nombre_asc', 'nombre_desc'])

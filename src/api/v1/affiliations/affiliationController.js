@@ -16,8 +16,11 @@ class AffiliationController {
     const datos = await affiliationService.list(
       req.params.id,
       {
-        activo: req.query.activo === undefined ? undefined : req.query.activo === 'true',
-        area: req.query.area
+        activo: req.query.activo,
+        area: req.query.area,
+        tipo: req.query.tipo,
+        categoriaId: req.query.categoriaId,
+        orden: req.query.orden
       },
       this.#contexto(req)
     )

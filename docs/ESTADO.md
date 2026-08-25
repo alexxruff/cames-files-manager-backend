@@ -62,32 +62,32 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 
 ## API
 
-| Módulo                            | Spec      | Estado | Notas                                                                                                     |
-| --------------------------------- | --------- | ------ | --------------------------------------------------------------------------------------------------------- |
-| Sesión (`/auth`)                  | 6.1       | ✅     | login, me, logout, cambiar-password con `AuthUser` nuevo                                                  |
-| Contraseñas temporales            | 6.1       | ✅     | La que puso un admin (o el bootstrap) bloquea la API hasta cambiarla (D-49)                               |
-| Recuperar por correo              | 6.1       | ⬜     | La repone un `rh_admin` y queda temporal (D-49); falta el flujo por correo, que necesita mailer           |
-| Alcance por empresa               | 8.1       | ✅     | `applyScope` deriva de adscripciones activas                                                              |
-| Matriz de permisos                | 8.2       | ✅     | Capacidades + `alcanceGlobal`                                                                             |
-| Accesos (`/empleados/:id/acceso`) | 6.2       | ✅     | Dar, editar, quitar, restablecer (D-30)                                                                   |
-| Empleados — listado y detalle     | 6.2       | ✅     | Agregación con alcance, filtros, orden y paginación                                                       |
-| Empleados — **alta**              | 6.2       | ✅     | Persona + adscripción en transacción, permisos por tipo, duplicados (D-32 a D-34)                         |
-| Categorías                        | 6.2       | ✅     | CRUD con `tipo`, alta idempotente por nombre                                                              |
-| Empleados — edición y baja        | 6.2       | ✅     | Editar: quien puede crear ese tipo. Baja: `rh_admin`. El acceso y las adscripciones tienen su propia ruta |
-| Clientes                          | 6.2       | ✅     | CRUD, baja lógica y **acotado por cartera** (D-40)                                                        |
-| Empresas                          | 6.3       | ✅     | Alta sólo admin de plataforma, listado con conteos                                                        |
-| Adscripciones                     | 6.3       | ✅     | Alta, edición y baja de esa empresa; baja cierra sus asignaciones ahí (D-45)                              |
-| Carteras                          | 6.3       | ✅     | Bajo la empresa; reactiva en vez de duplicar (D-37)                                                       |
-| Proyectos                         | 6.4       | ✅     | CRUD, aplazar, finalizar, reabrir, clonar categorías (D-38)                                               |
-| Asignaciones                      | 6.4       | ✅     | Con `asignables` (§9.3) y cierre con fecha de salida                                                      |
-| Expedientes y documentos          | 6.5       | ✅     | Listado paginado, consulta, subida y **revisar** (valida y rechaza) (D-42, D-43, D-45)                    |
-| Lógica de dominio                 | modelo §6 | ✅     | Estatus, avance, semáforo, vigencias y la **unión** de plantillas, listos y probados                      |
-| Importar colaboradores (.xlsx)    | —         | ✅     | Previsualizar y aplicar; idempotente al re-subir; crea puestos y adscripciones (D-46)                     |
-| Alertas (`GET /alertas`)          | 6.6       | ✅     | Derivadas y sin estado (D-47); **agrupadas por empleado y paginadas** (D-48)                              |
-| Métricas y reportes               | 6.6       | ⬜     | Derivados                                                                                                 |
-| Almacenamiento R2                 | 7         | ✅     | Bucket `cames-files/employes-files`, probado de punta a punta; `npm run r2:check` (D-41)                  |
-| Job diario de vigencias           | 8         | ⬜     | Un correo por persona, idempotente                                                                        |
-| `/usuarios` (modelo anterior)     | —         | ✅     | Responde **410** con las rutas nuevas                                                                     |
+| Módulo                            | Spec      | Estado | Notas                                                                                                                                                                      |
+| --------------------------------- | --------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sesión (`/auth`)                  | 6.1       | ✅     | login, me, logout, cambiar-password con `AuthUser` nuevo                                                                                                                   |
+| Contraseñas temporales            | 6.1       | ✅     | La que puso un admin (o el bootstrap) bloquea la API hasta cambiarla (D-49)                                                                                                |
+| Recuperar por correo              | 6.1       | ⬜     | La repone un `rh_admin` y queda temporal (D-49); falta el flujo por correo, que necesita mailer                                                                            |
+| Alcance por empresa               | 8.1       | ✅     | `applyScope` deriva de adscripciones activas                                                                                                                               |
+| Matriz de permisos                | 8.2       | ✅     | Capacidades + `alcanceGlobal`                                                                                                                                              |
+| Accesos (`/empleados/:id/acceso`) | 6.2       | ✅     | Dar, editar, quitar, restablecer (D-30)                                                                                                                                    |
+| Empleados — listado y detalle     | 6.2       | ✅     | Agregación con alcance, filtros, orden y paginación; orden por número exige `empresaId` (D-51); `activo` en tres estados y `busqueda` por número (D-52)                    |
+| Empleados — **alta**              | 6.2       | ✅     | Persona + adscripción en transacción, permisos por tipo, duplicados (D-32 a D-34); `numeroEmpleado` obligatorio (D-50)                                                     |
+| Categorías                        | 6.2       | ✅     | CRUD con `tipo`, alta idempotente por nombre                                                                                                                               |
+| Empleados — edición y baja        | 6.2       | ✅     | Editar: quien puede crear ese tipo. Baja: `rh_admin`. El acceso y las adscripciones tienen su propia ruta                                                                  |
+| Clientes                          | 6.2       | ✅     | CRUD, baja lógica y **acotado por cartera** (D-40)                                                                                                                         |
+| Empresas                          | 6.3       | ✅     | Alta sólo admin de plataforma, listado con conteos                                                                                                                         |
+| Adscripciones                     | 6.3       | ✅     | Alta, edición y baja de esa empresa; baja cierra sus asignaciones ahí (D-45); filtros por tipo/categoría y orden por número (D-51); `activo` con default excluyente (D-52) |
+| Carteras                          | 6.3       | ✅     | Bajo la empresa; reactiva en vez de duplicar (D-37)                                                                                                                        |
+| Proyectos                         | 6.4       | ✅     | CRUD, aplazar, finalizar, reabrir, clonar categorías (D-38)                                                                                                                |
+| Asignaciones                      | 6.4       | ✅     | Con `asignables` (§9.3) y cierre con fecha de salida                                                                                                                       |
+| Expedientes y documentos          | 6.5       | ✅     | Listado paginado, consulta, subida y **revisar** (valida y rechaza) (D-42, D-43, D-45); mismos filtros nuevos que `/empleados` (D-52)                                      |
+| Lógica de dominio                 | modelo §6 | ✅     | Estatus, avance, semáforo, vigencias y la **unión** de plantillas, listos y probados                                                                                       |
+| Importar colaboradores (.xlsx)    | —         | ✅     | Previsualizar y aplicar; idempotente al re-subir; crea puestos y adscripciones (D-46)                                                                                      |
+| Alertas (`GET /alertas`)          | 6.6       | ✅     | Derivadas y sin estado (D-47); **agrupadas por empleado y paginadas** (D-48)                                                                                               |
+| Métricas y reportes               | 6.6       | ⬜     | Derivados                                                                                                                                                                  |
+| Almacenamiento R2                 | 7         | ✅     | Bucket `cames-files/employes-files`, probado de punta a punta; `npm run r2:check` (D-41)                                                                                   |
+| Job diario de vigencias           | 8         | ⬜     | Un correo por persona, idempotente                                                                                                                                         |
+| `/usuarios` (modelo anterior)     | —         | ✅     | Responde **410** con las rutas nuevas                                                                                                                                      |
 
 ## Orden sugerido
 

@@ -366,16 +366,17 @@ anterior** o la siguiente petición dará `401`.
 
 Query, todos opcionales:
 
-| Parámetro              | Valores                                         | Default      |
-| ---------------------- | ----------------------------------------------- | ------------ |
-| `busqueda`             | nombre, parcial, ignora acentos                 | —            |
-| `empresaId`            | acota **dentro** de lo visible; nunca lo amplía | —            |
-| `area`                 | área de la adscripción                          | —            |
-| `tipo`                 | `administrativo` \| `mano_de_obra`              | —            |
-| `soloConAcceso`        | `true` \| `false`                               | `false`      |
-| `incluirInactivos`     | `true` \| `false`                               | `false`      |
-| `orden`                | `nombre_asc` \| `nombre_desc`                   | `nombre_asc` |
-| `pagina` / `porPagina` | empieza en 1; máximo 100                        | 1 / 25       |
+| Parámetro              | Valores                                                               | Default      |
+| ---------------------- | --------------------------------------------------------------------- | ------------ |
+| `busqueda`             | nombre o **número de empleado** (D-51), parcial, ignora acentos       | —            |
+| `empresaId`            | acota **dentro** de lo visible; nunca lo amplía                       | —            |
+| `area`                 | área de la adscripción                                                | —            |
+| `tipo`                 | `administrativo` \| `mano_de_obra`                                    | —            |
+| `categoriaId`          | id de la categoría (D-51)                                             | —            |
+| `soloConAcceso`        | `true` \| `false`                                                     | `false`      |
+| `activo`               | `true` \| `false` \| `todos` (D-51)                                   | `true`       |
+| `orden`                | `nombre_asc` \| `nombre_desc` \| `numero_asc` \| `numero_desc` (D-51) | `nombre_asc` |
+| `pagina` / `porPagina` | empieza en 1; máximo 100                                              | 1 / 25       |
 
 ```jsonc
 // data
@@ -390,13 +391,28 @@ Query, todos opcionales:
 - El orden se calcula **sobre el total** y después se corta la página.
 - Una página más allá del final devuelve `empleados: []` y el `total` real, no un
   `404`.
-- **Sólo aparecen las adscripciones activas** de las empresas que ustedes ven: si
-  alguien está en dos empresas, cada una ve la suya.
-- `incluirInactivos=true` trae también a las personas dadas de baja y las
-  adscripciones cerradas — es como se encuentra a quien ya se fue.
+- **Sólo aparecen las adscripciones activas** de las empresas que ustedes ven,
+  cuando `activo=true` (el default): si alguien está en dos empresas, cada una
+  ve la suya.
+- **`activo` reemplaza a `incluirInactivos`** (D-51), y ya no mezcla: `true`
+  (default) sólo activos, `false` **sólo** los dados de baja —sin los activos
+  mezclados—, `todos` los dos juntos, como antes hacía `incluirInactivos=true`.
+  Es así de exclusivo porque **por defecto sólo deben verse los activos**, y
+  pedir los de baja tiene que traer exactamente eso, no una mezcla que haya que
+  filtrar en el front.
 - Un `jefe_area` sólo ve a la gente de sus áreas; si no tiene áreas asignadas, ve
   **cero**, no todo.
 - `empresaId` de una empresa que no es suya → `404`.
+- **`numeroEmpleado`, dentro de cada adscripción del renglón** (D-51): antes no
+  se devolvía en este listado; ahora sí, igual que en `GET
+/empresas/:id/adscripciones`.
+- **`orden=numero_asc` / `numero_desc` exige `empresaId`** (D-51): el número de
+  empleado es de la adscripción —por empresa—, no de la persona; sin acotar a
+  una empresa no habría un único valor por el que ordenar. Sin `empresaId`,
+  `400` con `errors[0].path: "empresaId"`. El orden compara el texto tal cual
+  (no numérico): si van a mostrarlo con ceros a la izquierda (`'0001'`,
+  `'0002'`…) el orden alfabético coincide con el numérico; con números sin
+  rellenar podría no coincidir.
 
 ### `GET /empleados/:id`
 
@@ -476,6 +492,7 @@ agregación: `empleados` (adscripciones activas), `clientes` (cartera activa) y
   // Obligatoria salvo para el administrador de plataforma.
   "adscripcion": {
     "empresaId": "…",
+    "numeroEmpleado": "0248",             // obligatorio en el alta manual, ver abajo
     "areas": ["obra"],
     "tipoContrato": "obra_determinada",
     "fechaIngreso": "2026-09-01",
@@ -492,6 +509,12 @@ agregación: `empleados` (adscripciones activas), `clientes` (cartera activa) y
 **Persona y adscripción se crean en una transacción**: o las dos, o ninguna. Nunca
 queda una persona huérfana e invisible.
 
+**`adscripcion.numeroEmpleado` es obligatorio aquí.** Es el mismo campo que trae
+la columna `ID` del archivo de nómina (D-46): cuando la persona entra por el
+importador lo pone el archivo, pero en el alta manual nadie más lo captura, así
+que se pide. Único **dentro de la empresa** — dos personas de la misma empresa no
+pueden compartir número, pero sí pueden repetirlo entre empresas distintas.
+
 | Quien pide          | Puede crear         | La adscripción                            |
 | ------------------- | ------------------- | ----------------------------------------- |
 | admin de plataforma | cualquier `tipo`    | **opcional** (llena el catálogo)          |
@@ -499,12 +522,12 @@ queda una persona huérfana e invisible.
 | `rh_consulta`       | sólo `mano_de_obra` | obligatoria, sólo sus empresas            |
 | `jefe_area`         | sólo `mano_de_obra` | obligatoria, sus empresas y **sus áreas** |
 
-| Código | Cuándo                                                                                                                                                                                      |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `400`  | Falta nombre o `categoriaId`; falta la adscripción; CURP mal formada; un administrativo sin áreas; contrato temporal con término anterior al ingreso; la categoría no corresponde al `tipo` |
-| `403`  | `tipo: 'administrativo'` pedido por `rh_consulta` o `jefe_area`; o un `jefe_area` pidiendo un área que no es suya (el mensaje lista las suyas)                                              |
-| `404`  | `empresaId` que no es suya, o `categoriaId` inexistente                                                                                                                                     |
-| `409`  | Duplicado — ver abajo                                                                                                                                                                       |
+| Código | Cuándo                                                                                                                                                                                                                          |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `400`  | Falta nombre o `categoriaId`; falta la adscripción; falta `adscripcion.numeroEmpleado`; CURP mal formada; un administrativo sin áreas; contrato temporal con término anterior al ingreso; la categoría no corresponde al `tipo` |
+| `403`  | `tipo: 'administrativo'` pedido por `rh_consulta` o `jefe_area`; o un `jefe_area` pidiendo un área que no es suya (el mensaje lista las suyas)                                                                                  |
+| `404`  | `empresaId` que no es suya, o `categoriaId` inexistente                                                                                                                                                                         |
+| `409`  | Duplicado — ver abajo                                                                                                                                                                                                           |
 
 #### Duplicados
 
@@ -538,6 +561,26 @@ queda una persona huérfana e invisible.
 - **`yaEstaEnTuEmpresa`** decide el mensaje de la UI: «ya la tienes» o «existe en
   el grupo, ¿la adscribo?». Deliberadamente **no** decimos en qué otras empresas
   está.
+
+```jsonc
+// 409 con número de empleado repetido EN ESA EMPRESA
+{
+  "status": "fail",
+  "message": "Ya existe un empleado con el número 0248 en esta empresa",
+  "code": "NUMERO_EMPLEADO_DUPLICADO",
+  "errors": [
+    {
+      "msg": "Ese número de empleado ya está en uso",
+      "path": "adscripcion.numeroEmpleado"
+    }
+  ]
+}
+```
+
+- **`NUMERO_EMPLEADO_DUPLICADO`** no se puede forzar: revisa el número, no es un
+  posible duplicado de persona. No tiene relación con `CURP_DUPLICADA` ni
+  `POSIBLE_DUPLICADO` — puede saltar aunque la persona sea nueva, si el número que
+  capturaron ya lo tiene otra adscripción de esa empresa.
 
 ### `PATCH /empleados/:id` — editar a la persona
 
@@ -598,7 +641,7 @@ de baja la adscripción).
 ```
 
 - **No borra nada**: el registro y su historial se conservan. Desaparece del
-  listado normal y vuelve con `?incluirInactivos=true`.
+  listado normal y vuelve con `?activo=false` (sólo bajas) o `?activo=todos`.
 - **El motivo es obligatorio** en la baja (5 a 200 caracteres).
 - **Si tenía acceso a la plataforma, queda desactivado** en la misma operación —
   de todos modos no podría entrar, y dejarlo marcado como activo haría que la

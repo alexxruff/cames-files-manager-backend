@@ -61,10 +61,29 @@ class EmployeeService {
       empresaId,
       area,
       tipo,
+      categoriaId,
       soloConAcceso = false,
-      incluirInactivos = false,
+      activo = 'true',
       orden = 'nombre_asc'
     } = filtros
+
+    /*
+     * Ordenar por número de empleado exige una empresa: es un campo de la
+     * ADSCRIPCIÓN (por empresa), no de la persona, así que sin acotar a una sola
+     * empresa no hay un único valor por el que ordenar.
+     */
+    if ((orden === 'numero_asc' || orden === 'numero_desc') && !empresaId) {
+      throw AppError.validation(
+        'Para ordenar por número de empleado indica una empresa: la persona puede ' +
+          'tener un número distinto en cada una',
+        [
+          {
+            msg: 'Indica una empresa para ordenar por número de empleado',
+            path: 'empresaId'
+          }
+        ]
+      )
+    }
 
     const pagina = Math.max(1, Number(filtros.pagina) || 1)
     /*
@@ -90,25 +109,38 @@ class EmployeeService {
       }
       match._id = new mongoose.Types.ObjectId(filtros.id)
     }
-    if (!incluirInactivos) match.activo = true
+    /*
+     * `activo` es de la PERSONA (baja del sistema, D-51), tres estados
+     * excluyentes: `'true'` (default) sólo activos, `'false'` sólo bajas,
+     * `'todos'` sin filtro — nunca mezclados salvo que se pida explícitamente.
+     */
+    if (activo === 'true') match.activo = true
+    else if (activo === 'false') match.activo = false
     if (tipo) match.tipo = tipo
+    if (categoriaId) match.categoriaId = new mongoose.Types.ObjectId(categoriaId)
     if (soloConAcceso) match.acceso = { $ne: null }
-    if (busqueda) {
-      const termino = normalize(busqueda)
-      if (termino) {
-        match.nombreNormalizado = new RegExp(escapeRegex(termino), 'i')
-      }
-    }
+
+    /*
+     * La búsqueda por nombre no se puede resolver aquí si también busca por
+     * `numeroEmpleado` (D-51): ese campo vive en la adscripción, que todavía no
+     * se ha cruzado. Se calcula el patrón y se aplica DESPUÉS del `$lookup`.
+     */
+    const terminoBusqueda = busqueda ? normalize(busqueda) : null
+    const regexBusqueda = terminoBusqueda
+      ? new RegExp(escapeRegex(terminoBusqueda), 'i')
+      : null
 
     // ─── 2. Adscripciones, ya recortadas al alcance ─────────────────────────
     const filtroEmpresas = []
     /*
-     * Sólo cuentan las adscripciones ACTIVAS: el listado es del personal actual.
-     * Una adscripción cerrada se conserva para auditoría, pero quien ya no
-     * trabaja en la empresa no aparece entre su gente — salvo que se pidan los
-     * inactivos, que es como RH encuentra a alguien que se fue.
+     * Sólo cuentan las adscripciones ACTIVAS cuando se ven los empleados
+     * activos: el listado por defecto es del personal actual, y una
+     * adscripción cerrada se conserva para auditoría pero no da visibilidad.
+     * Con `activo=false` o `activo=todos` NO se restringe aquí: alguien dado de
+     * baja del sistema puede conservar una adscripción que nunca se cerró, y
+     * exigirla activa lo escondería justo del filtro pensado para encontrarlo.
      */
-    if (!incluirInactivos) filtroEmpresas.push({ activo: true })
+    if (activo === 'true') filtroEmpresas.push({ activo: true })
     if (empresasVisibles !== null) {
       filtroEmpresas.push({
         empresaId: { $in: empresasVisibles.map((id) => new mongoose.Types.ObjectId(id)) }
@@ -147,6 +179,7 @@ class EmployeeService {
                 _id: 1,
                 empresaId: 1,
                 empresaNombre: '$empresa.nombre',
+                numeroEmpleado: 1,
                 areas: 1,
                 tipoContrato: 1,
                 fechaIngreso: 1,
@@ -176,6 +209,23 @@ class EmployeeService {
     const restriccionAreas = this.#matchDeAreas(contexto)
     if (restriccionAreas) pipeline.push({ $match: restriccionAreas })
 
+    /*
+     * Nombre O número de empleado (D-51): busca por cualquiera de los dos, no
+     * sólo por nombre. `adscripciones.numeroEmpleado` con notación de punto
+     * coincide si CUALQUIER adscripción del arreglo (ya recortado al alcance)
+     * lo tiene.
+     */
+    if (regexBusqueda) {
+      pipeline.push({
+        $match: {
+          $or: [
+            { nombreNormalizado: regexBusqueda },
+            { 'adscripciones.numeroEmpleado': regexBusqueda }
+          ]
+        }
+      })
+    }
+
     pipeline.push(
       {
         $lookup: {
@@ -186,7 +236,15 @@ class EmployeeService {
         }
       },
       { $unwind: { path: '$categoria', preserveNullAndEmptyArrays: true } },
-      { $sort: { nombreNormalizado: orden === 'nombre_desc' ? -1 : 1, _id: 1 } },
+      {
+        $sort:
+          orden === 'numero_asc' || orden === 'numero_desc'
+            ? {
+                'adscripciones.numeroEmpleado': orden === 'numero_desc' ? -1 : 1,
+                _id: 1
+              }
+            : { nombreNormalizado: orden === 'nombre_desc' ? -1 : 1, _id: 1 }
+      },
       {
         // El orden se calcula sobre el total y DESPUÉS se corta la página.
         $facet: {
@@ -241,7 +299,7 @@ class EmployeeService {
    * 404 si no existe o no es visible: un 403 confirmaría que existe.
    */
   async getById(id, contexto = {}) {
-    const { empleados } = await this.list({ id, incluirInactivos: true }, contexto)
+    const { empleados } = await this.list({ id, activo: 'todos' }, contexto)
     if (empleados.length === 0) throw AppError.notFound('El empleado no existe')
     return empleados[0]
   }
@@ -290,7 +348,7 @@ class EmployeeService {
       )
     }
 
-    if (adscripcion) this.#validarAdscripcion(adscripcion, tipo, contexto)
+    if (adscripcion) await this.#validarAdscripcion(adscripcion, tipo, contexto)
 
     // 3. La categoría tiene que existir y servir para este tipo de persona.
     await categoryService.assertUsableParaTipo(datos.categoriaId, tipo)
@@ -330,7 +388,8 @@ class EmployeeService {
                 areas: adscripcion.areas || [],
                 tipoContrato: adscripcion.tipoContrato,
                 fechaIngreso: adscripcion.fechaIngreso,
-                fechaTerminoContrato: adscripcion.fechaTerminoContrato || null
+                fechaTerminoContrato: adscripcion.fechaTerminoContrato || null,
+                numeroEmpleado: adscripcion.numeroEmpleado
               }
             ],
             { session: sesion }
@@ -526,12 +585,34 @@ class EmployeeService {
   }
 
   /** Empresa dentro del alcance, áreas dentro de las suyas, y coherencia de tipo. */
-  #validarAdscripcion(adscripcion, tipoEmpleado, contexto) {
+  async #validarAdscripcion(adscripcion, tipoEmpleado, contexto) {
     const { user, empresasVisibles, areasPorEmpresa = {} } = contexto
 
     if (!empresaEsVisible({ empresasVisibles }, adscripcion.empresaId)) {
       // Fuera de alcance: 404, no 403.
       throw AppError.notFound('La empresa no existe')
+    }
+
+    // Único dentro de la empresa (mismo índice que usa la importación, D-46):
+    // se revisa antes de la transacción para devolver un mensaje claro y no un
+    // E11000 crudo.
+    const numeroDuplicado = await Affiliation.findOne({
+      empresaId: adscripcion.empresaId,
+      numeroEmpleado: adscripcion.numeroEmpleado
+    })
+    if (numeroDuplicado) {
+      throw AppError.conflict(
+        `Ya existe un empleado con el número ${adscripcion.numeroEmpleado} en esta empresa`,
+        {
+          code: 'NUMERO_EMPLEADO_DUPLICADO',
+          errors: [
+            {
+              msg: 'Ese número de empleado ya está en uso',
+              path: 'adscripcion.numeroEmpleado'
+            }
+          ]
+        }
+      )
     }
 
     const areas = adscripcion.areas || []
@@ -675,6 +756,7 @@ class EmployeeService {
         _id: a._id.toString(),
         empresaId: a.empresaId.toString(),
         empresaNombre: a.empresaNombre ?? null,
+        numeroEmpleado: a.numeroEmpleado ?? null,
         areas: a.areas || [],
         tipoContrato: a.tipoContrato,
         fechaIngreso: a.fechaIngreso,

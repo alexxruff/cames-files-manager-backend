@@ -359,7 +359,7 @@ describe('PATCH /api/v1/empleados/:id/estado — baja y reactivación', () => {
     expect(await Employee.findById(persona._id)).not.toBeNull()
   })
 
-  it('desaparece del listado normal y aparece con incluirInactivos', async () => {
+  it('desaparece del listado normal y aparece con activo=false o activo=todos', async () => {
     const { token, persona } = await escenario()
     await request(app)
       .patch(`${RUTA}/${persona._id}/estado`)
@@ -367,13 +367,13 @@ describe('PATCH /api/v1/empleados/:id/estado — baja y reactivación', () => {
       .send({ activo: false, motivo: 'Fin de obra' })
 
     const normal = await request(app).get(RUTA).set(auth(token))
-    const conInactivos = await request(app)
-      .get(`${RUTA}?incluirInactivos=true`)
-      .set(auth(token))
+    const soloBajas = await request(app).get(`${RUTA}?activo=false`).set(auth(token))
+    const todos = await request(app).get(`${RUTA}?activo=todos`).set(auth(token))
 
     const nombres = (r) => r.body.data.empleados.map((e) => e.empleado.nombre)
     expect(nombres(normal)).not.toContain('Roberto Aguilar')
-    expect(nombres(conInactivos)).toContain('Roberto Aguilar')
+    expect(nombres(soloBajas)).toContain('Roberto Aguilar')
+    expect(nombres(todos)).toContain('Roberto Aguilar')
   })
 
   it('400 sin motivo o con un motivo demasiado corto', async () => {
