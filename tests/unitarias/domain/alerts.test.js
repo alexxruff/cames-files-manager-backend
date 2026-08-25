@@ -2,6 +2,7 @@ const {
   deriveAlerts,
   deriveDocumentAlerts,
   deriveBirthdayAlerts,
+  groupAlertsByEmployee,
   summarizeAlerts
 } = require('../../../src/utils/domain/alerts')
 
@@ -403,6 +404,153 @@ describe('domain/deriveAlerts', () => {
     it('deriveBirthdayAlerts sólo trae las de cumpleaños', () => {
       const alertas = deriveBirthdayAlerts(persona, { hoy: HOY })
       expect(alertas.map((a) => a.origen)).toEqual(['cumpleanos'])
+    })
+  })
+
+  describe('groupAlertsByEmployee — un renglón por persona (D-48)', () => {
+    const agrupadas = (entradas, opciones = { hoy: HOY }) =>
+      groupAlertsByEmployee(deriveAlerts(entradas, opciones))
+
+    it('junta las alertas de la misma persona en un solo grupo', () => {
+      const grupos = agrupadas([
+        entrada('e1', [
+          doc('ine', 'pending'),
+          doc('curp', 'pending'),
+          doc('rfc', 'pending')
+        ])
+      ])
+
+      expect(grupos).toHaveLength(1)
+      expect(grupos[0]).toMatchObject({
+        id: 'empleado:e1',
+        empleadoId: 'e1',
+        empleadoNombre: 'Ana Ruiz',
+        categoriaNombre: 'Analista',
+        tipo: 'documento_faltante',
+        total: 3
+      })
+      expect(grupos[0].alertas).toHaveLength(3)
+      expect(grupos[0].mensaje).toBe('3 documentos por subir.')
+    })
+
+    it('no mezcla personas distintas', () => {
+      const grupos = agrupadas([
+        entrada('e1', [doc('ine', 'pending')], { nombre: 'Ana Ruiz' }),
+        entrada('e2', [doc('ine', 'pending')], { nombre: 'Beto Solís' })
+      ])
+
+      expect(grupos).toHaveLength(2)
+      expect(grupos.map((g) => g.empleadoId).sort()).toEqual(['e1', 'e2'])
+      expect(grupos.every((g) => g.total === 1)).toBe(true)
+    })
+
+    it('el tipo y los días del grupo son los del más grave y urgente', () => {
+      const grupos = agrupadas([
+        entrada('e1', [
+          doc('ine', 'pending'),
+          doc('contrato', 'validated', { vigenciaHasta: '2026-08-15' }) // vencido, -5
+        ])
+      ])
+
+      expect(grupos[0].tipo).toBe('vencido')
+      expect(grupos[0].diasRestantes).toBe(-5)
+    })
+
+    it('cuenta por tipo dentro del grupo', () => {
+      const grupos = agrupadas([
+        entrada(
+          'e1',
+          [
+            doc('ine', 'pending'),
+            doc('curp', 'pending'),
+            doc('rfc', 'rejected'),
+            doc('contrato', 'validated', { vigenciaHasta: '2026-08-25' }) // por vencer
+          ],
+          { fechaNacimiento: '1990-08-20' }
+        )
+      ])
+
+      expect(grupos[0].resumen).toEqual({
+        total: 5,
+        vencido: 0,
+        documento_rechazado: 1,
+        por_vencer: 1,
+        documento_faltante: 2,
+        cumpleanos: 1
+      })
+    })
+
+    it('ordena los grupos por lo más grave, luego por urgencia, luego por nombre', () => {
+      const grupos = agrupadas([
+        entrada('e1', [doc('ine', 'pending')], { nombre: 'Ana Ruiz' }),
+        entrada('e2', [doc('contrato', 'validated', { vigenciaHasta: '2026-08-10' })], {
+          nombre: 'Zoe Zamora'
+        }),
+        entrada('e3', [doc('curp', 'rejected')], { nombre: 'Beto Solís' })
+      ])
+
+      // Vencido (Zoe) → rechazado (Beto) → faltante (Ana).
+      expect(grupos.map((g) => g.empleadoNombre)).toEqual([
+        'Zoe Zamora',
+        'Beto Solís',
+        'Ana Ruiz'
+      ])
+    })
+
+    describe('el mensaje del renglón', () => {
+      it('con una sola alerta reusa su mensaje, que ya es específico', () => {
+        const grupos = agrupadas([entrada('e1', [doc('ine', 'pending')])])
+        expect(grupos[0].mensaje).toBe('Falta subir Identificación oficial (INE).')
+      })
+
+      it('con varios tipos los enumera en español', () => {
+        const grupos = agrupadas([
+          entrada('e1', [
+            doc('ine', 'pending'),
+            doc('curp', 'pending'),
+            doc('rfc', 'rejected'),
+            doc('contrato', 'validated', { vigenciaHasta: '2026-08-10' })
+          ])
+        ])
+        expect(grupos[0].mensaje).toBe(
+          '1 documento vencido, 1 documento rechazado y 2 documentos por subir.'
+        )
+      })
+
+      it('suma el cumpleaños al final, sin mezclarlo con los documentos', () => {
+        const grupos = agrupadas([
+          entrada('e1', [doc('ine', 'pending'), doc('curp', 'pending')], {
+            fechaNacimiento: '1990-08-20'
+          })
+        ])
+        expect(grupos[0].mensaje).toBe(
+          '2 documentos por subir. Hoy es el cumpleaños de Ana Ruiz (cumple 36).'
+        )
+      })
+
+      it('usa el singular cuando es uno solo de cada tipo', () => {
+        const grupos = agrupadas([
+          entrada('e1', [
+            doc('ine', 'pending'),
+            doc('contrato', 'validated', { vigenciaHasta: '2026-08-25' })
+          ])
+        ])
+        expect(grupos[0].mensaje).toBe('1 documento por vencer y 1 documento por subir.')
+      })
+    })
+
+    it('el id del grupo es estable y no se confunde con el de una alerta', () => {
+      const entradas = [entrada('e1', [doc('ine', 'pending')])]
+      const primera = agrupadas(entradas)
+      const segunda = agrupadas(entradas)
+
+      expect(primera[0].id).toBe(segunda[0].id)
+      expect(primera[0].id).toBe('empleado:e1')
+      expect(primera[0].alertas[0].id).not.toBe(primera[0].id)
+    })
+
+    it('sin alertas no hay grupos', () => {
+      expect(groupAlertsByEmployee([])).toEqual([])
     })
   })
 

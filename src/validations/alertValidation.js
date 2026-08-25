@@ -37,5 +37,24 @@ exports.listAlertsValidation = [
   query('diasCumpleanos')
     .optional()
     .isInt({ min: 0, max: 60 })
-    .withMessage('diasCumpleanos debe ser un número entre 0 y 60')
+    .withMessage('diasCumpleanos debe ser un número entre 0 y 60'),
+
+  /*
+   * `empleado` por defecto: un renglón por persona. `ninguno` devuelve la lista
+   * plana, que es lo que sirve para el detalle de UNA persona (D-48).
+   */
+  query('agrupar')
+    .optional()
+    .isIn(['empleado', 'ninguno'])
+    .withMessage('agrupar debe ser empleado o ninguno'),
+
+  query('pagina')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('pagina debe ser un número mayor o igual a 1'),
+
+  query('porPagina')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage('porPagina debe ser un número entre 1 y 100')
 ]

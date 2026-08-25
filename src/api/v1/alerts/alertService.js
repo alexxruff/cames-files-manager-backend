@@ -1,6 +1,10 @@
 const Record = require('../records/recordModel')
 const employeeService = require('../employees/employeeService')
-const { deriveAlerts, summarizeAlerts } = require('../../../utils/domain/alerts')
+const {
+  deriveAlerts,
+  groupAlertsByEmployee,
+  summarizeAlerts
+} = require('../../../utils/domain/alerts')
 
 /**
  * `GET /alertas` — la bandeja de pendientes (spec §6.6, D-47).
@@ -27,15 +31,34 @@ const { deriveAlerts, summarizeAlerts } = require('../../../utils/domain/alerts'
  */
 const LIMITE_PERSONAS = 2000
 
-/** Tope de alertas en la respuesta. `truncado` avisa cuando se recorta. */
-const LIMITE_ALERTAS = 1000
+const POR_PAGINA_DEFECTO = 25
+const POR_PAGINA_MAXIMO = 100
 
 class AlertService {
   /**
-   * @param {object} filtros `{ tipo, origen, empresaId, area, empleadoId }`
+   * @param {object} filtros `{ tipo, origen, empresaId, area, empleadoId, agrupar, pagina, porPagina }`
    * @param {object} contexto `{ user, empresasVisibles, areasPorEmpresa }`
+   *
+   * ─── Agrupado por empleado por defecto ───────────────────────────────────
+   * Con 145 personas y una docena de documentos requeridos cada una, la bandeja
+   * plana son ~730 renglones y los cinco primeros son de la misma persona. Se
+   * agrupa por defecto —un renglón por empleado— y `?agrupar=ninguno` devuelve la
+   * lista plana para el detalle de una persona. Ver D-48.
+   *
+   * ─── Se pagina en memoria, no en Mongo ───────────────────────────────────
+   * Como el avance de los expedientes (D-45): las alertas son derivadas, no
+   * existen como documentos, así que no hay nada que paginar en la base. Se
+   * derivan todas las de la gente visible, se filtran, se agrupan y se corta la
+   * página al final.
    */
   async list(filtros = {}, contexto = {}) {
+    const pagina = Math.max(1, Number(filtros.pagina) || 1)
+    const porPagina = Math.min(
+      POR_PAGINA_MAXIMO,
+      Math.max(1, Number(filtros.porPagina) || POR_PAGINA_DEFECTO)
+    )
+    const agrupado = filtros.agrupar !== 'ninguno'
+
     const entradas = await this.#entradas(filtros, contexto)
 
     const todas = deriveAlerts(entradas, {
@@ -43,19 +66,39 @@ class AlertService {
     })
 
     /*
-     * El resumen se calcula sobre TODAS las alertas y antes de filtrar: es el
-     * contador de la campanita, y tiene que decir cuántos pendientes hay en
-     * total, no cuántos quedaron después del filtro que la pantalla trae puesto.
+     * El resumen se calcula sobre TODAS las alertas y ANTES de aplicar `tipo` y
+     * `origen`: es el contador de las pestañas, y tiene que decir cuántos
+     * pendientes hay de cada tipo, no cuántos quedaron después del filtro que la
+     * pantalla trae puesto. `empresaId`, `area` y `empleadoId` sí lo afectan,
+     * porque acotan a la gente antes de derivar y eso es lo que se espera del
+     * selector de área.
      */
     const resumen = summarizeAlerts(todas)
 
     const filtradas = todas.filter((alerta) => this.#pasaFiltros(alerta, filtros))
 
+    // Siempre se informan las dos magnitudes: la interfaz necesita decir
+    // «731 pendientes en 147 personas», y una sola de las dos no alcanza.
+    const totalAlertas = filtradas.length
+    const totalEmpleados = new Set(filtradas.map((a) => a.empleadoId)).size
+
+    const comunes = { agrupado, pagina, porPagina, totalAlertas, totalEmpleados, resumen }
+    const inicio = (pagina - 1) * porPagina
+
+    if (!agrupado) {
+      return {
+        ...comunes,
+        total: totalAlertas,
+        alertas: filtradas.slice(inicio, inicio + porPagina)
+      }
+    }
+
+    const grupos = groupAlertsByEmployee(filtradas)
     return {
-      total: filtradas.length,
-      truncado: filtradas.length > LIMITE_ALERTAS,
-      resumen,
-      alertas: filtradas.slice(0, LIMITE_ALERTAS)
+      ...comunes,
+      // `total` es lo que se pagina: grupos aquí, alertas en el modo plano.
+      total: grupos.length,
+      grupos: grupos.slice(inicio, inicio + porPagina)
     }
   }
 
@@ -116,5 +159,6 @@ class AlertService {
 }
 
 module.exports = new AlertService()
-module.exports.LIMITE_ALERTAS = LIMITE_ALERTAS
 module.exports.LIMITE_PERSONAS = LIMITE_PERSONAS
+module.exports.POR_PAGINA_DEFECTO = POR_PAGINA_DEFECTO
+module.exports.POR_PAGINA_MAXIMO = POR_PAGINA_MAXIMO

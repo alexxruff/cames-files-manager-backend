@@ -269,12 +269,136 @@ function summarizeAlerts(alertas = []) {
   return resumen
 }
 
+// ─── Agrupación por empleado ──────────────────────────────────────────────────
+
+/**
+ * Etiquetas del resumen de un grupo. `por_vencer` y `documento_faltante` no
+ * repiten la palabra "documento" cuando ya la dijo otra parte de la frase; se
+ * arma en `mensajeDeGrupo`.
+ */
+const ETIQUETA_DE_GRUPO = Object.freeze({
+  vencido: (n) => `${n} ${n === 1 ? 'documento vencido' : 'documentos vencidos'}`,
+  documento_rechazado: (n) =>
+    `${n} ${n === 1 ? 'documento rechazado' : 'documentos rechazados'}`,
+  por_vencer: (n) => `${n} ${n === 1 ? 'documento por vencer' : 'documentos por vencer'}`,
+  documento_faltante: (n) =>
+    `${n} ${n === 1 ? 'documento por subir' : 'documentos por subir'}`
+})
+
+/** Une en español: `a`, `a y b`, `a, b y c`. */
+function unirEnEspanol(partes) {
+  if (partes.length <= 1) return partes.join('')
+  return `${partes.slice(0, -1).join(', ')} y ${partes[partes.length - 1]}`
+}
+
+/**
+ * Una frase que resume el grupo, para pintar el renglón sin abrirlo.
+ *
+ * Con una sola alerta se reusa su propio mensaje, que ya es específico («Falta
+ * subir CURP.»). Con varias se cuenta por tipo, porque repetir «Falta subir X»
+ * doce veces es justo el problema que la agrupación resuelve.
+ */
+function mensajeDeGrupo(resumen, alertas) {
+  const partes = Object.keys(ETIQUETA_DE_GRUPO)
+    .filter((tipo) => resumen[tipo] > 0)
+    .map((tipo) => ETIQUETA_DE_GRUPO[tipo](resumen[tipo]))
+
+  const cumple = alertas.find((a) => a.tipo === 'cumpleanos')
+
+  // Una sola alerta: su mensaje ya dice exactamente qué pasa.
+  if (alertas.length === 1) return alertas[0].mensaje
+
+  const documentos = partes.length > 0 ? `${unirEnEspanol(partes)}.` : ''
+  return [documentos, cumple?.mensaje].filter(Boolean).join(' ')
+}
+
+/**
+ * Agrupa las alertas por persona: **un renglón por empleado**, no uno por
+ * documento.
+ *
+ * POR QUÉ EXISTE: con 145 personas y una docena de documentos requeridos cada
+ * una, la bandeja plana son ~730 renglones y las cinco primeras son de la misma
+ * persona. Es una lista imposible de usar, y el conteo que importa —«a cuánta
+ * gente le falta algo»— no se ve. Ver D-48.
+ *
+ * El grupo lleva **lo que el renglón necesita para pintarse y ordenarse** (el
+ * tipo más grave, los días del más urgente, el conteo por tipo y una frase) más
+ * `alertas[]` con el detalle, para que la interfaz pueda desplegarlo sin una
+ * segunda petición.
+ *
+ * @param {object[]} alertas ya ordenadas por `ordenarAlertas`
+ * @returns {object[]} grupos ordenados con el mismo criterio: lo más grave primero
+ */
+function groupAlertsByEmployee(alertas = []) {
+  const grupos = new Map()
+
+  for (const alerta of alertas) {
+    let grupo = grupos.get(alerta.empleadoId)
+    if (!grupo) {
+      grupo = {
+        empleadoId: alerta.empleadoId,
+        empleadoNombre: alerta.empleadoNombre,
+        categoriaNombre: alerta.categoriaNombre,
+        empresas: alerta.empresas,
+        areas: alerta.areas,
+        alertas: []
+      }
+      grupos.set(alerta.empleadoId, grupo)
+    }
+    grupo.alertas.push(alerta)
+  }
+
+  const lista = [...grupos.values()].map((grupo) => {
+    const resumen = summarizeAlerts(grupo.alertas)
+    /*
+     * `alertas` llega ya ordenada, así que la primera de cada grupo es la más
+     * grave y la más urgente: de ahí salen `tipo` y `diasRestantes` del renglón,
+     * sin volver a recorrer nada.
+     */
+    const principal = grupo.alertas[0]
+
+    return {
+      /*
+       * `id` estable, como en las alertas: el front lo usa como `key`. Es el id
+       * del empleado con prefijo para que no se pueda confundir con el de una
+       * alerta suelta.
+       */
+      id: `empleado:${grupo.empleadoId}`,
+      ...grupo,
+      /** El tipo más grave del grupo: es el que define el color del renglón. */
+      tipo: principal.tipo,
+      /** Los días del más urgente. Negativo si ya venció. */
+      diasRestantes: principal.diasRestantes,
+      total: grupo.alertas.length,
+      resumen,
+      mensaje: mensajeDeGrupo(resumen, grupo.alertas)
+    }
+  })
+
+  return lista.sort(ordenarGrupos)
+}
+
+/** Mismo criterio que las alertas sueltas: lo más grave primero. */
+function ordenarGrupos(a, b) {
+  const severidad = ALERT_SEVERITY[a.tipo] - ALERT_SEVERITY[b.tipo]
+  if (severidad !== 0) return severidad
+
+  const diasA = a.diasRestantes ?? Number.POSITIVE_INFINITY
+  const diasB = b.diasRestantes ?? Number.POSITIVE_INFINITY
+  if (diasA !== diasB) return diasA - diasB
+
+  return compareNames(a.empleadoNombre, b.empleadoNombre)
+}
+
 module.exports = {
   deriveAlerts,
   deriveDocumentAlerts,
   deriveBirthdayAlerts,
+  groupAlertsByEmployee,
   summarizeAlerts,
   mensajeDeDocumento,
   mensajeDeCumpleanos,
-  ordenarAlertas
+  mensajeDeGrupo,
+  ordenarAlertas,
+  ordenarGrupos
 }

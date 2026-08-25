@@ -1451,3 +1451,87 @@ que el próximo que llame a la función no se queme en silencio.
   decisión evita a propósito. Si hace falta «no me lo recuerdes hasta el lunes»,
   se implementa como un aplazamiento por usuario y documento —no como un
   `resuelta`—, para que la alerta siga siendo derivada.
+
+---
+
+## D-48 · La bandeja de alertas se agrupa por empleado y se pagina
+
+**Decisión.** `GET /alertas` devuelve **un renglón por persona** y **25 por
+página** por defecto. `?agrupar=ninguno` da la lista plana, también paginada.
+
+### El problema, con números reales
+
+Con los 145 colaboradores importados (D-46) y una docena de documentos requeridos
+cada uno, la bandeja plana daba **731 alertas** —729 de ellas
+`documento_faltante`— y los cinco primeros renglones eran de la misma persona,
+uno por documento. Una lista así no se puede usar: no cabe en pantalla, no se
+puede recorrer, y esconde el dato que de verdad importa —**a cuánta gente le falta
+algo**— detrás de un número inflado por la multiplicación.
+
+El tope de 1000 con `truncado` que traía D-47 no resolvía nada: recortaba sin
+ordenar la conversación. Se quitó; **la paginación lo sustituye**.
+
+### Se pagina en memoria, igual que los expedientes
+
+Las alertas son derivadas: no existen como documentos, así que no hay nada que
+paginar en la base. Se derivan todas las de la gente visible, se filtran, se
+agrupan y **se corta la página al final** — el mismo patrón que `recordService.list`
+con `estatus` (D-45), y por la misma razón: replicar la derivación en un pipeline
+de Mongo duplicaría la lógica de vigencias, que es justo lo que modelo-datos §9.1
+pide evitar.
+
+### Qué lleva el grupo, y por qué eso y no menos
+
+El renglón tiene que pintarse y ordenarse **sin abrirse**, así que el grupo lleva:
+
+| Campo           | Para qué                                                |
+| --------------- | ------------------------------------------------------- |
+| `tipo`          | El **más grave** del grupo: define el color del renglón |
+| `diasRestantes` | Los del más urgente: ordena y se muestra                |
+| `total`         | El contador de la fila                                  |
+| `resumen`       | Conteo por tipo, para chips dentro de la fila           |
+| `mensaje`       | Frase lista para pintar                                 |
+| `alertas[]`     | El detalle, para desplegar **sin otra petición**        |
+
+`tipo` y `diasRestantes` se toman de la **primera** alerta del grupo, sin volver a
+recorrer nada: la lista llega ya ordenada por `ordenarAlertas`, así que la primera
+de cada grupo es por construcción la más grave y la más urgente.
+
+`alertas[]` va incluido a propósito. Una persona tiene una docena de alertas como
+máximo, así que una página de 25 grupos son ~300 alertas: cabe de sobra, y evita
+una petición por cada fila que el usuario despliega.
+
+### El mensaje del grupo
+
+Con **una sola** alerta se reusa su propio mensaje, que ya es específico («Falta
+subir CURP.»). Con varias se cuenta por tipo («1 documento vencido, 1 rechazado y
+2 por subir.»), porque repetir «Falta subir X» doce veces es exactamente el
+problema que la agrupación resuelve. El cumpleaños se añade al final como frase
+aparte: no es un documento y no debe contarse con ellos.
+
+### Tres magnitudes, no una
+
+- `total` — lo que se pagina: **personas** agrupado, **alertas** en plano.
+- `totalAlertas` — siempre las alertas que cumplen el filtro.
+- `totalEmpleados` — siempre las personas con al menos una.
+
+Las tres van siempre, porque el encabezado necesita decir «731 pendientes en 147
+personas» y con una sola no se puede. Y `total` cambia de significado según el
+modo justo para que el cálculo de páginas del front sea siempre `total /
+porPagina`, sin condicionales.
+
+### `resumen` sigue calculándose antes de filtrar por tipo
+
+Es el contador de las pestañas: **no cambia al paginar** ni al elegir una pestaña.
+`empresaId`, `area` y `empleadoId` sí lo afectan, porque acotan a la gente antes
+de derivar y eso es lo que se espera del selector de área. Hay pruebas de las dos
+cosas.
+
+### Es un cambio incompatible, y está asumido
+
+La llave de la respuesta pasó de `data.alertas` a `data.grupos` en el modo por
+defecto. El front tenía la pantalla construida contra la forma plana, así que hay
+que ajustarla — está anotado arriba en `ENDPOINTS-ALERTAS.md`. Se prefirió eso a
+añadir un `?agrupar=empleado` opcional que dejara el defecto roto: la lista plana
+de 731 renglones no es una opción razonable para nadie, y un defecto que nadie
+debería usar no debería ser el defecto.

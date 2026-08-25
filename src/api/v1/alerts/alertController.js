@@ -24,6 +24,9 @@ class AlertController {
         empresaId: req.query.empresaId,
         area: req.query.area,
         empleadoId: req.query.empleadoId,
+        agrupar: req.query.agrupar,
+        pagina: req.query.pagina,
+        porPagina: req.query.porPagina,
         diasCumpleanos:
           req.query.diasCumpleanos === undefined
             ? undefined

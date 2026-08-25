@@ -19,6 +19,19 @@ El por qué de cada decisión: `DECISIONES.md` D-47.
 > local** más allá de lo que dure la pantalla. Vuelve a pedir la lista después de
 > subir o revisar un documento y ya viene correcta.
 
+> ### ⚠️ CAMBIO: ahora viene agrupado por empleado y paginado
+>
+> Antes devolvía una lista plana con **todas** las alertas: con 145 personas y una
+> docena de documentos requeridos cada una salían ~730 renglones, y los cinco
+> primeros eran de la misma persona.
+>
+> Ahora, **por defecto**, devuelve `grupos[]` —**un renglón por empleado**— y
+> **25 por página**. La llave cambia: `data.grupos`, no `data.alertas`. Cada grupo
+> trae su `alertas[]` dentro, así que el detalle se despliega sin otra petición.
+>
+> Para la lista plana (el detalle de UNA persona, por ejemplo) usa
+> `?agrupar=ninguno`, que también pagina.
+
 ---
 
 ## `GET /alertas` → 200
@@ -33,30 +46,94 @@ El por qué de cada decisión: `DECISIONES.md` D-47.
 | `empleadoId`     | id de empleado                                                                         |
 | `area`           | un área del enum                                                                       |
 | `diasCumpleanos` | 0–60. Ensancha la ventana de cumpleaños sólo para esta consulta                        |
+| `agrupar`        | `empleado` (por defecto) · `ninguno`                                                   |
+| `pagina`         | ≥ 1. Por defecto 1                                                                     |
+| `porPagina`      | 1–100. Por defecto 25                                                                  |
 
 Un `tipo` o un `origen` que no existen responden **400**, no una lista vacía: así
 un filtro mal escrito no parece «no hay pendientes».
 
-### Lo que devuelve
+### Lo que devuelve — modo agrupado (por defecto)
 
 ```jsonc
 // data
 {
-  "total": 37, // alertas después de aplicar los filtros
-  "truncado": false, // true si se recortó la lista (tope de 1000)
+  "agrupado": true,
+  "pagina": 1,
+  "porPagina": 25,
 
-  // El contador de la campanita. Cuenta TODAS las alertas visibles,
-  // NO las que quedaron tras el filtro: así el badge no cambia al
-  // cambiar de pestaña.
+  // Lo que se pagina. Agrupado son PERSONAS; en modo plano, alertas.
+  // Úsalo para calcular el número de páginas.
+  "total": 147,
+
+  // Las dos magnitudes, siempre presentes, para el encabezado:
+  // «731 pendientes en 147 personas».
+  "totalAlertas": 731,
+  "totalEmpleados": 147,
+
+  // El contador de las pestañas. Cuenta TODAS las alertas visibles y
+  // NO cambia al paginar ni al filtrar por tipo u origen.
   "resumen": {
-    "total": 37,
-    "vencido": 2,
-    "documento_rechazado": 1,
-    "por_vencer": 4,
-    "documento_faltante": 29,
-    "cumpleanos": 1
+    "total": 731,
+    "vencido": 0,
+    "documento_rechazado": 0,
+    "por_vencer": 0,
+    "documento_faltante": 729,
+    "cumpleanos": 2
   },
 
+  "grupos": [
+    {
+      "id": "empleado:66f…", // estable: úsalo como key
+      "empleadoId": "66f…",
+      "empleadoNombre": "ALBERTO ESPINO MEZA",
+      "categoriaNombre": "Operador",
+      "empresas": [{ "_id": "66f…", "nombre": "Maquinaria CAMES" }],
+      "areas": ["obra"],
+
+      // El tipo MÁS GRAVE del grupo: es el que define el color del renglón.
+      "tipo": "documento_faltante",
+      // Los días del más urgente. Negativo si ya venció.
+      "diasRestantes": null,
+
+      "total": 12,
+      "resumen": {
+        "total": 12,
+        "vencido": 0,
+        "documento_rechazado": 0,
+        "por_vencer": 0,
+        "documento_faltante": 12,
+        "cumpleanos": 0
+      },
+      // Frase lista para el renglón, sin abrirlo.
+      "mensaje": "12 documentos por subir.",
+
+      // El detalle, ya ordenado. No hace falta otra petición para desplegarlo.
+      "alertas": [/* … el mismo objeto Alerta de siempre … */]
+    }
+  ]
+}
+```
+
+`mensaje` del grupo: con **una sola** alerta reusa su mensaje específico («Falta
+subir CURP.»); con varias, cuenta por tipo («1 documento vencido, 1 rechazado y 2
+por subir.») y añade el cumpleaños al final si lo hay.
+
+### Lo que devuelve — modo plano (`?agrupar=ninguno`)
+
+Mismos campos de arriba, salvo que **`grupos` no viene y `alertas` sí**, con las
+alertas sueltas de la página. `total` es entonces el número de alertas.
+
+```jsonc
+// data
+{
+  "agrupado": false,
+  "pagina": 1,
+  "porPagina": 25,
+  "total": 731,
+  "totalAlertas": 731,
+  "totalEmpleados": 147,
+  "resumen": {/* igual */},
   "alertas": [
     {
       "id": "documento:66f…:66f…:contrato:vencido",
@@ -97,7 +174,43 @@ un filtro mal escrito no parece «no hay pendientes».
 }
 ```
 
-En TypeScript, es una unión discriminada por `origen`:
+### En TypeScript
+
+```ts
+interface RespuestaAlertas {
+  agrupado: boolean
+  pagina: number
+  porPagina: number
+  /** Lo que se pagina: grupos si `agrupado`, alertas si no. */
+  total: number
+  totalAlertas: number
+  totalEmpleados: number
+  resumen: Record<TipoAlerta | 'total', number>
+  /** Sólo cuando `agrupado === true`. */
+  grupos?: GrupoDeAlertas[]
+  /** Sólo cuando `agrupado === false`. */
+  alertas?: Alerta[]
+}
+
+interface GrupoDeAlertas {
+  id: string // `empleado:${empleadoId}`, estable
+  empleadoId: string
+  empleadoNombre: string
+  categoriaNombre: string | null
+  empresas: { _id: string; nombre: string | null }[]
+  areas: Area[]
+  /** El tipo más grave del grupo. */
+  tipo: TipoAlerta
+  /** Los días del más urgente. Negativo si ya pasó. */
+  diasRestantes: number | null
+  total: number
+  resumen: Record<TipoAlerta | 'total', number>
+  mensaje: string
+  alertas: Alerta[]
+}
+```
+
+Y la alerta suelta, que no cambió — unión discriminada por `origen`:
 
 ```ts
 interface AlertaBase {
@@ -141,6 +254,25 @@ type Alerta = AlertaDocumento | AlertaCumpleanos
 
 ## Lo que hay que saber para armar la pantalla
 
+### Un renglón por persona
+
+Pinta el renglón con los campos del **grupo** (`empleadoNombre`,
+`categoriaNombre`, `tipo`, `mensaje`, `total`) y despliega `grupo.alertas` al
+abrirlo. No hace falta otra petición: el detalle ya viene.
+
+`grupo.tipo` es el **más grave** del grupo, así que sirve para el color o el icono
+del renglón. `grupo.resumen` da los conteos por tipo si quieres pintar chips
+dentro de la fila.
+
+### La paginación
+
+`total` es lo que hay que paginar: **personas** en modo agrupado, **alertas** en
+modo plano. Las páginas son de 25 por defecto y hasta 100. Una página más allá del
+final devuelve la lista vacía con `200`, no un error.
+
+`resumen`, `totalAlertas` y `totalEmpleados` **no cambian al paginar**: sirven para
+el encabezado y las pestañas.
+
 ### `id` es estable: úsalo como `key`
 
 No cambia entre dos consultas mientras la causa siga igual, así que la lista no
@@ -182,11 +314,11 @@ baja de todas sus empresas). No generan alertas de ningún tipo.
 
 ### Errores
 
-| Código | Cuándo                                                |
-| ------ | ----------------------------------------------------- |
-| `400`  | `tipo`, `origen`, `area` o `diasCumpleanos` inválidos |
-| `401`  | sin sesión                                            |
-| `404`  | `empresaId` fuera de su alcance                       |
+| Código | Cuándo                                                                                  |
+| ------ | --------------------------------------------------------------------------------------- |
+| `400`  | `tipo`, `origen`, `area`, `diasCumpleanos`, `agrupar`, `pagina` o `porPagina` inválidos |
+| `401`  | sin sesión                                                                              |
+| `404`  | `empresaId` fuera de su alcance                                                         |
 
 ### Alcance
 

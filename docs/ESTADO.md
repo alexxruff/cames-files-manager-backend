@@ -82,7 +82,7 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 | Expedientes y documentos          | 6.5       | ✅     | Listado paginado, consulta, subida y **revisar** (valida y rechaza) (D-42, D-43, D-45)                    |
 | Lógica de dominio                 | modelo §6 | ✅     | Estatus, avance, semáforo, vigencias y la **unión** de plantillas, listos y probados                      |
 | Importar colaboradores (.xlsx)    | —         | ✅     | Previsualizar y aplicar; idempotente al re-subir; crea puestos y adscripciones (D-46)                     |
-| Alertas (`GET /alertas`)          | 6.6       | ✅     | Derivadas, nunca almacenadas: documentos y cumpleaños. Se resuelven solas (D-47)                          |
+| Alertas (`GET /alertas`)          | 6.6       | ✅     | Derivadas y sin estado (D-47); **agrupadas por empleado y paginadas** (D-48)                              |
 | Métricas y reportes               | 6.6       | ⬜     | Derivados                                                                                                 |
 | Almacenamiento R2                 | 7         | ✅     | Bucket `cames-files/employes-files`, probado de punta a punta; `npm run r2:check` (D-41)                  |
 | Job diario de vigencias           | 8         | ⬜     | Un correo por persona, idempotente                                                                        |

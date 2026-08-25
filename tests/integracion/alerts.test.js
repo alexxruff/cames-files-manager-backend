@@ -76,11 +76,28 @@ async function escenario(datos = {}) {
   return { ...sesion, categoria, persona, expedienteId: res.body.data.expediente._id }
 }
 
+/**
+ * La bandeja **plana**, con una página grande.
+ *
+ * La mayoría de estas pruebas mira alertas individuales, y el endpoint agrupa por
+ * empleado **por defecto** (D-48). `agrupar=ninguno` es el modo que devuelve la
+ * lista suelta, y `porPagina=100` evita que la paginación recorte lo que se está
+ * comprobando.
+ */
 const listar = (token, query = '') =>
+  request(app)
+    .get(`/api/v1/alertas?agrupar=ninguno&porPagina=100&${query.replace(/^\?/, '')}`)
+    .set(auth(token))
+
+/** La bandeja tal como la pide la interfaz: agrupada y paginada. */
+const listarAgrupadas = (token, query = '') =>
   request(app).get(`/api/v1/alertas${query}`).set(auth(token))
 
 const deEmpleado = (res, empleadoId) =>
   res.body.data.alertas.filter((a) => a.empleadoId === empleadoId.toString())
+
+const grupoDe = (res, empleadoId) =>
+  res.body.data.grupos.find((g) => g.empleadoId === empleadoId.toString())
 
 describe('GET /api/v1/alertas', () => {
   describe('alertas de documentación faltante', () => {
@@ -488,9 +505,15 @@ describe('GET /api/v1/alertas', () => {
       expect(resumen.total).toBe(resumen.documento_faltante)
     })
 
-    it('devuelve truncado en falso cuando no se recorta nada', async () => {
+    it('informa las dos magnitudes: alertas y personas', async () => {
       const { token } = await escenario()
-      expect((await listar(token)).body.data.truncado).toBe(false)
+
+      const { totalAlertas, totalEmpleados } = (await listar(token)).body.data
+
+      // Una persona con su docena de documentos pendientes: muchas alertas,
+      // pocas personas. Es lo que la interfaz necesita para el encabezado.
+      expect(totalAlertas).toBeGreaterThan(1)
+      expect(totalEmpleados).toBe(1)
     })
   })
 
@@ -503,27 +526,196 @@ describe('GET /api/v1/alertas', () => {
     it('rh_consulta y jefe_area también ven la bandeja: una alerta no dice nada nuevo', async () => {
       for (const nivelAcceso of ['rh_consulta', 'jefe_area']) {
         const { token } = await escenario({ nivelAcceso, areasDelUsuario: ['obra'] })
-        expect((await listar(token)).status).toBe(200)
+        expect((await listarAgrupadas(token)).status).toBe(200)
       }
     })
 
     it('400 con un tipo o un origen que no existen', async () => {
       const { token } = await escenario()
 
-      const tipo = await listar(token, '?tipo=inventado')
+      const tipo = await listarAgrupadas(token, '?tipo=inventado')
       expect(tipo.status).toBe(400)
       expect(tipo.body.errors[0].msg).toContain('tipo debe ser uno de')
 
-      const origen = await listar(token, '?origen=inventado')
+      const origen = await listarAgrupadas(token, '?origen=inventado')
       expect(origen.status).toBe(400)
     })
 
     it('400 con una ventana de cumpleaños imposible', async () => {
       const { token } = await escenario()
 
-      expect((await listar(token, '?diasCumpleanos=-1')).status).toBe(400)
-      expect((await listar(token, '?diasCumpleanos=400')).status).toBe(400)
-      expect((await listar(token, '?diasCumpleanos=abc')).status).toBe(400)
+      expect((await listarAgrupadas(token, '?diasCumpleanos=-1')).status).toBe(400)
+      expect((await listarAgrupadas(token, '?diasCumpleanos=400')).status).toBe(400)
+      expect((await listarAgrupadas(token, '?diasCumpleanos=abc')).status).toBe(400)
+    })
+  })
+
+  describe('agrupado por empleado y paginación (D-48)', () => {
+    /** N personas de obra en la misma empresa, cada una con su expediente. */
+    const conVariasPersonas = async (cuantas) => {
+      await ensureBaseChecklistTemplates()
+      escenarios += 1
+      const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+      const categoria = await crearCategoria(`Operador ${escenarios}`, 'mano_de_obra')
+
+      const personas = []
+      for (let i = 0; i < cuantas; i += 1) {
+        const persona = await crearEmpleado({
+          nombre: `Persona ${String(i).padStart(2, '0')}`,
+          tipo: 'mano_de_obra',
+          categoriaId: categoria._id
+        })
+        await adscribir(sesion.empresa, persona, { areas: ['obra'] })
+        await request(app)
+          .get(`/api/v1/empleados/${persona._id}/expediente`)
+          .set(auth(sesion.token))
+        personas.push(persona)
+      }
+      return { ...sesion, personas }
+    }
+
+    /*
+     * El caso que motivó todo esto: 145 personas × una docena de documentos son
+     * ~730 renglones, y los primeros cinco son de la misma persona. Agrupado, es
+     * un renglón por persona.
+     */
+    it('devuelve un grupo por persona, no un renglón por documento', async () => {
+      const { token, persona } = await escenario()
+
+      const res = await listarAgrupadas(token)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.agrupado).toBe(true)
+      expect(res.body.data.alertas).toBeUndefined()
+
+      const grupo = grupoDe(res, persona._id)
+      expect(grupo.total).toBeGreaterThan(1)
+      expect(grupo.alertas).toHaveLength(grupo.total)
+      // Un solo renglón para esa persona, aunque le falten doce documentos.
+      expect(
+        res.body.data.grupos.filter((g) => g.empleadoId === persona._id.toString())
+      ).toHaveLength(1)
+    })
+
+    it('el grupo trae lo que el renglón necesita para pintarse', async () => {
+      const { token, persona, empresa } = await escenario()
+
+      const grupo = grupoDe(await listarAgrupadas(token), persona._id)
+
+      expect(grupo).toMatchObject({
+        id: `empleado:${persona._id}`,
+        empleadoId: persona._id.toString(),
+        empleadoNombre: 'Roberto Aguilar Sosa',
+        tipo: 'documento_faltante',
+        areas: ['obra']
+      })
+      expect(grupo.empresas).toEqual([
+        { _id: empresa._id.toString(), nombre: empresa.nombre }
+      ])
+      expect(grupo.mensaje).toMatch(/documentos por subir\.$/)
+      expect(grupo.resumen.documento_faltante).toBe(grupo.total)
+    })
+
+    it('agrupado, total cuenta personas y totalAlertas cuenta alertas', async () => {
+      const { token } = await conVariasPersonas(3)
+
+      const { data } = (await listarAgrupadas(token)).body
+
+      // El admin de la sesión también tiene expediente, así que son 4 personas.
+      expect(data.total).toBe(data.grupos.length)
+      expect(data.totalEmpleados).toBe(data.total)
+      expect(data.totalAlertas).toBeGreaterThan(data.total)
+      expect(data.totalAlertas).toBe(data.grupos.reduce((suma, g) => suma + g.total, 0))
+    })
+
+    it('pagina los grupos', async () => {
+      const { token } = await conVariasPersonas(5)
+
+      const primera = await listarAgrupadas(token, '?porPagina=2&pagina=1')
+      const segunda = await listarAgrupadas(token, '?porPagina=2&pagina=2')
+
+      expect(primera.body.data).toMatchObject({ pagina: 1, porPagina: 2 })
+      expect(primera.body.data.grupos).toHaveLength(2)
+      expect(segunda.body.data.grupos).toHaveLength(2)
+      expect(primera.body.data.total).toBe(segunda.body.data.total)
+
+      // Páginas distintas, sin repetir a nadie.
+      const ids = [
+        ...primera.body.data.grupos.map((g) => g.empleadoId),
+        ...segunda.body.data.grupos.map((g) => g.empleadoId)
+      ]
+      expect(new Set(ids).size).toBe(4)
+    })
+
+    it('una página más allá del final viene vacía, no falla', async () => {
+      const { token } = await conVariasPersonas(2)
+
+      const res = await listarAgrupadas(token, '?porPagina=10&pagina=99')
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.grupos).toEqual([])
+      expect(res.body.data.total).toBeGreaterThan(0)
+    })
+
+    it('por defecto son 25 por página', async () => {
+      const { token } = await escenario()
+      expect((await listarAgrupadas(token)).body.data.porPagina).toBe(25)
+    })
+
+    it('el modo plano también pagina', async () => {
+      const { token } = await escenario()
+
+      const res = await listarAgrupadas(token, '?agrupar=ninguno&porPagina=3')
+
+      expect(res.body.data.agrupado).toBe(false)
+      expect(res.body.data.grupos).toBeUndefined()
+      expect(res.body.data.alertas).toHaveLength(3)
+      expect(res.body.data.total).toBeGreaterThan(3)
+      expect(res.body.data.total).toBe(res.body.data.totalAlertas)
+    })
+
+    /*
+     * El resumen es el contador de las pestañas y se calcula sobre TODAS las
+     * alertas: no puede depender de en qué página esté el usuario.
+     */
+    it('el resumen no cambia al cambiar de página', async () => {
+      const { token } = await conVariasPersonas(4)
+
+      const primera = await listarAgrupadas(token, '?porPagina=2&pagina=1')
+      const segunda = await listarAgrupadas(token, '?porPagina=2&pagina=2')
+
+      expect(primera.body.data.resumen).toEqual(segunda.body.data.resumen)
+      expect(primera.body.data.resumen.total).toBeGreaterThan(4)
+    })
+
+    it('los grupos vienen ordenados: lo más grave primero', async () => {
+      const { token, personas } = await conVariasPersonas(3)
+      const [conVencido] = personas
+
+      const expediente = await Record.findOne({ empleadoId: conVencido._id })
+      await Record.updateOne(
+        { _id: expediente._id, 'documentos.tipo': 'ine' },
+        {
+          $set: {
+            'documentos.$.estatus': 'validated',
+            'documentos.$.vigenciaHasta': addDays(today(), -3)
+          }
+        }
+      )
+
+      const res = await listarAgrupadas(token)
+
+      expect(res.body.data.grupos[0].empleadoId).toBe(conVencido._id.toString())
+      expect(res.body.data.grupos[0].tipo).toBe('vencido')
+    })
+
+    it('400 con una página o un tamaño imposibles', async () => {
+      const { token } = await escenario()
+
+      expect((await listarAgrupadas(token, '?pagina=0')).status).toBe(400)
+      expect((await listarAgrupadas(token, '?porPagina=0')).status).toBe(400)
+      expect((await listarAgrupadas(token, '?porPagina=500')).status).toBe(400)
+      expect((await listarAgrupadas(token, '?agrupar=inventado')).status).toBe(400)
     })
   })
 
