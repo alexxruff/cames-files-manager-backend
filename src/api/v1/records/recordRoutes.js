@@ -4,6 +4,7 @@ const asyncHandler = require('../../../utils/asyncHandler')
 const validateRequest = require('../../../middlewares/validateRequest')
 const { protect, requireCapability } = require('../../../middlewares/authMiddleware')
 const { applyScope } = require('../../../middlewares/scopeMiddleware')
+const { requirePasswordDefinitiva } = require('../../../middlewares/passwordMiddleware')
 const { recibirArchivo } = require('../../../middlewares/uploadMiddleware')
 const { CAPABILITIES } = require('../../../utils/permissions')
 const {
@@ -16,7 +17,8 @@ const {
 
 const router = express.Router()
 
-router.use(protect, applyScope)
+// `requirePasswordDefinitiva` va aquí y no en `protect`: ver D-49.
+router.use(protect, requirePasswordDefinitiva, applyScope)
 
 /** GET /expedientes — listado paginado (D-45). Mismos filtros que /empleados. */
 router.get(

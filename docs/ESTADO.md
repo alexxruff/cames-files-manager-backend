@@ -65,7 +65,8 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 | Módulo                            | Spec      | Estado | Notas                                                                                                     |
 | --------------------------------- | --------- | ------ | --------------------------------------------------------------------------------------------------------- |
 | Sesión (`/auth`)                  | 6.1       | ✅     | login, me, logout, cambiar-password con `AuthUser` nuevo                                                  |
-| Recuperar contraseña              | 6.1       | ⬜     | Hoy la repone un `rh_admin`                                                                               |
+| Contraseñas temporales            | 6.1       | ✅     | La que puso un admin (o el bootstrap) bloquea la API hasta cambiarla (D-49)                               |
+| Recuperar por correo              | 6.1       | ⬜     | La repone un `rh_admin` y queda temporal (D-49); falta el flujo por correo, que necesita mailer           |
 | Alcance por empresa               | 8.1       | ✅     | `applyScope` deriva de adscripciones activas                                                              |
 | Matriz de permisos                | 8.2       | ✅     | Capacidades + `alcanceGlobal`                                                                             |
 | Accesos (`/empleados/:id/acceso`) | 6.2       | ✅     | Dar, editar, quitar, restablecer (D-30)                                                                   |

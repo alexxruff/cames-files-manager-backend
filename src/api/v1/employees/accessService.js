@@ -44,7 +44,13 @@ class AccessService {
           nivelAcceso: datos.nivelAcceso,
           alcanceGlobal: Boolean(datos.alcanceGlobal),
           activo: true,
-          passwordActualizadaEn: new Date()
+          passwordActualizadaEn: new Date(),
+          /*
+           * La contraseña inicial la escribe el administrador, así que **él la
+           * conoce**: la persona tiene que cambiarla antes de poder usar el
+           * sistema (D-49). Hasta entonces su sesión sólo sirve para eso.
+           */
+          passwordTemporal: true
         }
         await empleado.save({ session: sesion })
         await Credential.create([{ empleadoId: empleado._id, passwordHash }], {
@@ -134,6 +140,11 @@ class AccessService {
   /**
    * Un administrador repone la contraseña de alguien. Invalida sus sesiones
    * abiertas, igual que un cambio hecho por la propia persona.
+   *
+   * La deja marcada como **temporal**: quien la repuso la conoce, así que la
+   * plataforma queda bloqueada para esa persona hasta que ponga una suya
+   * (D-49). Es lo que convierte «te repuse la contraseña» en algo seguro de
+   * decir por teléfono.
    */
   async resetPassword(empleadoId, { password }) {
     const empleado = await this.#buscarEmpleado(empleadoId)
@@ -162,7 +173,13 @@ class AccessService {
         )
         await Employee.updateOne(
           { _id: empleado._id },
-          { $set: { 'acceso.passwordActualizadaEn': ahora } },
+          {
+            $set: {
+              'acceso.passwordActualizadaEn': ahora,
+              // La repuso alguien más: temporal hasta que la persona la cambie.
+              'acceso.passwordTemporal': true
+            }
+          },
           { session: sesion }
         )
       })

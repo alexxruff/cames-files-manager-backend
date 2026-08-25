@@ -46,7 +46,23 @@ const accessSchema = new mongoose.Schema(
      * aquí a propósito: permite invalidar los JWT emitidos antes del cambio sin
      * leer la credencial en cada petición (`protect` se queda en una consulta).
      */
-    passwordActualizadaEn: { type: Date, default: null }
+    passwordActualizadaEn: { type: Date, default: null },
+
+    /**
+     * La contraseña la puso otra persona y hay que cambiarla antes de usar el
+     * sistema (D-49).
+     *
+     * Se marca cuando un administrador da acceso o repone la contraseña, y en el
+     * administrador inicial del bootstrap —que nace con la contraseña de arranque
+     * y era justo el agujero que quedaba abierto (D-21)—. Se limpia sola en
+     * `POST /auth/cambiar-password`.
+     *
+     * VIVE AQUÍ Y NO EN `credentials`, por lo mismo que `passwordActualizadaEn`:
+     * **no es material secreto** y se consulta en CADA petición autenticada para
+     * bloquear el paso, así que sacarla de aquí obligaría a `protect` a hacer una
+     * segunda consulta en el camino caliente.
+     */
+    passwordTemporal: { type: Boolean, default: false }
   },
   { _id: false }
 )
@@ -144,7 +160,8 @@ const employeeSchema = new mongoose.Schema(
                 nivelAcceso: ret.acceso.nivelAcceso,
                 alcanceGlobal: ret.acceso.alcanceGlobal,
                 activo: ret.acceso.activo,
-                passwordActualizadaEn: ret.acceso.passwordActualizadaEn ?? null
+                passwordActualizadaEn: ret.acceso.passwordActualizadaEn ?? null,
+                passwordTemporal: Boolean(ret.acceso.passwordTemporal)
               }
             : null,
           activo: ret.activo,

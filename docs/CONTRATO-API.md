@@ -179,6 +179,13 @@ número de renglón.
   email: string          // acceso.email
   nivelAcceso: 'rh_admin' | 'rh_consulta' | 'jefe_area'
   alcanceGlobal: boolean
+  /**
+   * `true` = la contraseña la puso otra persona (un administrador, o el
+   * bootstrap). Mientras lo sea, TODA la API responde 403 con
+   * `code: 'PASSWORD_TEMPORAL'` salvo `/auth/me`, `/auth/logout` y
+   * `/auth/cambiar-password`. Ver D-49.
+   */
+  passwordTemporal: boolean
   empresas: { _id: string; nombre: string; areas: Area[] }[]
   active: boolean
   ultimoAccesoEn: string | null
@@ -188,6 +195,22 @@ número de renglón.
 ```
 
 Desaparecieron `role`, `area`, `alcance` y `clienteId` respecto al modelo anterior.
+
+### Contraseña temporal (D-49)
+
+Cuando un administrador da acceso o repone una contraseña —y en el administrador
+inicial del bootstrap— la contraseña queda **temporal**. La sesión es válida, pero
+**toda la API responde `403` con `code: 'PASSWORD_TEMPORAL'`** hasta que la persona
+la cambie.
+
+Sólo funcionan tres rutas: `GET /auth/me`, `POST /auth/logout` y
+`POST /auth/cambiar-password` (que sigue exigiendo `passwordActual` y las reglas de
+complejidad).
+
+`AuthUser.passwordTemporal` lo anuncia al iniciar sesión, así que el front puede
+redirigir sin esperar el 403. Es `403` y no `401` a propósito: la sesión sirve, lo
+que falta es un requisito — con un `401` el front cerraría la sesión y entraría en
+bucle.
 
 ### Alcance y permisos
 

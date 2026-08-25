@@ -74,7 +74,14 @@ async function ensureBootstrapAdmin({
               nivelAcceso: 'rh_admin',
               alcanceGlobal: true, // administrador de plataforma
               activo: true,
-              passwordActualizadaEn: ahora
+              passwordActualizadaEn: ahora,
+              /*
+               * Nace con la contraseña de arranque (`1234` por defecto), que está
+               * en el `.env` y la conoce quien instaló. Marcarla como temporal
+               * hace que el sistema **no se pueda usar** hasta cambiarla: hasta
+               * ahora el aviso quedaba en un log que nadie lee. Ver D-49.
+               */
+              passwordTemporal: true
             }
           }
         ],
@@ -97,8 +104,8 @@ async function ensureBootstrapAdmin({
 
   logger.warn(
     'Se creó el administrador de plataforma inicial con la contraseña de arranque. ' +
-      'Cámbiala en tu primer acceso (POST /auth/cambiar-password) y pon ' +
-      'BOOTSTRAP_ADMIN_ENABLED=false en producción.',
+      'La plataforma está BLOQUEADA para él hasta que la cambie ' +
+      '(POST /auth/cambiar-password). Pon BOOTSTRAP_ADMIN_ENABLED=false en producción.',
     { _id: empleado._id.toString(), email: correo, alcanceGlobal: true }
   )
 

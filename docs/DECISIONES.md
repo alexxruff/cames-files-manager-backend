@@ -1535,3 +1535,92 @@ que ajustarla — está anotado arriba en `ENDPOINTS-ALERTAS.md`. Se prefirió e
 añadir un `?agrupar=empleado` opcional que dejara el defecto roto: la lista plana
 de 731 renglones no es una opción razonable para nadie, y un defecto que nadie
 debería usar no debería ser el defecto.
+
+---
+
+## D-49 · Contraseña temporal: la que puso otro no sirve para trabajar
+
+**Decisión.** Cuando un administrador da acceso o repone una contraseña, y en el
+administrador inicial del bootstrap, la contraseña queda marcada como
+**temporal**: la sesión existe, pero **la plataforma responde `403` a todo** hasta
+que la persona ponga una contraseña que sólo ella conoce.
+
+### El agujero que cierra
+
+Tres situaciones dejaban una credencial conocida por alguien que no es su dueño:
+
+1. `POST /empleados/:id/acceso` — el administrador escribe la contraseña inicial.
+2. `POST /empleados/:id/acceso/restablecer-password` — la repone.
+3. El **administrador inicial** (D-21), que nace con `BOOTSTRAP_ADMIN_PASSWORD`
+   (`1234` por defecto) escrita en el `.env`.
+
+El tercero era el peor: el único aviso era una línea de `logger.warn` y una nota
+en `CLAUDE.md`. Una instalación podía quedarse **para siempre** con `1234` y nadie
+se enteraba. Ahora no se puede usar el sistema sin cambiarla.
+
+### Dónde vive la marca, y por qué no en `credentials`
+
+`empleados.acceso.passwordTemporal`, no `credentials`. **No es material secreto**
+—decir «tienes que cambiar tu contraseña» no revela nada— y se consulta en **cada
+petición autenticada** para bloquear el paso.
+
+Es exactamente el argumento que ya documenta `credentialModel` para
+`passwordActualizadaEn`: el secreto está aislado en `credentials` (D-27), pero lo
+que `protect` necesita en el camino caliente vive en el empleado para que la
+autenticación siga siendo **una sola consulta**. Meterla en `credentials` habría
+duplicado la consulta de cada petición del sistema para ahorrar un booleano.
+
+### `403`, no `401`
+
+La sesión **es válida** y el token sirve: lo que falta es un requisito, no la
+identidad. Un `401` haría que el front cerrara la sesión y volviera al login,
+donde la persona entraría otra vez con la contraseña temporal — un bucle. El
+`403` lleva `code: 'PASSWORD_TEMPORAL'` para que el front pueda redirigir sin
+adivinar por el texto.
+
+Y `AuthUser` trae `passwordTemporal`, así que el front puede mandar a la pantalla
+de cambio **al iniciar sesión**, sin esperar el rebote de la primera pantalla.
+
+### Las tres cosas que sí funcionan
+
+`POST /auth/cambiar-password` (la salida), `GET /auth/me` (para saber quién es y
+ver el estado) y `POST /auth/logout` (nadie debe quedar atrapado). Son
+exactamente las rutas protegidas de `authRoutes`, así que ese router **no lleva el
+middleware** y no hace falta una lista de excepciones.
+
+`cambiar-password` **sigue exigiendo `passwordActual`** y las reglas de
+complejidad. Una contraseña temporal no es una puerta abierta: es una credencial
+de un solo uso que sólo sirve para reemplazarse.
+
+### Se aplica router por router, y el candado es una prueba
+
+`requirePasswordDefinitiva` va en el `router.use(protect, …)` de cada recurso —diez
+routers— y no dentro de `protect`, para que `protect` no tenga que conocer rutas
+exentas.
+
+Eso se puede olvidar en un recurso nuevo, así que el candado no es la disciplina:
+`passwords.test.js` recorre el **inventario de rutas derivado del router**
+(`GET /api/v1`) y exige `403 PASSWORD_TEMPORAL` en todas, salvo las tres de la
+salida. Un recurso nuevo sin el middleware hace fallar esa prueba sin que nadie
+tenga que acordarse — mismo patrón que `inventario.test.js`.
+
+### Qué NO cambia
+
+- **Editar el acceso** (nivel, alcance, correo) no vuelve temporal la contraseña:
+  no la toca.
+- Las sesiones abiertas se siguen invalidando al reponer la contraseña, como antes.
+- Las pruebas que crean sesiones con la fábrica no se ven afectadas: el valor por
+  defecto es `false`, porque ahí la contraseña la «pone» la propia persona.
+
+### Lo que esto deja fuera
+
+- **Recuperación por correo** (`/auth/recuperar`, `/auth/restablecer`). Sigue
+  reservada en `RUTAS_PENDIENTES` y en `credentials` (`resetToken`,
+  `resetExpiraEn`). Exige un servicio de correo, que el repo todavía no tiene.
+  Con esto, el camino de «olvidé mi contraseña» es: se le pide a un `rh_admin`,
+  que la repone, y la persona la cambia en su primer acceso — que ya es seguro.
+- **Caducidad de la contraseña temporal.** Hoy no expira: si nadie la cambia, la
+  cuenta se queda bloqueada para todo lo demás, que es el lado seguro del fallo.
+  Si se quisiera, sería un `resetExpiraEn` sobre la credencial.
+- **Caducidad periódica de contraseñas.** No se implementó y no la recomiendo:
+  obliga a la gente a rotar entre variantes previsibles.

@@ -47,8 +47,13 @@ replica set de un nodo y los dos conviven. `maximum wire version` → D-22;
 `rh_admin` con `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD`
 (`alexxruff@yahoo.com` / `1234` por defecto). Sólo ocurre con la base vacía, es
 idempotente y se apaga con `BOOTSTRAP_ADMIN_ENABLED=false` — ver D-21. Alternativa
-manual para cualquier momento: `npm run seed:admin`. **Antes de exponer el backend,
-cambia esa contraseña y apaga el bootstrap.**
+manual para cualquier momento: `npm run seed:admin`.
+
+Ese administrador **nace con la contraseña marcada como temporal**: puede iniciar
+sesión, pero toda la API le responde `403 PASSWORD_TEMPORAL` hasta que la cambie
+con `POST /auth/cambiar-password` (D-49). Ya no hace falta acordarse. Lo que sigue
+siendo manual es apagar el bootstrap (`BOOTSTRAP_ADMIN_ENABLED=false`) antes de
+exponer el backend.
 
 ## Idiomas — la regla que más se equivoca
 
@@ -89,8 +94,9 @@ src/
   models/index.js       registra TODOS los modelos (D-31). Agrega los nuevos aquí
   config/               env.js (validado con zod) · database.js
   constants/            enums del contrato
-  middlewares/          authMiddleware · scopeMiddleware · validateRequest ·
-                        errorHandler · requestContext · rateLimiters
+  middlewares/          authMiddleware · scopeMiddleware · passwordMiddleware ·
+                        validateRequest · errorHandler · requestContext ·
+                        rateLimiters · uploadMiddleware
   utils/                response (envelope) · asyncHandler · dates · text ·
                         permissions · logger · routeInventory · spreadsheet
   utils/domain/         reglas PURAS: documentStatus · progress · alerts ·

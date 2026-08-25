@@ -4,6 +4,7 @@ const asyncHandler = require('../../../utils/asyncHandler')
 const validateRequest = require('../../../middlewares/validateRequest')
 const { protect, requireCapability } = require('../../../middlewares/authMiddleware')
 const { applyScope } = require('../../../middlewares/scopeMiddleware')
+const { requirePasswordDefinitiva } = require('../../../middlewares/passwordMiddleware')
 const { CAPABILITIES } = require('../../../utils/permissions')
 const {
   updateAffiliationValidation,
@@ -20,7 +21,8 @@ const {
  */
 const router = express.Router()
 
-router.use(protect, applyScope)
+// `requirePasswordDefinitiva` va aquí y no en `protect`: ver D-49.
+router.use(protect, requirePasswordDefinitiva, applyScope)
 
 // Exclusivo de `rh_admin` (D-32 lo confirma: adscribir no es lo mismo que dar
 // de alta, y el jefe de área/analista no mueven gente entre empresas).

@@ -4,6 +4,7 @@ const asyncHandler = require('../../../utils/asyncHandler')
 const validateRequest = require('../../../middlewares/validateRequest')
 const { protect, requireCapability } = require('../../../middlewares/authMiddleware')
 const { applyScope } = require('../../../middlewares/scopeMiddleware')
+const { requirePasswordDefinitiva } = require('../../../middlewares/passwordMiddleware')
 const { CAPABILITIES } = require('../../../utils/permissions')
 const {
   listCompaniesValidation,
@@ -23,7 +24,8 @@ const {
 
 const router = express.Router()
 
-router.use(protect, applyScope)
+// `requirePasswordDefinitiva` va aquí y no en `protect`: ver D-49.
+router.use(protect, requirePasswordDefinitiva, applyScope)
 
 router
   .route('/')

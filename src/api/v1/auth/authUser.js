@@ -37,6 +37,13 @@ async function construirAuthUser(empleado, { ultimoAccesoEn = null } = {}) {
     email: empleado.acceso?.email ?? null,
     nivelAcceso: empleado.acceso?.nivelAcceso ?? null,
     alcanceGlobal: Boolean(empleado.acceso?.alcanceGlobal),
+    /*
+     * `true` = la contraseña la puso otra persona y el sistema está bloqueado
+     * hasta que la cambie (D-49). Va en el `AuthUser` para que el front pueda
+     * mandarlo a la pantalla de cambio en cuanto inicia sesión, sin esperar a
+     * que le rebote un 403 en la primera pantalla que abra.
+     */
+    passwordTemporal: Boolean(empleado.acceso?.passwordTemporal),
     empresas,
     active: Boolean(empleado.activo && empleado.acceso?.activo),
     ultimoAccesoEn: ultimoAccesoEn ? ultimoAccesoEn.toISOString() : null,

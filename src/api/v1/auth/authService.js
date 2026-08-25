@@ -159,7 +159,16 @@ class AuthService {
         )
         await Employee.updateOne(
           { _id: empleado._id },
-          { $set: { 'acceso.passwordActualizadaEn': ahora } },
+          {
+            $set: {
+              'acceso.passwordActualizadaEn': ahora,
+              /*
+               * Aquí se levanta el bloqueo: la contraseña ya la puso la persona y
+               * nadie más la conoce (D-49). Es el ÚNICO lugar que la desmarca.
+               */
+              'acceso.passwordTemporal': false
+            }
+          },
           { session: sesion }
         )
       })

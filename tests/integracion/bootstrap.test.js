@@ -45,10 +45,34 @@ describe('Administrador de plataforma inicial (bootstrap)', () => {
     })
   })
 
-  it('el administrador inicial puede ver todos los empleados y dar accesos', async () => {
+  /*
+   * Desde D-49 el administrador inicial NACE con la contraseña temporal: su
+   * sesión no sirve para nada hasta que la cambia. Antes podía trabajar con el
+   * `1234` del `.env` indefinidamente y el único aviso era una línea de log.
+   */
+  it('nace bloqueado: con la contraseña de arranque no puede hacer nada', async () => {
     await ensureBootstrapAdmin()
     const { body } = await login(CREDENCIALES)
-    const token = body.data.token
+
+    expect(body.data.user.passwordTemporal).toBe(true)
+
+    const res = await request(app).get('/api/v1/empleados').set(auth(body.data.token))
+
+    expect(res.status).toBe(403)
+    expect(res.body.code).toBe('PASSWORD_TEMPORAL')
+  })
+
+  it('tras cambiar la contraseña puede ver todos los empleados y dar accesos', async () => {
+    await ensureBootstrapAdmin()
+    const { body } = await login(CREDENCIALES)
+
+    // El primer paso obligatorio, y el que desbloquea todo lo demás.
+    const cambio = await request(app)
+      .post('/api/v1/auth/cambiar-password')
+      .set(auth(body.data.token))
+      .send({ passwordActual: CREDENCIALES.password, passwordNueva: 'PrimerAcceso2026#' })
+    expect(cambio.status).toBe(200)
+    const token = cambio.body.data.token
 
     const persona = await crearEmpleado({ nombre: 'Alguien Sin Empresa' })
 

@@ -86,12 +86,18 @@ describe('Aislamiento del material secreto', () => {
       const empleado = await crearEmpleado({ acceso: { email: 'x@urbacames.com' } })
       const crudo = await Employee.collection.findOne({ _id: empleado._id })
 
+      /*
+       * La lista es exhaustiva a propósito: si algún día alguien vuelve a meter
+       * el hash en `empleados.acceso`, esta prueba falla. `passwordTemporal` es
+       * una marca, no material secreto (D-49).
+       */
       expect(Object.keys(crudo.acceso).sort()).toEqual([
         'activo',
         'alcanceGlobal',
         'email',
         'nivelAcceso',
-        'passwordActualizadaEn'
+        'passwordActualizadaEn',
+        'passwordTemporal'
       ])
       expect(JSON.stringify(crudo)).not.toMatch(/\$2[aby]\$/)
     })
