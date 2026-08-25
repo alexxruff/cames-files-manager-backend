@@ -11,6 +11,7 @@ const portfolioRoutes = require('../portfolios/portfolioRoutes')
 const assignmentRoutes = require('../assignments/assignmentRoutes')
 const recordRoutes = require('../records/recordRoutes')
 const affiliationRoutes = require('../affiliations/affiliationRoutes')
+const alertRoutes = require('../alerts/alertRoutes')
 const goneRoutes = require('../users/goneRoutes')
 
 const router = express.Router()
@@ -57,7 +58,6 @@ const RUTAS_PENDIENTES = Object.freeze([
   { metodos: ['GET'], ruta: '/api/v1/empleados/:id/adscripciones', spec: '6.2' },
   { metodos: ['GET'], ruta: '/api/v1/empleados/:id/asignaciones', spec: '6.2' },
   // Proyectos, expedientes y derivados
-  { metodos: ['GET'], ruta: '/api/v1/alertas', spec: '6.6' },
   { metodos: ['GET'], ruta: '/api/v1/dashboard/metricas', spec: '6.6' },
   { metodos: ['GET'], ruta: '/api/v1/reportes/expedientes', spec: '6.6' },
   { metodos: ['GET', 'PATCH'], ruta: '/api/v1/plantillas-checklist', spec: '6.5' },
@@ -100,13 +100,13 @@ router.use('/carteras', portfolioRoutes)
 router.use('/asignaciones', assignmentRoutes)
 router.use('/expedientes', recordRoutes)
 router.use('/adscripciones', affiliationRoutes)
+router.use('/alertas', alertRoutes)
 
 // Movida al modelo nuevo: responde 410 con la ruta que la sustituye.
 router.use('/usuarios', goneRoutes)
 
 // Pendientes (backend-spec §6.5 y §6.6). Se montarán aquí conforme se
 // implementen; `GET /api/v1` los anuncia mientras tanto en `pendientes`:
-//   router.use('/alertas', alertRoutes)
 //   router.use('/plantillas-checklist', checklistTemplateRoutes)
 //   router.use('/reportes', reportRoutes)
 //   router.use('/dashboard', dashboardRoutes)

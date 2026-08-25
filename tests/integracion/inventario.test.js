@@ -46,7 +46,7 @@ describe('GET /api/v1 — inventario de la API', () => {
 
     // Dominios que todavía NO tienen rutas. Al implementar uno, quítalo de aquí:
     // esta prueba es el candado que avisa si el inventario se desincroniza.
-    for (const pendiente of ['alertas', 'plantillas', 'reportes', 'organizacion']) {
+    for (const pendiente of ['plantillas', 'reportes', 'organizacion']) {
       expect(rutas).not.toContain(pendiente)
     }
   })

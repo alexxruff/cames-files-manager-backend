@@ -51,6 +51,8 @@ async function crearEmpleado(datos = {}) {
     categoriaId,
     tipo,
     email: datos.email ?? null,
+    // Para las alertas de cumpleaños: la mayoría de las pruebas no la necesita.
+    fechaNacimiento: datos.fechaNacimiento ?? null,
     activo: datos.activo ?? true,
     motivoBaja: datos.motivoBaja ?? null,
     acceso: datos.acceso
@@ -128,8 +130,17 @@ async function crearEmpleadoConSesion(datos = {}) {
     .send({ email: empleado.acceso.email, password })
 
   if (respuesta.status !== 200) {
+    /*
+     * El cuerpo se incluye Y el texto crudo: hubo un fallo intermitente que sólo
+     * decía `404 {}` —cuerpo vacío, que ninguna ruta de la API produce— y sin el
+     * texto no había por dónde empezar. Si vuelve a pasar, aquí está la causa.
+     */
     throw new Error(
-      `No se pudo iniciar sesión en la fábrica: ${respuesta.status} ${JSON.stringify(respuesta.body)}`
+      `No se pudo iniciar sesión en la fábrica: ${respuesta.status} ` +
+        `body=${JSON.stringify(respuesta.body)} ` +
+        `text=${JSON.stringify(String(respuesta.text || '').slice(0, 500))} ` +
+        `type=${respuesta.type} email=${empleado.acceso.email} ` +
+        `mongoose=${require('mongoose').connection.readyState}`
     )
   }
 

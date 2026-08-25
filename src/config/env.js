@@ -50,6 +50,14 @@ const schema = z.object({
   // fase 2 vía `cliente.configuracion.diasAlertaVencimiento`.
   DIAS_ALERTA_VENCIMIENTO: z.coerce.number().int().min(1).max(365).default(30),
 
+  /*
+   * Con cuánta anticipación se avisa un cumpleaños. 7 días por defecto: alcanza
+   * para organizar algo y no tanto como para que el aviso se vuelva ruido de
+   * fondo. El tope de 60 es a propósito: con una ventana más ancha, media
+   * plantilla estaría siempre en la bandeja.
+   */
+  DIAS_ALERTA_CUMPLEANOS: z.coerce.number().int().min(0).max(60).default(7),
+
   // Zona horaria de negocio: las fechas de calendario se interpretan aquí.
   TIMEZONE: z.string().default('America/Mexico_City'),
 

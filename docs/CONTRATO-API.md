@@ -87,6 +87,7 @@ Sólo estas cuatro: `POST /auth/login`, `GET /api/v1` (inventario), `GET /health
 | PATCH  | `/adscripciones/:id/estado`                                | `rh_admin`                   | Baja **de esa empresa**; cierra sus asignaciones abiertas ahí (D-45)                    |
 | POST   | `/empleados/importar/previsualizar`                        | `rh_admin`                   | `multipart`: `archivo` (.xlsx) + `empresaId`. **No escribe nada** (D-46)                |
 | POST   | `/empleados/importar`                                      | `rh_admin`                   | Igual, más `confirmarRfcDistinto?`. Idempotente: re-subir no duplica (D-46)             |
+| GET    | `/alertas`                                                 | ver empleados                | Bandeja derivada: documentos y cumpleaños; `?tipo=&origen=&empresaId=&area=` (D-47)     |
 | ALL    | `/usuarios*`                                               | —                            | **410** con las rutas nuevas (se borra cuando el front migre)                           |
 
 ### Importación de colaboradores desde .xlsx

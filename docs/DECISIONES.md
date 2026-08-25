@@ -1341,3 +1341,113 @@ empresa.
   dar acceso sigue siendo `POST /empleados/:id/acceso`, uno por uno.
 - **No asigna a proyectos**, aunque el departamento diga `Axis Zapopan`.
 - **No borra a nadie.**
+
+---
+
+## D-47 · Alertas: cumpleaños y documentación, derivadas y sin estado
+
+**Decisión.** `GET /alertas` con dos familias —documentos del expediente y
+cumpleaños—, **derivadas en cada consulta**. No hay colección de alertas, no hay
+endpoint para marcarlas y no hay job que las limpie.
+
+### Lo que se pidió, y por qué la arquitectura ya lo resolvía
+
+Se pidió que las alertas «se remuevan o se desactiven cuando se resuelven». Con
+alertas almacenadas eso sería un campo `resuelta`, alguien que se acuerde de
+escribirlo en los seis lugares que cambian un documento, y una bandeja que miente
+el día que alguien se olvide. Derivándolas **no hay nada que remover**: sube el
+documento que faltaba y la alerta ya no existe en la lectura siguiente; pasa el
+cumpleaños y sale sola de la ventana.
+
+Es la regla #6 del contrato y D-04, que ya valían para `expiring`, `expired` y
+`avance`. Este módulo no las estrena, las aprovecha. Hay una prueba por familia
+que recorre el cambio de estado de punta a punta —subir, validar, volver a pedir
+la bandeja— justo para dejar constancia de que no quedó nada encendido.
+
+### Las dos familias
+
+| `origen`     | Sale de                               | Se resuelve                        |
+| ------------ | ------------------------------------- | ---------------------------------- |
+| `documento`  | El estatus efectivo de cada documento | Subiendo, validando o renovando    |
+| `cumpleanos` | `empleados.fechaNacimiento`           | Con el calendario: nadie la cierra |
+
+`documento` cubre los cuatro tipos que ya tenía el dominio: `vencido`,
+`documento_rechazado`, `por_vencer` y `documento_faltante`. Se implementaron los
+cuatro y no sólo el faltante: son **un solo camino de código**, ya estaban
+probados, y un documento vencido es tan «documentación que hace falta» como uno
+que nunca se subió. El front elige con `?tipo=`.
+
+### El cumpleaños, que no es un problema que resolver
+
+`cumpleanos` es lo único de la bandeja que nadie tiene que arreglar, así que va
+con la **severidad más baja**: nunca debe empujar hacia abajo un documento
+vencido. Hay una prueba de eso.
+
+**Ventana configurable, 7 días por defecto** (`DIAS_ALERTA_CUMPLEANOS`, tope 60).
+Siete alcanza para organizar algo y no tanto como para que el aviso se vuelva
+ruido; con una ventana muy ancha, media plantilla estaría siempre en la bandeja.
+La interfaz puede ensancharla por consulta con `?diasCumpleanos=`, sin tocar la
+configuración del servidor.
+
+**El 29 de febrero se celebra el 28 en los años no bisiestos.** `nextAnniversary`
+usa el mismo criterio de fin de mes que `addMonths` en vez de saltar al 1 de
+marzo. Sin eso, quien nació un 29 de febrero no aparecería nunca en tres de cada
+cuatro años. Va con prueba, igual que el cruce de fin de año.
+
+**Sin fecha de nacimiento no hay alerta.** 10 de las 145 personas del archivo de
+nómina no la traen (D-46) y adivinarla no es una opción.
+
+### `empresas[]` en plural, no `empresaId`
+
+El spec §6.6 pedía un `empresaId` en el sobre de la alerta. **No se puso.** El
+expediente es de la PERSONA y se comparte entre las empresas del grupo (D-41), así
+que quien está adscrito a dos no tiene un `empresaId` — elegir uno de los dos sería
+inventar de cuál es la alerta. El sobre lleva `empresas[]` con las adscripciones
+activas visibles y `areas[]` con la unión de sus áreas. Para acotar por empresa
+está `?empresaId=`, que filtra a la gente **antes** de derivar.
+
+### El alcance no se reimplementa
+
+`alertService` no consulta `records` por su cuenta: parte de
+`employeeService.list`, que ya resuelve el alcance por empresa y por área con su
+agregación (D-45). Así es imposible que una alerta hable de alguien que quien
+pregunta no puede ver, y no hay una segunda copia de esa lógica que se pueda
+desincronizar. `jefe_area` recibe sólo alertas de su gente, y lo garantiza esa
+agregación, no el módulo de alertas.
+
+**El permiso es `VIEW_EMPLOYEES`, los tres niveles**: una alerta no dice nada que
+su dueño no pueda ver ya en el expediente. No expone archivos ni URLs firmadas, así
+que no toca la restricción de documentos sensibles de `jefe_area`.
+
+### El resumen se calcula antes de filtrar
+
+`resumen` es el contador de la campanita y cuenta **todas** las alertas visibles,
+no las que quedaron después del filtro que la pantalla trae puesto. Si se
+calculara sobre lo filtrado, el número del badge cambiaría al cambiar de pestaña.
+Hay una prueba de eso.
+
+### El bug que esto costó: no se puede esparcir un subdocumento de Mongoose
+
+`resolveDocument` hace `{ ...documento, estatus: ... }`. Con un **subdocumento de
+Mongoose** eso copia sus internos (`$__`, `_doc`) y **no los campos del esquema**:
+el documento llega sin `tipo`, sin `requerido` y sin `estatus`, `effectiveStatus`
+no encuentra nada que resolver y la bandeja sale **siempre en cero, sin ningún
+error**. Los servicios que ya existían no lo notaron porque `recordService` pasa
+`.toObject()`.
+
+Se arregló en los dos lados a propósito: `alertService` pide `.lean()` —lo correcto
+y además más rápido— y `resolveDocument` ahora normaliza antes de esparcir, para
+que el próximo que llame a la función no se queme en silencio.
+
+### Lo que este módulo deja fuera
+
+- **Alertas de proyecto** (`proyecto_por_finalizar`, `proyecto_vencido`, spec §6.6).
+  Son otra familia y no se pidieron; el sobre ya está preparado para sumarlas con
+  su `origen`.
+- **El correo diario.** `GET /alertas` es la bandeja de la interfaz; el job que
+  manda un resumen por persona sigue pendiente (§8 del spec) y puede reusar
+  `deriveAlerts` tal cual.
+- **Marcar, posponer o descartar una alerta.** Requeriría el estado que esta
+  decisión evita a propósito. Si hace falta «no me lo recuerdes hasta el lunes»,
+  se implementa como un aplazamiento por usuario y documento —no como un
+  `resuelta`—, para que la alerta siga siendo derivada.

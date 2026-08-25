@@ -81,6 +81,7 @@ src/
     credentials/        material secreto, aislado (D-27)
     companies/          empresas: la entidad raíz
     affiliations/       adscripción empresa ↔ empleado: la relación laboral
+    alerts/             bandeja derivada: documentos y cumpleaños (D-47)
     clients/ categories/  catálogos compartidos
     checklistTemplates/ plantillas (pendiente de mudar a empresaId)
     users/goneRoutes.js /usuarios → 410, se borra cuando el front migre
@@ -168,7 +169,11 @@ revisión (validar/rechazar). Y la **importación de colaboradores desde el .xls
 de nómina**: previsualizar, aplicar, y volver a subir el mismo archivo sin
 duplicar a nadie (D-46).
 
-**Pendiente:** alertas, métricas, reportes y el job diario de vigencias — ver
+Y las **alertas**: `GET /alertas` con documentación faltante (más vencida, por
+vencer y rechazada) y cumpleaños, **derivadas en cada consulta** (D-47) — por eso
+se resuelven solas y no hay nada que marcar.
+
+**Pendiente:** métricas, reportes y el job diario de vigencias — ver
 `docs/ESTADO.md` para el detalle y el orden sugerido.
 
 **Decisión abierta que bloquea al front:** `affiliations.nomina` guarda salario,

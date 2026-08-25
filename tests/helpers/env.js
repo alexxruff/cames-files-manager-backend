@@ -7,6 +7,7 @@ process.env.JWT_SECRET = 'secreto-de-pruebas-con-mas-de-32-caracteres-1234567890
 process.env.JWT_EXPIRES_IN = '12h'
 process.env.TIMEZONE = 'America/Mexico_City'
 process.env.DIAS_ALERTA_VENCIMIENTO = '30'
+process.env.DIAS_ALERTA_CUMPLEANOS = '7'
 process.env.LOG_TO_FILE = 'false'
 // Sin bucket a propósito: las pruebas no hablan con R2. Las variables de R2 se
 // fijan vacías porque dotenv SÍ carga el `.env` del desarrollador para todo lo

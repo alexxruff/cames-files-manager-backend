@@ -96,6 +96,57 @@ function isAfter(a, b) {
   return compare(a, b) > 0
 }
 
+/**
+ * El próximo aniversario de una fecha, contando desde `hoy`.
+ *
+ * Se usa para los cumpleaños: la fecha de nacimiento es fija y lo que interesa
+ * es cuándo cae este año (o el siguiente, si ya pasó).
+ *
+ * **El 29 de febrero se celebra el 28 en los años no bisiestos**, con el mismo
+ * criterio de fin de mes que `addMonths`: se elige el último día real del mes en
+ * vez de saltar al 1 de marzo. Sin esto, quien nació un 29 de febrero no
+ * aparecería nunca en tres de cada cuatro años.
+ *
+ * **El aniversario de HOY es hoy**, no el del año que viene: `daysUntilAnniversary`
+ * devuelve 0 el día del cumpleaños, que es justo el día que hay que avisar.
+ *
+ * @param {string} fecha `'YYYY-MM-DD'`
+ * @param {string} [hoy] `'YYYY-MM-DD'`
+ * @returns {string|null} `'YYYY-MM-DD'`, o null si la fecha no es válida
+ */
+function nextAnniversary(fecha, hoy = today()) {
+  if (!isCalendarDate(fecha) || !isCalendarDate(hoy)) return null
+
+  const [, mes, dia] = fecha.split('-').map(Number)
+  const anioActual = Number(hoy.slice(0, 4))
+
+  const enAnio = (anio) => fromParts(anio, mes, Math.min(dia, daysInMonth(anio, mes)))
+
+  const esteAnio = enAnio(anioActual)
+  return isBefore(esteAnio, hoy) ? enAnio(anioActual + 1) : esteAnio
+}
+
+/**
+ * Días completos hasta el próximo aniversario. `0` el mismo día.
+ * @returns {number|null} null si la fecha no es válida
+ */
+function daysUntilAnniversary(fecha, hoy = today()) {
+  const proximo = nextAnniversary(fecha, hoy)
+  return proximo === null ? null : daysBetween(hoy, proximo)
+}
+
+/**
+ * Años que cumple en su próximo aniversario. Es la edad que va a tener, no la
+ * que tiene hoy: el día del cumpleaños las dos coinciden.
+ * @returns {number|null}
+ */
+function ageOnNextAnniversary(fechaNacimiento, hoy = today()) {
+  const proximo = nextAnniversary(fechaNacimiento, hoy)
+  if (proximo === null) return null
+  const edad = Number(proximo.slice(0, 4)) - Number(fechaNacimiento.slice(0, 4))
+  return edad >= 0 ? edad : null
+}
+
 module.exports = {
   PATRON_FECHA,
   isCalendarDate,
@@ -104,6 +155,9 @@ module.exports = {
   daysBetween,
   addMonths,
   addDays,
+  nextAnniversary,
+  daysUntilAnniversary,
+  ageOnNextAnniversary,
   compare,
   isBefore,
   isAfter

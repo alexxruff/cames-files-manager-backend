@@ -82,7 +82,8 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 | Expedientes y documentos          | 6.5       | ✅     | Listado paginado, consulta, subida y **revisar** (valida y rechaza) (D-42, D-43, D-45)                    |
 | Lógica de dominio                 | modelo §6 | ✅     | Estatus, avance, semáforo, vigencias y la **unión** de plantillas, listos y probados                      |
 | Importar colaboradores (.xlsx)    | —         | ✅     | Previsualizar y aplicar; idempotente al re-subir; crea puestos y adscripciones (D-46)                     |
-| Alertas, métricas y reportes      | 6.6       | ⬜     | Derivados                                                                                                 |
+| Alertas (`GET /alertas`)          | 6.6       | ✅     | Derivadas, nunca almacenadas: documentos y cumpleaños. Se resuelven solas (D-47)                          |
+| Métricas y reportes               | 6.6       | ⬜     | Derivados                                                                                                 |
 | Almacenamiento R2                 | 7         | ✅     | Bucket `cames-files/employes-files`, probado de punta a punta; `npm run r2:check` (D-41)                  |
 | Job diario de vigencias           | 8         | ⬜     | Un correo por persona, idempotente                                                                        |
 | `/usuarios` (modelo anterior)     | —         | ✅     | Responde **410** con las rutas nuevas                                                                     |
@@ -107,8 +108,11 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
     idempotente al re-subir el mismo archivo (D-46). No estaba en el backlog
     original: lo pidió Urbacames para no capturar a mano a los 145 que ya tienen
     en nómina.
-11. **Alertas, métricas y reportes**, y el job diario de vigencias con correos.
-    Lo único que queda del backlog original.
+11. ~~**Alertas**~~ ✅ `GET /alertas` con las dos familias que pidió Urbacames
+    —documentación faltante y cumpleaños—, derivadas y sin estado que apagar
+    (D-47).
+12. **Métricas y reportes**, y el job diario de vigencias con correos. Lo que
+    queda del backlog original. El job puede reusar `deriveAlerts` tal cual.
 
 ## Decisiones abiertas
 
@@ -144,6 +148,14 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
     puestos del archivo de Maquinaria Cames clasifica bien, y el catálogo manda
     cuando el puesto ya existe, pero conviene revisarla contra los puestos reales
     de todas las empresas del grupo. Es una constante de una línea.
-12. **Las 99 fechas de término de contrato pendientes.** Entran marcadas en
+12. **¿La bandeja necesita "posponer" una alerta?** Hoy no se puede, a propósito:
+    las alertas se derivan y no hay estado que guardar (D-47). Si RH pide «no me
+    lo recuerdes hasta el lunes», se diseña como aplazamiento por usuario y
+    documento —nunca como un campo `resuelta`—, para que sigan derivándose.
+13. **¿Los cumpleaños van en la misma bandeja que los pendientes de expediente?**
+    Hoy sí, con la severidad más baja para que no tapen nada. Si en la interfaz
+    conviven mal, se separan con `?origen=` sin tocar el backend.
+14. **La ventana de aviso de cumpleaños** (hoy 7 días, `DIAS_ALERTA_CUMPLEANOS`).
+15. **Las 99 fechas de término de contrato pendientes.** Entran marcadas en
     `datosPendientes` (D-46) y mientras lo estén su documento `contrato` no
     deriva vigencia. Falta capturarlas, y falta decidir si se avisa en el tablero.

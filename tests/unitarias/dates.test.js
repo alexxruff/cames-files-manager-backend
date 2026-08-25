@@ -2,6 +2,9 @@ const {
   isCalendarDate,
   addMonths,
   addDays,
+  nextAnniversary,
+  daysUntilAnniversary,
+  ageOnNextAnniversary,
   daysBetween,
   today,
   compare
@@ -80,6 +83,75 @@ describe('utils/dates — fechas de calendario', () => {
 
     it('tiene el formato de fecha de calendario', () => {
       expect(isCalendarDate(today())).toBe(true)
+    })
+  })
+
+  describe('aniversarios (cumpleaños)', () => {
+    describe('nextAnniversary', () => {
+      it('si el cumpleaños es hoy, el próximo aniversario es hoy', () => {
+        expect(nextAnniversary('1982-08-20', '2026-08-20')).toBe('2026-08-20')
+      })
+
+      it('si todavía no llega, es de este año', () => {
+        expect(nextAnniversary('1982-12-25', '2026-08-20')).toBe('2026-12-25')
+      })
+
+      it('si ya pasó, es del año que viene', () => {
+        expect(nextAnniversary('1982-01-15', '2026-08-20')).toBe('2027-01-15')
+      })
+
+      /*
+       * Mismo criterio de fin de mes que `addMonths`: se elige el último día real
+       * del mes en vez de saltar al 1 de marzo. Sin esto, quien nació un 29 de
+       * febrero no cumpliría años tres de cada cuatro años.
+       */
+      it('el 29 de febrero cae el 28 en los años no bisiestos', () => {
+        expect(nextAnniversary('2000-02-29', '2027-01-01')).toBe('2027-02-28')
+        expect(nextAnniversary('2000-02-29', '2028-01-01')).toBe('2028-02-29')
+      })
+
+      it('devuelve null si la fecha no es una fecha de calendario', () => {
+        expect(nextAnniversary('no es fecha', '2026-08-20')).toBeNull()
+        expect(nextAnniversary(null, '2026-08-20')).toBeNull()
+        expect(nextAnniversary('1982-08-20', 'ayer')).toBeNull()
+      })
+    })
+
+    describe('daysUntilAnniversary', () => {
+      it('el mismo día es 0, no 365', () => {
+        expect(daysUntilAnniversary('1982-08-20', '2026-08-20')).toBe(0)
+      })
+
+      it('cuenta los días que faltan', () => {
+        expect(daysUntilAnniversary('1982-08-27', '2026-08-20')).toBe(7)
+      })
+
+      it('cruza el fin de año sin equivocarse', () => {
+        expect(daysUntilAnniversary('1990-01-02', '2026-12-30')).toBe(3)
+      })
+
+      it('el día después del cumpleaños faltan casi 365 días', () => {
+        expect(daysUntilAnniversary('1990-08-20', '2026-08-21')).toBe(364)
+      })
+    })
+
+    describe('ageOnNextAnniversary', () => {
+      it('devuelve los años que va a cumplir', () => {
+        expect(ageOnNextAnniversary('1982-08-27', '2026-08-20')).toBe(44)
+      })
+
+      it('el día del cumpleaños ya es la edad que cumple', () => {
+        expect(ageOnNextAnniversary('1982-08-20', '2026-08-20')).toBe(44)
+      })
+
+      it('al cruzar el año cuenta contra el año del aniversario', () => {
+        expect(ageOnNextAnniversary('1990-01-02', '2026-12-30')).toBe(37)
+      })
+
+      it('null si la fecha no sirve o está en el futuro', () => {
+        expect(ageOnNextAnniversary('no es fecha', '2026-08-20')).toBeNull()
+        expect(ageOnNextAnniversary('2030-08-20', '2026-08-20')).toBeNull()
+      })
     })
   })
 

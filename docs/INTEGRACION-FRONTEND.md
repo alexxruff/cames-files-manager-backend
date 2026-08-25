@@ -840,6 +840,7 @@ curl -s -X POST $BASE/empleados/$ID/acceso -H "Authorization: Bearer $TOKEN" \
 | Expedientes: listado, consulta, subida y revisión | `docs/ENDPOINTS-EXPEDIENTES.md`   |
 | Adscripciones: vincular a alguien que ya existe   | `docs/ENDPOINTS-ADSCRIPCIONES.md` |
 | Importar colaboradores desde el .xlsx de nómina   | `docs/ENDPOINTS-IMPORTACION.md`   |
+| Alertas: la bandeja de pendientes                 | `docs/ENDPOINTS-ALERTAS.md`       |
 | Modelo de datos autoritativo                      | `docs/modelo-datos.md`            |
 | Contrato de API y catálogo de rutas               | `docs/backend-spec.md`            |
 | Endpoints implementados, al detalle               | `docs/CONTRATO-API.md`            |

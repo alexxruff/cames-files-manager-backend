@@ -33,7 +33,15 @@ function effectiveStatus(
 
 /** Copia del documento con el estatus ya resuelto para la fecha dada. */
 function resolveDocument(documento, opciones) {
-  return { ...documento, estatus: effectiveStatus(documento, opciones) }
+  /*
+   * Se normaliza a objeto plano ANTES de esparcir: `{ ...subdocumento }` de
+   * Mongoose copia los internos (`$__`, `_doc`) y **no los campos del esquema**,
+   * así que el resultado saldría sin `tipo`, sin `requerido` y sin `estatus` —y
+   * sin ningún error, que es lo peligroso. Pasó de verdad al derivar las alertas.
+   */
+  const plano =
+    typeof documento?.toObject === 'function' ? documento.toObject() : documento
+  return { ...plano, estatus: effectiveStatus(plano, opciones) }
 }
 
 function resolveDocuments(documentos = [], opciones) {
