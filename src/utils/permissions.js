@@ -42,7 +42,18 @@ const CAPABILITIES = Object.freeze({
   MANAGE_ACCESS: 'manageAccess',
   /** Crear empresas y categorías: afecta a todo el grupo. Exige `alcanceGlobal`. */
   MANAGE_COMPANIES: 'manageCompanies',
-  MANAGE_CATEGORIES: 'manageCategories'
+  MANAGE_CATEGORIES: 'manageCategories',
+  /** Crear, renombrar y dar de baja áreas del catálogo. Exige `alcanceGlobal`. */
+  MANAGE_AREAS: 'manageAreas',
+  /**
+   * Dar de baja las áreas **temporales** que deja el archivo de nómina — casi
+   * siempre una obra que terminó (D-58).
+   *
+   * Va aparte de `MANAGE_AREAS` a propósito: quien sabe que la obra acabó es
+   * RH, no el administrador de plataforma, y obligarles a pedírselo dejaría el
+   * catálogo lleno de obras viejas. No alcanza para tocar el resto del catálogo.
+   */
+  CLOSE_TEMPORARY_AREAS: 'closeTemporaryAreas'
 })
 
 const PERMISSION_MATRIX = Object.freeze({
@@ -63,7 +74,9 @@ const PERMISSION_MATRIX = Object.freeze({
     generateReports: true,
     manageAccess: true,
     manageCompanies: 'global',
-    manageCategories: 'global'
+    manageCategories: 'global',
+    manageAreas: 'global',
+    closeTemporaryAreas: true
   }),
   rh_consulta: Object.freeze({
     viewEmployees: true,
@@ -87,7 +100,10 @@ const PERMISSION_MATRIX = Object.freeze({
     generateReports: true,
     manageAccess: false,
     manageCompanies: false,
-    manageCategories: false
+    manageCategories: false,
+    manageAreas: false,
+    // Cierra las obras terminadas que deja el archivo: es trabajo suyo (D-58).
+    closeTemporaryAreas: true
   }),
   jefe_area: Object.freeze({
     viewEmployees: 'own_area',
@@ -107,7 +123,9 @@ const PERMISSION_MATRIX = Object.freeze({
     generateReports: false,
     manageAccess: false,
     manageCompanies: false,
-    manageCategories: false
+    manageCategories: false,
+    manageAreas: false,
+    closeTemporaryAreas: false
   })
 })
 

@@ -12,7 +12,12 @@ const consulta = { nivelAcceso: 'rh_consulta' }
 const jefe = { nivelAcceso: 'jefe_area' }
 
 describe('utils/permissions — matriz de modelo-datos §8.2', () => {
-  const SOLO_GLOBALES = [CAPABILITIES.MANAGE_COMPANIES, CAPABILITIES.MANAGE_CATEGORIES]
+  const SOLO_GLOBALES = [
+    CAPABILITIES.MANAGE_COMPANIES,
+    CAPABILITIES.MANAGE_CATEGORIES,
+    // Administrar el catálogo de áreas afecta a todo el grupo, igual (D-58).
+    CAPABILITIES.MANAGE_AREAS
+  ]
 
   it('rh_admin puede todo dentro de su empresa', () => {
     for (const capacidad of Object.values(CAPABILITIES)) {

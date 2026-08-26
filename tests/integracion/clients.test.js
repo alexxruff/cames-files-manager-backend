@@ -54,7 +54,7 @@ describe('POST /api/v1/clientes', () => {
   it('el jefe de área también puede: es la corrección de la matriz', async () => {
     const { token } = await crearEmpleadoConSesion({
       nivelAcceso: 'jefe_area',
-      areas: ['obra']
+      areas: ['operaciones_urbanizadora']
     })
 
     const res = await request(app).post(RUTA).set(auth(token)).send(nuevo)
@@ -142,7 +142,7 @@ describe('GET /api/v1/clientes', () => {
     for (const nivel of ['rh_admin', 'rh_consulta', 'jefe_area']) {
       const { token, empresa } = await crearEmpleadoConSesion({
         nivelAcceso: nivel,
-        areas: ['obra']
+        areas: ['operaciones_urbanizadora']
       })
       await agregarACartera(empresa, cliente)
 
@@ -392,7 +392,7 @@ describe('PATCH /api/v1/clientes/:id/estado — la "eliminación"', () => {
 
     const jefe = await crearEmpleadoConSesion({
       nivelAcceso: 'jefe_area',
-      areas: ['obra']
+      areas: ['operaciones_urbanizadora']
     })
     const consulta = await crearEmpleadoConSesion({ nivelAcceso: 'rh_consulta' })
 
@@ -485,7 +485,7 @@ describe('Alcance del catálogo de clientes', () => {
   it('el jefe de área también, porque también da de alta clientes', async () => {
     const { token } = await crearEmpleadoConSesion({
       nivelAcceso: 'jefe_area',
-      areas: ['obra']
+      areas: ['operaciones_urbanizadora']
     })
     await Client.create({ nombre: 'Del catálogo' })
 

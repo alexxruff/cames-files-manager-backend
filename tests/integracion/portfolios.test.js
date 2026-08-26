@@ -59,7 +59,7 @@ describe('POST /api/v1/empresas/:id/clientes — meter a la cartera', () => {
 
     const jefe = await crearEmpleadoConSesion({
       nivelAcceso: 'jefe_area',
-      areas: ['obra']
+      areas: ['operaciones_urbanizadora']
     })
     const conJefe = await request(app)
       .post(`/api/v1/empresas/${jefe.empresa._id}/clientes`)

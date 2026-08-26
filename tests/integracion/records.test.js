@@ -43,7 +43,7 @@ async function escenario(datos = {}) {
     categoriaId: categoria._id
   })
   await adscribir(sesion.empresa, persona, {
-    areas: datos.areas || ['obra'],
+    areas: datos.areas || ['operaciones_urbanizadora'],
     tipoContrato: 'indeterminado'
   })
 
@@ -97,7 +97,7 @@ describe('GET /api/v1/empleados/:id/expediente', () => {
         numeroEmpleado: 'NE-1',
         adscripcion: {
           empresaId: empresa._id.toString(),
-          areas: ['obra'],
+          areas: ['operaciones_urbanizadora'],
           tipoContrato: 'indeterminado',
           fechaIngreso: '2026-09-01'
         }
@@ -110,10 +110,12 @@ describe('GET /api/v1/empleados/:id/expediente', () => {
 
   it('el checklist es la UNIÓN de las plantillas de sus adscripciones', async () => {
     // Una persona en dos empresas: administrativo en una, obra en la otra.
-    const { token, empresa, persona } = await escenario({ areas: ['obra'] })
+    const { token, empresa, persona } = await escenario({
+      areas: ['operaciones_urbanizadora']
+    })
     const otra = await crearEmpresa({ nombre: 'Otra del grupo' })
     await adscribir(otra, persona, {
-      areas: ['administracion'],
+      areas: ['finanzas'],
       tipoContrato: 'indeterminado'
     })
     await request(app).get(`/api/v1/empleados/${persona._id}/expediente`).set(auth(token))
@@ -364,14 +366,14 @@ describe('POST /api/v1/expedientes/:id/documentos/:tipo — subir', () => {
         categoriaId: categoria._id
       })
       await adscribir(empresa, temporal, {
-        areas: ['obra'],
+        areas: ['operaciones_urbanizadora'],
         tipoContrato: 'obra_determinada',
         fechaIngreso: '2026-09-01',
         fechaTerminoContrato: '2027-03-31'
       })
       const otra = await crearEmpresa()
       await adscribir(otra, temporal, {
-        areas: ['obra'],
+        areas: ['operaciones_urbanizadora'],
         tipoContrato: 'determinado',
         fechaIngreso: '2026-09-01',
         fechaTerminoContrato: '2026-12-31'
@@ -421,7 +423,7 @@ describe('POST /api/v1/expedientes/:id/documentos/:tipo — subir', () => {
       const jefe = await crearEmpleadoConSesion({
         nivelAcceso: 'jefe_area',
         empresa,
-        areas: ['obra']
+        areas: ['operaciones_urbanizadora']
       })
       expect((await subir(jefe.token, expedienteId, 'curp', PDF)).status).toBe(403)
     })
@@ -747,7 +749,7 @@ describe('GET /api/v1/expedientes/:id/documentos/:tipo/versiones/:v/url', () => 
     const jefe = await crearEmpleadoConSesion({
       nivelAcceso: 'jefe_area',
       empresa,
-      areas: ['obra']
+      areas: ['operaciones_urbanizadora']
     })
 
     // La INE es sensible; el CV no.

@@ -1,5 +1,5 @@
 const { body, param, query } = require('express-validator')
-const { AREAS, CONTRACT_TYPES, EMPLOYEE_TYPES } = require('../constants')
+const { CONTRACT_TYPES, EMPLOYEE_TYPES } = require('../constants')
 const { isCalendarDate } = require('../utils/dates')
 
 /** Campos de la adscripción que se pueden mandar en el alta y en el `PATCH`. */
@@ -31,7 +31,8 @@ const reglasAreas = body('areas')
   .withMessage('areas debe ser una lista')
   .bail()
   .custom((areas) => {
-    const invalidas = (areas || []).filter((a) => !AREAS.includes(a))
+    // Sólo el formato; el catálogo lo valida el servicio (D-58).
+    const invalidas = (areas || []).filter((a) => !/^[a-z0-9_]+$/.test(String(a)))
     if (invalidas.length > 0) throw new Error(`Áreas no válidas: ${invalidas.join(', ')}`)
     return true
   })
@@ -42,7 +43,10 @@ exports.listAffiliationsValidation = [
     .optional()
     .isIn(['true', 'false', 'todos'])
     .withMessage('activo debe ser true, false o todos'),
-  query('area').optional().isIn(AREAS).withMessage('Selecciona un área válida'),
+  query('area')
+    .optional()
+    .matches(/^[a-z0-9_]+$/)
+    .withMessage('Selecciona un área válida'),
   query('tipo').optional().isIn(EMPLOYEE_TYPES).withMessage('Selecciona un tipo válido'),
   query('categoriaId')
     .optional()

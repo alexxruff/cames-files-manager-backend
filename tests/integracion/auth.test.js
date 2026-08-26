@@ -56,11 +56,11 @@ describe('POST /api/v1/auth/login', () => {
 
     const { empleado } = await crearEmpleadoConSesion({
       empresa: edificacion,
-      areas: ['obra']
+      areas: ['operaciones_urbanizadora']
     })
-    await adscribir(infraestructura, empleado, { areas: ['proyectos'] })
+    await adscribir(infraestructura, empleado, { areas: ['costos_y_presupuestos'] })
     await adscribir(cerrada, empleado, {
-      areas: ['obra'],
+      areas: ['operaciones_urbanizadora'],
       activo: false,
       motivoBaja: 'Fin de contrato'
     })

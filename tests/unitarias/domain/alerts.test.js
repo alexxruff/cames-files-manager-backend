@@ -43,7 +43,7 @@ const entrada = (id, documentos = [], empleado = {}, adscripciones = null) => ({
     {
       empresaId: 'emp1',
       empresaNombre: 'Maquinaria Cames',
-      areas: ['administracion'],
+      areas: ['finanzas'],
       activo: true
     }
   ],
@@ -354,7 +354,7 @@ describe('domain/deriveAlerts', () => {
         empleadoId: 'e1',
         empleadoNombre: 'Ana Ruiz',
         categoriaNombre: 'Analista',
-        areas: ['administracion']
+        areas: ['finanzas']
       })
       expect(alerta.empresas).toEqual([{ _id: 'emp1', nombre: 'Maquinaria Cames' }])
     })
@@ -368,17 +368,22 @@ describe('domain/deriveAlerts', () => {
       const [alerta] = deriveAlerts(
         [
           entrada('e1', [doc('ine', 'pending')], {}, [
-            { empresaId: 'emp1', empresaNombre: 'Cames', areas: ['obra'], activo: true },
+            {
+              empresaId: 'emp1',
+              empresaNombre: 'Cames',
+              areas: ['operaciones_urbanizadora'],
+              activo: true
+            },
             {
               empresaId: 'emp2',
               empresaNombre: 'Urba',
-              areas: ['obra', 'proyectos'],
+              areas: ['operaciones_urbanizadora', 'costos_y_presupuestos'],
               activo: true
             },
             {
               empresaId: 'emp3',
               empresaNombre: 'Vieja',
-              areas: ['ventas'],
+              areas: ['comercial'],
               activo: false
             }
           ])
@@ -387,7 +392,7 @@ describe('domain/deriveAlerts', () => {
       )
 
       expect(alerta.empresas.map((e) => e._id)).toEqual(['emp1', 'emp2'])
-      expect(alerta.areas).toEqual(['obra', 'proyectos'])
+      expect(alerta.areas).toEqual(['operaciones_urbanizadora', 'costos_y_presupuestos'])
     })
   })
 

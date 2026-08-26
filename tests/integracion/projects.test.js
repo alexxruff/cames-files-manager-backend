@@ -180,7 +180,10 @@ describe('POST /api/v1/proyectos', () => {
   })
 
   it('el jefe de área puede crear proyectos; rh_consulta no', async () => {
-    const jefe = await escenario({ nivelAcceso: 'jefe_area', areas: ['obra'] })
+    const jefe = await escenario({
+      nivelAcceso: 'jefe_area',
+      areas: ['operaciones_urbanizadora']
+    })
     const conJefe = await request(app)
       .post(RUTA)
       .set(auth(jefe.token))
@@ -371,7 +374,7 @@ describe('PATCH /api/v1/proyectos/:id', () => {
       tipo: 'mano_de_obra',
       categoriaId: categoria._id
     })
-    await adscribir(empresa, persona, { areas: ['obra'] })
+    await adscribir(empresa, persona, { areas: ['operaciones_urbanizadora'] })
     await asignar(proyecto, persona, categoria._id)
 
     const otra = await crearCategoria('Otra', 'mano_de_obra')
@@ -482,7 +485,7 @@ describe('Ciclo de vida del proyecto', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      await adscribir(empresa, persona, { areas: ['obra'] })
+      await adscribir(empresa, persona, { areas: ['operaciones_urbanizadora'] })
       const asignacion = await asignar(proyecto, persona, categoria._id)
 
       await request(app)
@@ -534,7 +537,7 @@ describe('Ciclo de vida del proyecto', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      await adscribir(empresa, persona, { areas: ['obra'] })
+      await adscribir(empresa, persona, { areas: ['operaciones_urbanizadora'] })
       const asignacion = await asignar(proyecto, persona, categoria._id)
 
       await request(app)

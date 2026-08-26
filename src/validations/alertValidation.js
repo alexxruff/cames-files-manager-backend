@@ -1,5 +1,5 @@
 const { query } = require('express-validator')
-const { ALERT_TYPES, ALERT_ORIGINS, AREAS } = require('../constants')
+const { ALERT_TYPES, ALERT_ORIGINS } = require('../constants')
 
 /**
  * Validación de `GET /alertas`.
@@ -30,7 +30,10 @@ exports.listAlertsValidation = [
     .isMongoId()
     .withMessage('El empleado indicado no es válido'),
 
-  query('area').optional().isIn(AREAS).withMessage('Selecciona un área válida'),
+  query('area')
+    .optional()
+    .matches(/^[a-z0-9_]+$/)
+    .withMessage('Selecciona un área válida'),
 
   // Permite abrir la ventana de cumpleaños desde la interfaz («próximos 30
   // días») sin cambiar la configuración del servidor.

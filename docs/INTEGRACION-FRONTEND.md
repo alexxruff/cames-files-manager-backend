@@ -192,6 +192,35 @@ La contraseña vive en otra colección (`credentials`) y **nunca** viaja en ning
 respuesta. Para el front eso es invisible; se menciona porque explica por qué
 `acceso` no tiene campo de contraseña.
 
+### `Area` deja de ser un enum del front (D-58)
+
+**`src/enums/area.ts` hay que borrarlo.** Las áreas son un catálogo que se lee de
+`GET /areas`: cambiaron los valores, hay nueve base nuevas, y el archivo de
+nómina da de alta las que no conoce (las obras) como **temporales**.
+
+```ts
+/** Lo que devuelve GET /areas. El valor del contrato es `clave`, no `nombre`. */
+export interface Area {
+  _id: string
+  clave: string // 'operaciones_urbanizadora' — lo que se manda y se guarda
+  nombre: string // 'Operaciones (Urbanizadora)' — lo que se muestra
+  esBase: boolean // las nueve del arranque: no se dan de baja
+  temporal: boolean // la creó el archivo de nómina, casi siempre una obra
+  activa: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+/** Y donde antes iba `Area`, ahora va la clave. */
+export type ClaveArea = string
+```
+
+Donde el front tenía `Area[]` (en `EmpresaDeUsuario.areas`, en
+`AdscripcionDeEmpleado.areas`, en los filtros `?area=`) ahora van **claves**:
+siguen siendo strings, pero ya no son un conjunto cerrado y hay que resolver la
+etiqueta contra el catálogo. Detalle y lista completa en
+`docs/ENDPOINTS-AREAS.md`.
+
 ### `AuthUser`
 
 ```ts

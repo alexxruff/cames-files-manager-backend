@@ -33,7 +33,7 @@ describe('Adscripciones', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      await adscribir(sesion.empresa, persona, { areas: ['obra'] })
+      await adscribir(sesion.empresa, persona, { areas: ['operaciones_urbanizadora'] })
 
       const res = await request(app)
         .get(`/api/v1/empresas/${sesion.empresa._id}/adscripciones`)
@@ -63,9 +63,9 @@ describe('Adscripciones', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      await adscribir(sesion.empresa, activa, { areas: ['obra'] })
+      await adscribir(sesion.empresa, activa, { areas: ['operaciones_urbanizadora'] })
       await adscribir(sesion.empresa, baja, {
-        areas: ['mantenimiento'],
+        areas: ['operaciones_maquinaria'],
         activo: false,
         motivoBaja: 'Renunció'
       })
@@ -79,7 +79,7 @@ describe('Adscripciones', () => {
 
       const porArea = await request(app)
         .get(
-          `/api/v1/empresas/${sesion.empresa._id}/adscripciones?area=mantenimiento&activo=todos`
+          `/api/v1/empresas/${sesion.empresa._id}/adscripciones?area=operaciones_maquinaria&activo=todos`
         )
         .set(auth(sesion.token))
       expect(porArea.body.data.adscripciones).toHaveLength(1)
@@ -99,9 +99,9 @@ describe('Adscripciones', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      await adscribir(sesion.empresa, activa, { areas: ['obra'] })
+      await adscribir(sesion.empresa, activa, { areas: ['operaciones_urbanizadora'] })
       await adscribir(sesion.empresa, baja, {
-        areas: ['obra'],
+        areas: ['operaciones_urbanizadora'],
         activo: false,
         motivoBaja: 'Renunció'
       })
@@ -131,7 +131,7 @@ describe('Adscripciones', () => {
     it('el jefe de área sólo ve las adscripciones de sus propias áreas', async () => {
       const jefe = await crearEmpleadoConSesion({
         nivelAcceso: 'jefe_area',
-        areas: ['obra']
+        areas: ['operaciones_urbanizadora']
       })
       const categoria = await crearCategoria('Albañil', 'mano_de_obra')
       const deSuArea = await crearEmpleado({
@@ -142,8 +142,8 @@ describe('Adscripciones', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      await adscribir(jefe.empresa, deSuArea, { areas: ['obra'] })
-      await adscribir(jefe.empresa, deOtraArea, { areas: ['mantenimiento'] })
+      await adscribir(jefe.empresa, deSuArea, { areas: ['operaciones_urbanizadora'] })
+      await adscribir(jefe.empresa, deOtraArea, { areas: ['operaciones_maquinaria'] })
 
       const res = await request(app)
         .get(`/api/v1/empresas/${jefe.empresa._id}/adscripciones`)
@@ -166,8 +166,8 @@ describe('Adscripciones', () => {
         tipo: 'administrativo',
         categoriaId: categoriaOficina._id
       })
-      await adscribir(sesion.empresa, obrero, { areas: ['obra'] })
-      await adscribir(sesion.empresa, administrativo, { areas: ['administracion'] })
+      await adscribir(sesion.empresa, obrero, { areas: ['operaciones_urbanizadora'] })
+      await adscribir(sesion.empresa, administrativo, { areas: ['finanzas'] })
 
       const porTipo = await request(app)
         .get(`/api/v1/empresas/${sesion.empresa._id}/adscripciones?tipo=mano_de_obra`)
@@ -202,7 +202,7 @@ describe('Adscripciones', () => {
           categoriaId: categoria._id,
           numeroEmpleado
         })
-        await adscribir(sesion.empresa, persona, { areas: ['obra'] })
+        await adscribir(sesion.empresa, persona, { areas: ['operaciones_urbanizadora'] })
       }
 
       const porDefecto = await request(app)
@@ -266,7 +266,7 @@ describe('Adscripciones', () => {
         categoriaId: categoria._id
       })
       // Ya trabajaba en otra empresa: el expediente existe desde antes.
-      await adscribir(otraEmpresa, persona, { areas: ['obra'] })
+      await adscribir(otraEmpresa, persona, { areas: ['operaciones_urbanizadora'] })
       await Record.create({ empleadoId: persona._id, documentos: [], plantillas: [] })
 
       const res = await request(app)
@@ -274,7 +274,7 @@ describe('Adscripciones', () => {
         .set(auth(sesion.token))
         .send({
           empleadoId: persona._id.toString(),
-          areas: ['obra'],
+          areas: ['operaciones_urbanizadora'],
           tipoContrato: 'indeterminado',
           fechaIngreso: '2026-09-01'
         })
@@ -299,7 +299,7 @@ describe('Adscripciones', () => {
         categoriaId: categoria._id
       })
       await adscribir(sesion.empresa, persona, {
-        areas: ['obra'],
+        areas: ['operaciones_urbanizadora'],
         activo: false,
         motivoBaja: 'Se fue'
       })
@@ -309,14 +309,14 @@ describe('Adscripciones', () => {
         .set(auth(sesion.token))
         .send({
           empleadoId: persona._id.toString(),
-          areas: ['mantenimiento'],
+          areas: ['operaciones_maquinaria'],
           tipoContrato: 'indeterminado',
           fechaIngreso: '2026-09-01'
         })
 
       expect(res.status).toBe(200)
       expect(res.body.data.adscripcion.activo).toBe(true)
-      expect(res.body.data.adscripcion.areas).toEqual(['mantenimiento'])
+      expect(res.body.data.adscripcion.areas).toEqual(['operaciones_maquinaria'])
       expect(
         await Affiliation.countDocuments({
           empresaId: sesion.empresa._id,
@@ -332,7 +332,7 @@ describe('Adscripciones', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      await adscribir(sesion.empresa, persona, { areas: ['obra'] })
+      await adscribir(sesion.empresa, persona, { areas: ['operaciones_urbanizadora'] })
 
       const res = await request(app)
         .post(`/api/v1/empresas/${sesion.empresa._id}/adscripciones`)
@@ -377,7 +377,7 @@ describe('Adscripciones', () => {
         .set(auth(sesion.token))
         .send({
           empleadoId: persona._id.toString(),
-          areas: ['obra'],
+          areas: ['operaciones_urbanizadora'],
           tipoContrato: 'indeterminado',
           fechaIngreso: '2026-09-01'
         })
@@ -398,7 +398,7 @@ describe('Adscripciones', () => {
         .set(auth(consulta.token))
         .send({
           empleadoId: persona._id.toString(),
-          areas: ['obra'],
+          areas: ['operaciones_urbanizadora'],
           tipoContrato: 'indeterminado',
           fechaIngreso: '2026-09-01'
         })
@@ -406,14 +406,14 @@ describe('Adscripciones', () => {
 
       const jefe = await crearEmpleadoConSesion({
         nivelAcceso: 'jefe_area',
-        areas: ['obra']
+        areas: ['operaciones_urbanizadora']
       })
       const resJefe = await request(app)
         .post(`/api/v1/empresas/${jefe.empresa._id}/adscripciones`)
         .set(auth(jefe.token))
         .send({
           empleadoId: persona._id.toString(),
-          areas: ['obra'],
+          areas: ['operaciones_urbanizadora'],
           tipoContrato: 'indeterminado',
           fechaIngreso: '2026-09-01'
         })
@@ -434,7 +434,7 @@ describe('Adscripciones', () => {
         .set(auth(sesion.token))
         .send({
           empleadoId: persona._id.toString(),
-          areas: ['obra'],
+          areas: ['operaciones_urbanizadora'],
           tipoContrato: 'indeterminado',
           fechaIngreso: '2026-09-01'
         })
@@ -445,7 +445,7 @@ describe('Adscripciones', () => {
         .set(auth(sesion.token))
         .send({
           empleadoId: '507f1f77bcf86cd799439011',
-          areas: ['obra'],
+          areas: ['operaciones_urbanizadora'],
           tipoContrato: 'indeterminado',
           fechaIngreso: '2026-09-01'
         })
@@ -462,7 +462,9 @@ describe('Adscripciones', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      const adscripcion = await adscribir(sesion.empresa, persona, { areas: ['obra'] })
+      const adscripcion = await adscribir(sesion.empresa, persona, {
+        areas: ['operaciones_urbanizadora']
+      })
       await Record.create({ empleadoId: persona._id, documentos: [], plantillas: [] })
 
       const res = await request(app)
@@ -487,7 +489,9 @@ describe('Adscripciones', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      const adscripcion = await adscribir(sesion.empresa, persona, { areas: ['obra'] })
+      const adscripcion = await adscribir(sesion.empresa, persona, {
+        areas: ['operaciones_urbanizadora']
+      })
 
       const res = await request(app)
         .patch(`/api/v1/adscripciones/${adscripcion._id}`)
@@ -502,7 +506,7 @@ describe('Adscripciones', () => {
       const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
       const persona = await crearEmpleado({ tipo: 'administrativo' })
       const adscripcion = await adscribir(sesion.empresa, persona, {
-        areas: ['administracion']
+        areas: ['finanzas']
       })
 
       const res = await request(app)
@@ -521,7 +525,9 @@ describe('Adscripciones', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      const adscripcion = await adscribir(ajena.empresa, persona, { areas: ['obra'] })
+      const adscripcion = await adscribir(ajena.empresa, persona, {
+        areas: ['operaciones_urbanizadora']
+      })
 
       const res = await request(app)
         .patch(`/api/v1/adscripciones/${adscripcion._id}`)
@@ -537,7 +543,9 @@ describe('Adscripciones', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      const adscripcion = await adscribir(consulta.empresa, persona, { areas: ['obra'] })
+      const adscripcion = await adscribir(consulta.empresa, persona, {
+        areas: ['operaciones_urbanizadora']
+      })
 
       const res = await request(app)
         .patch(`/api/v1/adscripciones/${adscripcion._id}`)
@@ -555,7 +563,9 @@ describe('Adscripciones', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      const adscripcion = await adscribir(sesion.empresa, persona, { areas: ['obra'] })
+      const adscripcion = await adscribir(sesion.empresa, persona, {
+        areas: ['operaciones_urbanizadora']
+      })
       const { proyecto } = await crearProyecto(sesion.empresa)
       const asignacion = await asignar(proyecto, persona, categoria._id)
 
@@ -584,7 +594,9 @@ describe('Adscripciones', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      const adscripcion = await adscribir(sesion.empresa, persona, { areas: ['obra'] })
+      const adscripcion = await adscribir(sesion.empresa, persona, {
+        areas: ['operaciones_urbanizadora']
+      })
 
       const sinMotivo = await request(app)
         .patch(`/api/v1/adscripciones/${adscripcion._id}/estado`)
@@ -607,7 +619,7 @@ describe('Adscripciones', () => {
         categoriaId: categoria._id
       })
       const adscripcion = await adscribir(sesion.empresa, persona, {
-        areas: ['obra'],
+        areas: ['operaciones_urbanizadora'],
         activo: false,
         motivoBaja: 'Se fue'
       })
@@ -632,7 +644,9 @@ describe('Adscripciones', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      const adscripcion = await adscribir(sesion.empresa, persona, { areas: ['obra'] })
+      const adscripcion = await adscribir(sesion.empresa, persona, {
+        areas: ['operaciones_urbanizadora']
+      })
 
       const consulta = await crearEmpleadoConSesion({ nivelAcceso: 'rh_consulta' })
       const resConsulta = await request(app)

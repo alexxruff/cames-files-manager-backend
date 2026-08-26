@@ -1,5 +1,5 @@
 const { body, param, query } = require('express-validator')
-const { ACCESS_LEVELS, AREAS, CONTRACT_TYPES, EMPLOYEE_TYPES } = require('../constants')
+const { ACCESS_LEVELS, CONTRACT_TYPES, EMPLOYEE_TYPES } = require('../constants')
 const { isCalendarDate } = require('../utils/dates')
 
 const PATRON_PASSWORD = /^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&*]).*$/
@@ -20,7 +20,10 @@ exports.listEmployeesValidation = [
     .optional()
     .isMongoId()
     .withMessage('La empresa indicada no es válida'),
-  query('area').optional().isIn(AREAS).withMessage('Selecciona un área válida'),
+  query('area')
+    .optional()
+    .matches(/^[a-z0-9_]+$/)
+    .withMessage('Selecciona un área válida'),
   query('tipo').optional().isIn(EMPLOYEE_TYPES).withMessage('Selecciona un tipo válido'),
   query('categoriaId')
     .optional()
@@ -144,8 +147,13 @@ exports.createEmployeeValidation = [
     .isArray()
     .withMessage('Las áreas deben ser una lista')
     .bail()
+    /*
+     * Sólo el FORMATO. Que el área exista y esté activa se comprueba en el
+     * servicio contra el catálogo (D-58): aquí no se puede consultar la base, y
+     * duplicar la lista en el código era justo lo que se quitó.
+     */
     .custom((areas) => {
-      const invalidas = (areas || []).filter((a) => !AREAS.includes(a))
+      const invalidas = (areas || []).filter((a) => !/^[a-z0-9_]+$/.test(String(a)))
       if (invalidas.length > 0) {
         throw new Error(`Áreas no válidas: ${invalidas.join(', ')}`)
       }

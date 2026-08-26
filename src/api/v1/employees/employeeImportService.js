@@ -4,6 +4,9 @@ const Affiliation = require('../affiliations/affiliationModel')
 const Company = require('../companies/companyModel')
 const Category = require('../categories/categoryModel')
 const affiliationService = require('../affiliations/affiliationService')
+const areaService = require('../areas/areaService')
+const Area = require('../areas/areaModel')
+const { claveDesdeNombre } = require('../areas/areaService')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { normalize } = require('../../../utils/text')
 const { today } = require('../../../utils/dates')
@@ -14,8 +17,7 @@ const {
   META_EMPRESA,
   META_RFC,
   mapearFila,
-  columnasFaltantes,
-  areasDesdeDepartamento
+  columnasFaltantes
 } = require('../../../utils/domain/employeeImport')
 
 /**
@@ -89,13 +91,19 @@ const CAMPOS_PERSONA_RELLENABLES = Object.freeze([
  * tienen ruta para editarse a mano, y `areas` sólo se rellena si está vacía. Sin
  * choque posible no hay nada que preguntar.
  */
-const CAMPOS_EN_DISPUTA = Object.freeze(['estatus', 'tipoContrato', 'fechaIngreso'])
+const CAMPOS_EN_DISPUTA = Object.freeze([
+  'estatus',
+  'tipoContrato',
+  'fechaIngreso',
+  'areas'
+])
 
 /** Nombre mostrable de cada campo, para los avisos y los conflictos. */
 const ETIQUETAS = Object.freeze({
   estatus: 'el estatus',
   tipoContrato: 'el tipo de contrato',
   fechaIngreso: 'la fecha de ingreso',
+  areas: 'el área',
   nombre: 'el nombre',
   numeroEmpleado: 'el número de trabajador',
   curp: 'la CURP',
@@ -142,6 +150,7 @@ class EmployeeImportService {
     }
 
     await this.#crearCategoriasFaltantes(analisis)
+    await this.#crearAreasFaltantes(analisis)
     await this.#aplicar(analisis, contexto)
 
     return this.#respuesta(analisis, true)
@@ -176,9 +185,8 @@ class EmployeeImportService {
     const puestos = await this.#resolverPuestos(filas)
     const avisosGenerales = []
 
-    // El tipo de la persona depende del puesto, y el puesto ya resuelto puede
-    // traer el tipo del catálogo en vez del deducido: hay que re-derivar las
-    // áreas con el tipo definitivo antes de comparar contra la base.
+    // El puesto ya resuelto puede traer el tipo del catálogo en vez del
+    // deducido, y manda el catálogo.
     for (const fila of filas) {
       if (fila.errores.length > 0) continue
       const puesto = puestos.get(normalize(fila.puesto || ''))
@@ -204,12 +212,14 @@ class EmployeeImportService {
           `El puesto "${puesto.nombre}" ya existe en el catálogo como ${puesto.tipo}: se respeta el catálogo`
         )
         fila.persona.tipo = puesto.tipo
-        fila.adscripcion.areas = areasDesdeDepartamento(
-          fila.departamento,
-          puesto.tipo
-        ).areas
       }
     }
+
+    /*
+     * El área de cada fila, contra el catálogo (D-58). Va ANTES de clasificar:
+     * `areas` es uno de los campos que se comparan con lo que ya está guardado.
+     */
+    const areas = await this.#resolverAreas(filas, avisosGenerales)
 
     await this.#clasificar(filas, empresa, opciones)
 
@@ -249,6 +259,7 @@ class EmployeeImportService {
       rfcCoincide,
       filas,
       puestos,
+      areas,
       avisosGenerales
     }
   }
@@ -361,6 +372,181 @@ class EmployeeImportService {
     }
 
     return puestos
+  }
+
+  /**
+   * La columna `Departamento` → el área de la adscripción, contra el catálogo
+   * (D-58).
+   *
+   * Antes esto era un mapa fijo en el código y lo que no estaba en el mapa caía
+   * a un área inventada (`obra` / `administracion`) que no decía nada del
+   * archivo: 53 de las 145 filas de Urbacames traen aquí una obra —`Axis
+   * Zapopan`, `Axis 3`— y todas acababan en la misma área. Ahora cada
+   * departamento **es** un área:
+   *
+   * - Si ya existe una con ese nombre (o con esa clave), se usa.
+   * - Si no, se crea como **temporal** y la fila lo avisa. Es el mismo trato que
+   *   ya reciben los puestos (D-46): el dato viene del archivo, no es una
+   *   decisión de catálogo, y rechazar la fila por un departamento nuevo dejaría
+   *   la importación inservible.
+   * - Si existe pero está **dada de baja**, se reactiva y se avisa: RH la cerró
+   *   porque la obra terminó, y el archivo dice que hay gente ahí otra vez. Sin
+   *   esto quedaría gente asignada a un área que ningún desplegable ofrece.
+   *
+   * Una fila SIN departamento se queda **sin área**, y se marca en
+   * `datosPendientes`. Antes se le inventaba una; ahora se dice que falta, que es
+   * lo que permite listar después a quién hay que asignársela.
+   *
+   * Se resuelve una vez por departamento distinto, no una por fila: el archivo
+   * de Urbacames tiene 145 filas y una docena de departamentos.
+   */
+  async #resolverAreas(filas, avisosGenerales = []) {
+    const areas = new Map()
+
+    for (const fila of filas) {
+      if (fila.errores.length > 0) continue
+
+      const texto = fila.departamento
+      if (!texto) {
+        if (!fila.adscripcion.datosPendientes.includes('areas')) {
+          fila.adscripcion.datosPendientes.push('areas')
+        }
+        fila.avisos.push(
+          'La fila no trae departamento: la persona queda sin área hasta que se le asigne'
+        )
+        continue
+      }
+
+      const clave = normalize(texto)
+      const yaVista = areas.get(clave)
+      if (yaVista) {
+        yaVista.filas += 1
+        fila.adscripcion.areas = [yaVista.claveArea]
+        continue
+      }
+
+      areas.set(clave, {
+        clave,
+        nombre: String(texto).trim(),
+        // La que tendría si hay que crearla; se confirma abajo con el catálogo.
+        claveArea: claveDesdeNombre(texto),
+        filas: 1,
+        existe: false,
+        temporal: true,
+        reactivar: false
+      })
+      fila.adscripcion.areas = [areas.get(clave).claveArea]
+    }
+
+    if (areas.size === 0) return areas
+
+    /*
+     * Una sola consulta para todos los departamentos distintos. Se busca por
+     * nombre normalizado Y por clave, para que «Recursos Humanos», «RECURSOS
+     * HUMANOS» y `recursos_humanos` caigan todos en la misma área.
+     */
+    const claves = [...areas.keys()]
+    const existentes = await Area.find({
+      $or: [
+        { nombreNormalizado: { $in: claves } },
+        {
+          clave: {
+            $in: [...new Set([...claves, ...[...areas.values()].map((a) => a.claveArea)])]
+          }
+        }
+      ]
+    }).select('+nombreNormalizado')
+
+    for (const area of existentes) {
+      const encontrada =
+        areas.get(area.nombreNormalizado) ||
+        [...areas.values()].find(
+          (a) => a.claveArea === area.clave || a.clave === area.clave
+        )
+      if (!encontrada) continue
+
+      encontrada.claveArea = area.clave
+      encontrada.nombre = area.nombre
+      encontrada.existe = true
+      encontrada.temporal = area.temporal
+      encontrada.reactivar = !area.activa
+    }
+
+    // Ya con la clave definitiva del catálogo, se reescriben las filas.
+    for (const fila of filas) {
+      if (fila.errores.length > 0 || !fila.departamento) continue
+      const resuelta = areas.get(normalize(fila.departamento))
+      if (!resuelta) continue
+      fila.adscripcion.areas = [resuelta.claveArea]
+      this.#avisarDelArea(fila, resuelta)
+    }
+
+    /*
+     * Y un aviso general con las temporales del archivo: es lo que reemplaza al
+     * aviso por renglón. Se dice una vez, con la lista, que es como se revisa.
+     */
+    const temporales = [...areas.values()].filter((a) => a.temporal || !a.existe)
+    if (temporales.length > 0) {
+      avisosGenerales.push(
+        `El archivo usa ${temporales.length} ${temporales.length === 1 ? 'área temporal' : 'áreas temporales'} (${temporales
+          .map((a) => a.nombre)
+          .join(', ')}): dales de baja cuando la obra termine.`
+      )
+    }
+
+    return areas
+  }
+
+  /** El aviso que le toca a la fila según cómo se resolvió su área. */
+  #avisarDelArea(fila, resuelta) {
+    /*
+     * Sólo cuando el área es NUEVA. Repetir «es un área temporal» en cada
+     * renglón y en cada importación no informa de nada: al segundo mes serían
+     * 145 avisos que nadie lee. Que un área sea temporal se ve en el catálogo
+     * (`GET /areas?temporal=true`) y, por archivo, en el aviso general.
+     */
+    if (!resuelta.existe) {
+      fila.avisos.push(
+        `"${resuelta.nombre}" no es un área conocida: se dará de alta como área TEMPORAL. Dala de baja cuando la obra termine.`
+      )
+    }
+
+    if (resuelta.reactivar) {
+      fila.avisos.push(
+        `El área "${resuelta.nombre}" está dada de baja y el archivo trae gente en ella: se reactivará`
+      )
+    }
+  }
+
+  /**
+   * Crea las áreas temporales que falten y reactiva las que el archivo revive.
+   *
+   * Va aquí y **no en el análisis**, igual que las categorías y por la misma
+   * razón: `previsualizar` comparte el análisis y no debe escribir nada (D-46).
+   */
+  async #crearAreasFaltantes(analisis) {
+    for (const resuelta of analisis.areas.values()) {
+      if (resuelta.existe) {
+        if (!resuelta.reactivar) continue
+        await Area.updateOne({ clave: resuelta.claveArea }, { $set: { activa: true } })
+        resuelta.reactivada = true
+        resuelta.reactivar = false
+        continue
+      }
+
+      const { area } = await areaService.resolverDesdeTexto(resuelta.nombre)
+      resuelta.claveArea = area.clave
+      resuelta.existe = true
+      resuelta.temporal = area.temporal
+      resuelta.creada = true
+    }
+
+    // Las filas apuntan al área por su clave; hasta aquí podía ser la tentativa.
+    for (const fila of analisis.filas) {
+      if (fila.errores.length > 0 || !fila.departamento) continue
+      const resuelta = analisis.areas.get(normalize(fila.departamento))
+      if (resuelta) fila.adscripcion.areas = [resuelta.claveArea]
+    }
   }
 
   /** Crea las categorías que faltan. Idempotente: si otro las creó, las relee. */
@@ -679,6 +865,21 @@ class EmployeeImportService {
         nuevo: fila.adscripcion.fechaIngreso,
         texto: (v) => v,
         cambiadoEn: null
+      },
+      /*
+       * El área también, desde D-58: el archivo la reasigna a partir de la
+       * columna `Departamento` —es lo que corrige las áreas del modelo
+       * anterior—, pero una curada a mano no se pisa sin preguntar.
+       *
+       * Se comparan como texto ordenado: `['obra','taller']` y
+       * `['taller','obra']` son la misma asignación.
+       */
+      areas: {
+        base: (base.areas || []).length > 0 ? [...base.areas].sort().join(', ') : null,
+        actual: [...(adscripcion.areas || [])].sort().join(', '),
+        nuevo: [...(fila.adscripcion.areas || [])].sort().join(', '),
+        texto: (v) => v || '(sin área)',
+        cambiadoEn: null
       }
     }
 
@@ -778,7 +979,13 @@ class EmployeeImportService {
       if (String(adscripcion[campo] ?? '') !== String(nuevo)) cambios.push(campo)
     }
 
-    if ((adscripcion.areas || []).length === 0 && fila.adscripcion.areas.length > 0) {
+    const areasDelArchivo = [...(fila.adscripcion.areas || [])].sort().join(', ')
+    const areasGuardadas = [...(adscripcion.areas || [])].sort().join(', ')
+    if (
+      !enConflicto.has('areas') &&
+      areasDelArchivo &&
+      areasDelArchivo !== areasGuardadas
+    ) {
       cambios.push('areas')
     }
 
@@ -976,8 +1183,13 @@ class EmployeeImportService {
       if (nuevo !== null && nuevo !== undefined) adscripcion[campo] = nuevo
     }
 
-    // Las áreas sólo se rellenan: una curada a mano vale más que una deducida.
-    if ((adscripcion.areas || []).length === 0) {
+    /*
+     * Las áreas las manda el archivo desde D-58 —es lo que reasigna a quien
+     * quedó con un área del modelo anterior—, pero pasan por el mismo candado
+     * que los demás campos en disputa: si alguien la curó a mano, es conflicto y
+     * no se pisa. Una fila sin departamento no trae área y no borra la que hay.
+     */
+    if (!enConflicto.has('areas') && (fila.adscripcion.areas || []).length > 0) {
       adscripcion.areas = fila.adscripcion.areas
     }
 
@@ -1037,6 +1249,7 @@ class EmployeeImportService {
       active: fila.adscripcion.activo,
       contractType: fila.adscripcion.tipoContrato ?? null,
       hireDate: fila.adscripcion.fechaIngreso ?? null,
+      areas: fila.adscripcion.areas || [],
       importedAt: new Date()
     }
   }
@@ -1088,6 +1301,19 @@ class EmployeeImportService {
       .filter((p) => (aplicado ? p.creada : !p.existe))
       .map((p) => ({ nombre: p.nombre, tipo: p.tipo, filas: p.filas }))
 
+    /*
+     * Áreas que el archivo da de alta como TEMPORALES, casi siempre una obra
+     * (D-58). Misma forma que `categoriasNuevas` y por lo mismo: hay que poder
+     * verlas antes de aplicar, y después saber cuáles se crearon de verdad.
+     */
+    const areasNuevas = [...analisis.areas.values()]
+      .filter((a) => (aplicado ? a.creada : !a.existe))
+      .map((a) => ({ nombre: a.nombre, clave: a.claveArea, filas: a.filas }))
+
+    const areasReactivadas = [...analisis.areas.values()]
+      .filter((a) => (aplicado ? a.reactivada : a.reactivar))
+      .map((a) => ({ nombre: a.nombre, clave: a.claveArea, filas: a.filas }))
+
     return {
       aplicado,
       archivo,
@@ -1114,6 +1340,8 @@ class EmployeeImportService {
         conError: conError.length
       },
       categoriasNuevas,
+      areasNuevas,
+      areasReactivadas,
       nuevos: nuevos.slice(0, MAX_DETALLE).map((f) => ({
         fila: f.fila,
         empleadoId: f.empleadoId ? f.empleadoId.toString() : null,

@@ -35,7 +35,9 @@ async function escenario(datos = {}) {
       categoriaId: categoria._id,
       ...extra
     })
-    await adscribir(sesion.empresa, persona, { areas: extra.areas || ['obra'] })
+    await adscribir(sesion.empresa, persona, {
+      areas: extra.areas || ['operaciones_urbanizadora']
+    })
     return persona
   }
 
@@ -77,7 +79,9 @@ describe('POST /api/v1/proyectos/:id/asignaciones', () => {
       tipo: 'mano_de_obra',
       categoriaId: categoria._id
     })
-    await adscribir(await crearEmpresa(), deOtraEmpresa, { areas: ['obra'] })
+    await adscribir(await crearEmpresa(), deOtraEmpresa, {
+      areas: ['operaciones_urbanizadora']
+    })
 
     const res = await request(app)
       .post(`${RUTA}/${proyecto._id}/asignaciones`)
@@ -100,7 +104,7 @@ describe('POST /api/v1/proyectos/:id/asignaciones', () => {
       categoriaId: categoria._id
     })
     await adscribir(empresa, exempleado, {
-      areas: ['obra'],
+      areas: ['operaciones_urbanizadora'],
       activo: false,
       motivoBaja: 'Renuncia voluntaria'
     })
@@ -217,9 +221,12 @@ describe('POST /api/v1/proyectos/:id/asignaciones', () => {
   })
 
   it('un jefe de área sólo asigna personal de sus áreas', async () => {
-    const jefe = await escenario({ nivelAcceso: 'jefe_area', areas: ['obra'] })
-    const deSuArea = await jefe.crearAsignable({ areas: ['obra'] })
-    const deOtraArea = await jefe.crearAsignable({ areas: ['ventas'] })
+    const jefe = await escenario({
+      nivelAcceso: 'jefe_area',
+      areas: ['operaciones_urbanizadora']
+    })
+    const deSuArea = await jefe.crearAsignable({ areas: ['operaciones_urbanizadora'] })
+    const deOtraArea = await jefe.crearAsignable({ areas: ['comercial'] })
 
     const suyo = await request(app)
       .post(`${RUTA}/${jefe.proyecto._id}/asignaciones`)
@@ -240,7 +247,7 @@ describe('POST /api/v1/proyectos/:id/asignaciones', () => {
 
     expect(suyo.status).toBe(201)
     expect(ajeno.status).toBe(403)
-    expect(ajeno.body.message).toMatch(/tus áreas: obra/i)
+    expect(ajeno.body.message).toMatch(/tus áreas: operaciones_urbanizadora/i)
   })
 
   it('403 para rh_consulta; 404 si el proyecto no es suyo', async () => {
@@ -324,20 +331,22 @@ describe('GET /api/v1/proyectos/:id/asignables — el selector', () => {
       activo: false,
       motivoBaja: 'Renuncia'
     })
-    await adscribir(empresa, deBaja, { areas: ['obra'] })
+    await adscribir(empresa, deBaja, { areas: ['operaciones_urbanizadora'] })
 
     const otraCategoria = await crearCategoria('Soldador', 'mano_de_obra')
     const noHabilitado = await crearEmpleado({
       tipo: 'mano_de_obra',
       categoriaId: otraCategoria._id
     })
-    await adscribir(empresa, noHabilitado, { areas: ['obra'] })
+    await adscribir(empresa, noHabilitado, { areas: ['operaciones_urbanizadora'] })
 
     const deOtraEmpresa = await crearEmpleado({
       tipo: 'mano_de_obra',
       categoriaId: categoria._id
     })
-    await adscribir(await crearEmpresa(), deOtraEmpresa, { areas: ['obra'] })
+    await adscribir(await crearEmpresa(), deOtraEmpresa, {
+      areas: ['operaciones_urbanizadora']
+    })
 
     const res = await request(app)
       .get(`${RUTA}/${proyecto._id}/asignables`)
@@ -346,9 +355,12 @@ describe('GET /api/v1/proyectos/:id/asignables — el selector', () => {
   })
 
   it('para un jefe de área, sólo su gente', async () => {
-    const jefe = await escenario({ nivelAcceso: 'jefe_area', areas: ['obra'] })
-    const suyo = await jefe.crearAsignable({ areas: ['obra'] })
-    await jefe.crearAsignable({ areas: ['ventas'] })
+    const jefe = await escenario({
+      nivelAcceso: 'jefe_area',
+      areas: ['operaciones_urbanizadora']
+    })
+    const suyo = await jefe.crearAsignable({ areas: ['operaciones_urbanizadora'] })
+    await jefe.crearAsignable({ areas: ['comercial'] })
 
     const res = await request(app)
       .get(`${RUTA}/${jefe.proyecto._id}/asignables`)

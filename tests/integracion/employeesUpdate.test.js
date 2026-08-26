@@ -21,7 +21,7 @@ async function escenario(datos = {}) {
     tipo: 'mano_de_obra',
     ...datos.persona
   })
-  await adscribir(sesion.empresa, persona, { areas: ['obra'] })
+  await adscribir(sesion.empresa, persona, { areas: ['operaciones_urbanizadora'] })
   return { ...sesion, persona }
 }
 
@@ -80,7 +80,7 @@ describe('PATCH /api/v1/empleados/:id — editar a la persona', () => {
         nombre: 'Ya Lo Tiene',
         numeroEmpleado: 'NE-OCUPADO'
       })
-      await adscribir(empresa, otro, { areas: ['obra'] })
+      await adscribir(empresa, otro, { areas: ['operaciones_urbanizadora'] })
 
       const res = await request(app)
         .patch(`${RUTA}/${persona._id}`)
@@ -314,10 +314,10 @@ describe('PATCH /api/v1/empleados/:id — editar a la persona', () => {
       for (const nivel of ['rh_consulta', 'jefe_area']) {
         const { token, empresa } = await crearEmpleadoConSesion({
           nivelAcceso: nivel,
-          areas: ['obra']
+          areas: ['operaciones_urbanizadora']
         })
         const persona = await crearEmpleado({ tipo: 'mano_de_obra' })
-        await adscribir(empresa, persona, { areas: ['obra'] })
+        await adscribir(empresa, persona, { areas: ['operaciones_urbanizadora'] })
 
         const res = await request(app)
           .patch(`${RUTA}/${persona._id}`)
@@ -333,10 +333,10 @@ describe('PATCH /api/v1/empleados/:id — editar a la persona', () => {
       for (const nivel of ['rh_consulta', 'jefe_area']) {
         const { token, empresa } = await crearEmpleadoConSesion({
           nivelAcceso: nivel,
-          areas: ['administracion']
+          areas: ['finanzas']
         })
         const persona = await crearEmpleado({ tipo: 'administrativo' })
-        await adscribir(empresa, persona, { areas: ['administracion'] })
+        await adscribir(empresa, persona, { areas: ['finanzas'] })
 
         const res = await request(app)
           .patch(`${RUTA}/${persona._id}`)
@@ -353,7 +353,7 @@ describe('PATCH /api/v1/empleados/:id — editar a la persona', () => {
         nivelAcceso: 'rh_consulta'
       })
       const persona = await crearEmpleado({ tipo: 'mano_de_obra' })
-      await adscribir(empresa, persona, { areas: ['obra'] })
+      await adscribir(empresa, persona, { areas: ['operaciones_urbanizadora'] })
       const deOficina = await crearCategoria('Contador', 'administrativo')
 
       const res = await request(app)
@@ -369,10 +369,10 @@ describe('PATCH /api/v1/empleados/:id — editar a la persona', () => {
       // El filtro de áreas ya lo dejaba fuera del listado; editar da el mismo 404.
       const { token, empresa } = await crearEmpleadoConSesion({
         nivelAcceso: 'jefe_area',
-        areas: ['obra']
+        areas: ['operaciones_urbanizadora']
       })
       const otraArea = await crearEmpleado({ tipo: 'mano_de_obra' })
-      await adscribir(empresa, otraArea, { areas: ['ventas'] })
+      await adscribir(empresa, otraArea, { areas: ['comercial'] })
 
       const res = await request(app)
         .patch(`${RUTA}/${otraArea._id}`)
@@ -579,7 +579,7 @@ describe('PATCH /api/v1/empleados/:id/estado — baja y reactivación', () => {
   it('403 para rh_consulta y jefe_area; 404 fuera de alcance', async () => {
     const { empresa } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
     const persona = await crearEmpleado({ tipo: 'mano_de_obra' })
-    await adscribir(empresa, persona, { areas: ['obra'] })
+    await adscribir(empresa, persona, { areas: ['operaciones_urbanizadora'] })
 
     const consulta = await crearEmpleadoConSesion({
       nivelAcceso: 'rh_consulta',

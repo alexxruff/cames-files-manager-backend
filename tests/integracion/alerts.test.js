@@ -64,7 +64,7 @@ async function escenario(datos = {}) {
     fechaNacimiento: datos.fechaNacimiento ?? null
   })
   await adscribir(sesion.empresa, persona, {
-    areas: datos.areas || ['obra'],
+    areas: datos.areas || ['operaciones_urbanizadora'],
     tipoContrato: 'indeterminado'
   })
 
@@ -114,7 +114,7 @@ describe('GET /api/v1/alertas', () => {
         origen: 'documento',
         empleadoNombre: 'Roberto Aguilar Sosa',
         expedienteId,
-        areas: ['obra']
+        areas: ['operaciones_urbanizadora']
       })
       expect(suyas[0].categoriaNombre).toMatch(/^Albañil/)
       expect(suyas[0].mensaje).toMatch(/^Falta subir /)
@@ -372,7 +372,7 @@ describe('GET /api/v1/alertas', () => {
       const jefe = await crearEmpleadoConSesion({
         nivelAcceso: 'jefe_area',
         empresa,
-        areas: ['obra']
+        areas: ['operaciones_urbanizadora']
       })
       const categoria = await crearCategoria('Albañil', 'mano_de_obra')
 
@@ -384,8 +384,8 @@ describe('GET /api/v1/alertas', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      await adscribir(empresa, suyo, { areas: ['obra'] })
-      await adscribir(empresa, ajeno, { areas: ['mantenimiento'] })
+      await adscribir(empresa, suyo, { areas: ['operaciones_urbanizadora'] })
+      await adscribir(empresa, ajeno, { areas: ['operaciones_maquinaria'] })
       for (const persona of [suyo, ajeno]) {
         await request(app)
           .get(`/api/v1/empleados/${persona._id}/expediente`)
@@ -414,8 +414,8 @@ describe('GET /api/v1/alertas', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      await adscribir(unaEmpresa, aqui, { areas: ['obra'] })
-      await adscribir(otraEmpresa, alla, { areas: ['obra'] })
+      await adscribir(unaEmpresa, aqui, { areas: ['operaciones_urbanizadora'] })
+      await adscribir(otraEmpresa, alla, { areas: ['operaciones_urbanizadora'] })
       for (const persona of [aqui, alla]) {
         await request(app)
           .get(`/api/v1/empleados/${persona._id}/expediente`)
@@ -458,10 +458,11 @@ describe('GET /api/v1/alertas', () => {
     })
 
     it('filtra por área', async () => {
-      const { token, persona } = await escenario({ areas: ['obra'] })
+      const { token, persona } = await escenario({ areas: ['operaciones_urbanizadora'] })
 
       expect(
-        deEmpleado(await listar(token, '?area=obra'), persona._id).length
+        deEmpleado(await listar(token, '?area=operaciones_urbanizadora'), persona._id)
+          .length
       ).toBeGreaterThan(0)
       expect(deEmpleado(await listar(token, '?area=contabilidad'), persona._id)).toEqual(
         []
@@ -525,7 +526,10 @@ describe('GET /api/v1/alertas', () => {
 
     it('rh_consulta y jefe_area también ven la bandeja: una alerta no dice nada nuevo', async () => {
       for (const nivelAcceso of ['rh_consulta', 'jefe_area']) {
-        const { token } = await escenario({ nivelAcceso, areasDelUsuario: ['obra'] })
+        const { token } = await escenario({
+          nivelAcceso,
+          areasDelUsuario: ['operaciones_urbanizadora']
+        })
         expect((await listarAgrupadas(token)).status).toBe(200)
       }
     })
@@ -565,7 +569,7 @@ describe('GET /api/v1/alertas', () => {
           tipo: 'mano_de_obra',
           categoriaId: categoria._id
         })
-        await adscribir(sesion.empresa, persona, { areas: ['obra'] })
+        await adscribir(sesion.empresa, persona, { areas: ['operaciones_urbanizadora'] })
         await request(app)
           .get(`/api/v1/empleados/${persona._id}/expediente`)
           .set(auth(sesion.token))
@@ -607,7 +611,7 @@ describe('GET /api/v1/alertas', () => {
         empleadoId: persona._id.toString(),
         empleadoNombre: 'Roberto Aguilar Sosa',
         tipo: 'documento_faltante',
-        areas: ['obra']
+        areas: ['operaciones_urbanizadora']
       })
       expect(grupo.empresas).toEqual([
         { _id: empresa._id.toString(), nombre: empresa.nombre }

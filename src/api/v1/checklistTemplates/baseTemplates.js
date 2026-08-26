@@ -52,14 +52,16 @@ const BASE_TEMPLATES = Object.freeze([
     clave: 'plantilla-obra',
     nombre: 'Personal de obra',
     descripcion:
-      'Área de obra y mantenimiento. Sin comprobante de estudios ni referencias, y el examen médico se renueva cada 6 meses.',
+      'Áreas de operaciones. Sin comprobante de estudios ni referencias, y el examen médico se renueva cada 6 meses.',
     tiposContrato: [
       'indeterminado',
       'determinado',
       'obra_determinada',
       'capacitacion_inicial'
     ],
-    areas: ['obra', 'mantenimiento'],
+    // Las dos áreas de operaciones del catálogo base (D-58). Antes eran `obra`
+    // y `mantenimiento`, que ya no existen.
+    areas: ['operaciones_urbanizadora', 'operaciones_maquinaria'],
     documentos: renglones(['comprobante_estudios', 'referencias_laborales', 'cv'], {
       examen_medico: 6
     }),

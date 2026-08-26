@@ -1,5 +1,5 @@
 const mongoose = require('mongoose')
-const { AREAS, CONTRACT_TYPES, DOCUMENT_TYPES } = require('../../../constants')
+const { CONTRACT_TYPES, DOCUMENT_TYPES } = require('../../../constants')
 const { idAString } = require('../../../utils/ids')
 
 /**
@@ -44,7 +44,8 @@ const checklistTemplateSchema = new mongoose.Schema(
       required: true
     },
     /** `null` = aplica a todas las áreas. Una lista la vuelve más específica. */
-    areas: { type: [{ type: String, enum: AREAS }], default: null },
+    // Sin `enum`: el catálogo de áreas es una colección desde D-58.
+    areas: { type: [{ type: String, trim: true }], default: null },
 
     documentos: { type: [rowSchema], required: true },
 

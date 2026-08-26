@@ -1,6 +1,6 @@
 const { isCalendarDate } = require('../dates')
 const { normalize } = require('../text')
-const { AREAS, CONTRACT_TYPES, isTemporaryContract } = require('../../constants')
+const { CONTRACT_TYPES, isTemporaryContract } = require('../../constants')
 
 /**
  * Traducción del archivo de nómina a nuestro modelo. **Función pura**: no toca
@@ -163,24 +163,6 @@ const PALABRAS_MANO_DE_OBRA = Object.freeze([
  * obra está la persona. Cuando existan proyectos de verdad, de ahí sale la
  * asignación (que es una decisión, no un efecto secundario de importar).
  */
-const AREA_POR_DEPARTAMENTO = Object.freeze({
-  operaciones: 'obra',
-  'operacion limpieza': 'mantenimiento',
-  'proyectos urbanizacion': 'proyectos',
-  administracion: 'administracion',
-  direccion: 'direccion',
-  'recursos humanos': 'recursos_humanos',
-  contabilidad: 'contabilidad',
-  comercial: 'ventas',
-  'costos y presupuestos': 'administracion'
-})
-
-/** Área por defecto cuando el departamento no es un área (una obra, por ejemplo). */
-const AREA_POR_DEFECTO = Object.freeze({
-  mano_de_obra: 'obra',
-  administrativo: 'administracion'
-})
-
 /** Valores de relleno del reporte que significan "sin dato". */
 const RELLENOS = Object.freeze(['n/a', 'na', 'n.a.', 'no aplica', 'sin dato', '-', '--'])
 
@@ -303,25 +285,16 @@ function tipoEmpleadoDesdePuesto(puesto) {
     : 'administrativo'
 }
 
-/**
- * Departamento → áreas de la adscripción.
+/*
+ * `areasDesdeDepartamento` se fue en D-58.
  *
- * @returns {{areas: string[], esArea: boolean}} `esArea` en `false` significa
- *   que el departamento del archivo NO es un área nuestra (típicamente una
- *   obra) y se usó el valor por defecto del tipo.
+ * Traducía la columna `Departamento` con un mapa fijo escrito aquí, y lo que no
+ * estaba en el mapa caía a un área por defecto inventada (`obra` /
+ * `administracion`) que no tenía nada que ver con lo que decía el archivo. Ahora
+ * el departamento se resuelve contra el CATÁLOGO de áreas y, si no existe, se
+ * crea como área temporal — pero eso toca la base y no cabe en este módulo, que
+ * es de reglas puras. Vive en `employeeImportService.#resolverAreas`.
  */
-function areasDesdeDepartamento(departamento, tipoEmpleado) {
-  const porDefecto = AREA_POR_DEFECTO[tipoEmpleado] || 'administracion'
-  const texto = aTexto(departamento)
-  if (!texto) return { areas: [porDefecto], esArea: false }
-
-  const normalizado = normalize(texto)
-  const area =
-    AREA_POR_DEPARTAMENTO[normalizado] ||
-    (AREAS.includes(normalizado) ? normalizado : null)
-
-  return area ? { areas: [area], esArea: true } : { areas: [porDefecto], esArea: false }
-}
 
 /** Nombre completo a partir de las tres columnas del archivo. */
 function nombreCompleto(celdas) {
@@ -439,13 +412,12 @@ function mapearFila({ numero, celdas }) {
     )
   }
 
+  /*
+   * El departamento se lee tal cual; el área que le corresponde la resuelve el
+   * servicio contra el catálogo (D-58). Aquí no se decide nada: hacerlo exigiría
+   * consultar la base, y este módulo es de reglas puras.
+   */
   const departamento = aTexto(leer(celdas, COL.DEPARTAMENTO))
-  const { areas, esArea } = areasDesdeDepartamento(departamento, tipo)
-  if (departamento && !esArea) {
-    avisos.push(
-      `"${departamento}" no es un área de la organización (parece una obra): queda en el campo departamento y el área es "${areas[0]}"`
-    )
-  }
 
   /*
    * El archivo NO trae fecha de término, y 99 de 145 tienen contrato temporal.
@@ -476,7 +448,8 @@ function mapearFila({ numero, celdas }) {
     },
     adscripcion: {
       departamento,
-      areas,
+      // Las llena `#resolverAreas` con la clave del catálogo (D-58).
+      areas: [],
       tipoContrato,
       fechaIngreso,
       fechaTerminoContrato: null,
@@ -517,8 +490,6 @@ module.exports = {
   META_EMPRESA,
   META_RFC,
   PALABRAS_MANO_DE_OBRA,
-  AREA_POR_DEPARTAMENTO,
-  AREA_POR_DEFECTO,
   mapearFila,
   columnasFaltantes,
   aFechaCalendario,
@@ -528,6 +499,5 @@ module.exports = {
   tipoContratoDesde,
   activoDesdeEstatus,
   tipoEmpleadoDesdePuesto,
-  areasDesdeDepartamento,
   nombreCompleto
 }

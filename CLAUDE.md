@@ -69,7 +69,8 @@ exponer el backend.
 Mapa de nombres (modelo → colección → nombre en el spec):
 `Company`/`companies`/empresas · `Employee`/`employees`/empleados ·
 `Credential`/`credentials`/credenciales · `Client`/`clients`/clientes ·
-`Category`/`categories`/categorías · `Affiliation`/`affiliations`/adscripciones ·
+`Category`/`categories`/categorías · `Area`/`areas`/áreas ·
+`Affiliation`/`affiliations`/adscripciones ·
 `Portfolio`/`portfolios`/carteras · `Assignment`/`assignments`/asignaciones ·
 `Project`/`projects`/proyectos · `Record`/`records`/expedientes ·
 `ChecklistTemplate`/`checklist_templates`/plantillas ·
@@ -88,6 +89,8 @@ src/
     affiliations/       adscripción empresa ↔ empleado: la relación laboral
     alerts/             bandeja derivada: documentos y cumpleaños (D-47)
     clients/ categories/  catálogos compartidos
+    areas/              catálogo de áreas: 9 base + las temporales que deja el
+                        archivo de nómina (D-58)
     checklistTemplates/ plantillas (pendiente de mudar a empresaId)
     users/goneRoutes.js /usuarios → 410, se borra cuando el front migre
     routes/             index.js monta los recursos y expone el inventario

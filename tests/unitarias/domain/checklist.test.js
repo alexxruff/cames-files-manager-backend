@@ -33,7 +33,7 @@ describe('domain/resolveTemplate — especificidad (modelo-datos §6.2)', () => 
   const globalConArea = plantilla({
     _id: 'ga',
     nombre: 'global con área',
-    areas: ['obra']
+    areas: ['operaciones_urbanizadora']
   })
   const deEmpresa = plantilla({
     _id: 'e',
@@ -44,7 +44,7 @@ describe('domain/resolveTemplate — especificidad (modelo-datos §6.2)', () => 
     _id: 'ea',
     nombre: 'empresa con área',
     empresaId: 'emp-1',
-    areas: ['obra']
+    areas: ['operaciones_urbanizadora']
   })
   const todas = [global, globalConArea, deEmpresa, deEmpresaConArea]
 
@@ -52,22 +52,30 @@ describe('domain/resolveTemplate — especificidad (modelo-datos §6.2)', () => 
 
   it('la de la empresa que empata área gana a todas', () => {
     expect(
-      elegir({ empresaId: 'emp-1', areas: ['obra'], tipoContrato: 'indeterminado' })
+      elegir({
+        empresaId: 'emp-1',
+        areas: ['operaciones_urbanizadora'],
+        tipoContrato: 'indeterminado'
+      })
     ).toBe('empresa con área')
   })
 
   it('la de la empresa sin área gana a las globales', () => {
     expect(
-      elegir({ empresaId: 'emp-1', areas: ['ventas'], tipoContrato: 'indeterminado' })
+      elegir({ empresaId: 'emp-1', areas: ['comercial'], tipoContrato: 'indeterminado' })
     ).toBe('empresa sin área')
   })
 
   it('una empresa sin plantillas propias usa las globales', () => {
     expect(
-      elegir({ empresaId: 'emp-9', areas: ['obra'], tipoContrato: 'indeterminado' })
+      elegir({
+        empresaId: 'emp-9',
+        areas: ['operaciones_urbanizadora'],
+        tipoContrato: 'indeterminado'
+      })
     ).toBe('global con área')
     expect(
-      elegir({ empresaId: 'emp-9', areas: ['ventas'], tipoContrato: 'indeterminado' })
+      elegir({ empresaId: 'emp-9', areas: ['comercial'], tipoContrato: 'indeterminado' })
     ).toBe('global sin área')
   })
 
@@ -76,7 +84,7 @@ describe('domain/resolveTemplate — especificidad (modelo-datos §6.2)', () => 
     expect(
       elegir({
         empresaId: 'emp-9',
-        areas: ['ventas', 'obra'],
+        areas: ['comercial', 'operaciones_urbanizadora'],
         tipoContrato: 'indeterminado'
       })
     ).toBe('global con área')
@@ -89,8 +97,10 @@ describe('domain/resolveTemplate — especificidad (modelo-datos §6.2)', () => 
       tiposContrato: ['prueba']
     })
     expect(
-      resolveTemplate([global, soloPrueba], { areas: ['obra'], tipoContrato: 'prueba' })
-        .nombre
+      resolveTemplate([global, soloPrueba], {
+        areas: ['operaciones_urbanizadora'],
+        tipoContrato: 'prueba'
+      }).nombre
     ).toBe('prueba')
   })
 
@@ -98,12 +108,12 @@ describe('domain/resolveTemplate — especificidad (modelo-datos §6.2)', () => 
     const inactiva = plantilla({
       _id: 'i',
       nombre: 'inactiva',
-      areas: ['obra'],
+      areas: ['operaciones_urbanizadora'],
       activo: false
     })
     expect(
       resolveTemplate([inactiva, global], {
-        areas: ['obra'],
+        areas: ['operaciones_urbanizadora'],
         tipoContrato: 'indeterminado'
       }).nombre
     ).toBe('global sin área')
@@ -113,7 +123,7 @@ describe('domain/resolveTemplate — especificidad (modelo-datos §6.2)', () => 
     const rara = plantilla({ _id: 'r', nombre: 'rara', tiposContrato: ['prueba'] })
     expect(
       resolveTemplate([rara, global], {
-        areas: ['obra'],
+        areas: ['operaciones_urbanizadora'],
         tipoContrato: 'obra_determinada'
       }).nombre
     ).toBe('global sin área')
@@ -121,7 +131,10 @@ describe('domain/resolveTemplate — especificidad (modelo-datos §6.2)', () => 
 
   it('sin plantillas devuelve null en vez de reventar', () => {
     expect(
-      resolveTemplate([], { areas: ['obra'], tipoContrato: 'indeterminado' })
+      resolveTemplate([], {
+        areas: ['operaciones_urbanizadora'],
+        tipoContrato: 'indeterminado'
+      })
     ).toBeNull()
   })
 })
@@ -168,9 +181,9 @@ describe('domain/unirRenglones — la condición más estricta gana', () => {
 
 describe('domain/construirChecklist — el expediente es de la persona', () => {
   const deObra = plantilla({
-    _id: 'obra',
-    nombre: 'obra',
-    areas: ['obra'],
+    _id: 'operaciones_urbanizadora',
+    nombre: 'operaciones_urbanizadora',
+    areas: ['operaciones_urbanizadora'],
     documentos: [renglon('ine'), renglon('cv', false), renglon('examen_medico', true, 6)]
   })
   const general = plantilla({
@@ -185,11 +198,16 @@ describe('domain/construirChecklist — el expediente es de la persona', () => {
       [
         {
           empresaId: 'e1',
-          areas: ['administracion'],
+          areas: ['finanzas'],
           tipoContrato: 'indeterminado',
           activo: true
         },
-        { empresaId: 'e2', areas: ['obra'], tipoContrato: 'indeterminado', activo: true }
+        {
+          empresaId: 'e2',
+          areas: ['operaciones_urbanizadora'],
+          tipoContrato: 'indeterminado',
+          activo: true
+        }
       ],
       [deObra, general]
     )
@@ -199,12 +217,19 @@ describe('domain/construirChecklist — el expediente es de la persona', () => {
     expect(porTipo.cv.requerido).toBe(true)
     // 6 meses gana a 12.
     expect(porTipo.examen_medico.vigenciaMeses).toBe(6)
-    expect(plantillas.sort()).toEqual(['gen', 'obra'])
+    expect(plantillas.sort()).toEqual(['gen', 'operaciones_urbanizadora'])
   })
 
   it('los documentos nacen pendientes y sin versiones', () => {
     const { documentos } = construirChecklist(
-      [{ empresaId: 'e1', areas: ['obra'], tipoContrato: 'indeterminado', activo: true }],
+      [
+        {
+          empresaId: 'e1',
+          areas: ['operaciones_urbanizadora'],
+          tipoContrato: 'indeterminado',
+          activo: true
+        }
+      ],
       [deObra]
     )
 
@@ -218,13 +243,13 @@ describe('domain/construirChecklist — el expediente es de la persona', () => {
       [
         {
           empresaId: 'e1',
-          areas: ['obra'],
+          areas: ['operaciones_urbanizadora'],
           tipoContrato: 'indeterminado',
           activo: false
         },
         {
           empresaId: 'e2',
-          areas: ['ventas'],
+          areas: ['comercial'],
           tipoContrato: 'indeterminado',
           activo: true
         }

@@ -38,7 +38,7 @@ describe('POST /api/v1/categorias', () => {
     for (const nivel of ['rh_admin', 'rh_consulta', 'jefe_area']) {
       const { token } = await crearEmpleadoConSesion({
         nivelAcceso: nivel,
-        areas: ['obra']
+        areas: ['operaciones_urbanizadora']
       })
       const res = await request(app)
         .post(RUTA)
@@ -107,7 +107,7 @@ describe('GET /api/v1/categorias', () => {
     for (const nivel of ['rh_admin', 'rh_consulta', 'jefe_area']) {
       const { token } = await crearEmpleadoConSesion({
         nivelAcceso: nivel,
-        areas: ['obra']
+        areas: ['operaciones_urbanizadora']
       })
       const res = await request(app).get(RUTA).set(auth(token))
       expect(res.status).toBe(200)

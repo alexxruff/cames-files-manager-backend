@@ -123,7 +123,7 @@ describe('Modelo Affiliation — la relación laboral (modelo-datos §5b.1)', ()
     const empleado = await crearEmpleado()
 
     const adscripcion = await adscribir(empresa, empleado, {
-      areas: ['obra', 'mantenimiento'],
+      areas: ['operaciones_urbanizadora', 'operaciones_maquinaria'],
       tipoContrato: 'obra_determinada',
       fechaIngreso: '2026-03-01',
       fechaTerminoContrato: '2026-12-31'
@@ -132,7 +132,7 @@ describe('Modelo Affiliation — la relación laboral (modelo-datos §5b.1)', ()
     expect(adscripcion.toJSON()).toMatchObject({
       empresaId: empresa._id.toString(),
       empleadoId: empleado._id.toString(),
-      areas: ['obra', 'mantenimiento'],
+      areas: ['operaciones_urbanizadora', 'operaciones_maquinaria'],
       tipoContrato: 'obra_determinada',
       fechaIngreso: '2026-03-01',
       fechaTerminoContrato: '2026-12-31',
@@ -145,11 +145,11 @@ describe('Modelo Affiliation — la relación laboral (modelo-datos §5b.1)', ()
     const b = await crearEmpresa()
     const empleado = await crearEmpleado()
 
-    await adscribir(a, empleado, { tipoContrato: 'indeterminado', areas: ['ventas'] })
+    await adscribir(a, empleado, { tipoContrato: 'indeterminado', areas: ['comercial'] })
     await adscribir(b, empleado, {
       tipoContrato: 'determinado',
       fechaTerminoContrato: '2027-01-31',
-      areas: ['obra']
+      areas: ['operaciones_urbanizadora']
     })
 
     const suyas = await Affiliation.find({ empleadoId: empleado._id })

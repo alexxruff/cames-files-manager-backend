@@ -46,7 +46,7 @@ describe('POST /api/v1/empresas', () => {
     for (const datos of [
       { nivelAcceso: 'rh_admin' },
       { nivelAcceso: 'rh_consulta' },
-      { nivelAcceso: 'jefe_area', areas: ['obra'] }
+      { nivelAcceso: 'jefe_area', areas: ['operaciones_urbanizadora'] }
     ]) {
       const { token } = await crearEmpleadoConSesion(datos)
       const res = await request(app)

@@ -10,7 +10,6 @@ const {
   tipoContratoDesde,
   activoDesdeEstatus,
   tipoEmpleadoDesdePuesto,
-  areasDesdeDepartamento,
   nombreCompleto
 } = require('../../../src/utils/domain/employeeImport')
 
@@ -229,52 +228,32 @@ describe('Importación de colaboradores · mapeo puro', () => {
     })
   })
 
-  describe('departamento → áreas', () => {
-    it.each([
-      ['Operaciones', 'obra'],
-      ['Operación Limpieza', 'mantenimiento'],
-      ['Proyectos Urbanización', 'proyectos'],
-      ['Administración', 'administracion'],
-      ['Dirección', 'direccion'],
-      ['Recursos Humanos', 'recursos_humanos'],
-      ['Contabilidad', 'contabilidad'],
-      ['Comercial', 'ventas'],
-      ['Costos y Presupuestos', 'administracion']
-    ])('%s → %s', (departamento, area) => {
-      const { areas, esArea } = areasDesdeDepartamento(departamento, 'administrativo')
-      expect(areas).toEqual([area])
-      expect(esArea).toBe(true)
-    })
-
+  describe('departamento', () => {
     /*
-     * 53 de las 145 filas traen aquí una OBRA, no un área. Mapearla a un área
-     * sería inventar el dato: cae al valor por defecto del tipo y el nombre
-     * original se conserva en `adscripcion.departamento`.
+     * Desde D-58 este módulo YA NO traduce el departamento a un área: lo lee tal
+     * cual y la resolución contra el catálogo vive en el servicio, que es quien
+     * puede consultar la base y dar de alta las temporales. Aquí sólo se
+     * comprueba que el texto llegue intacto y que la fila salga sin área.
      */
-    it.each(['Axis Zapopan', 'Axis 3', 'Plenares', 'Kulkana', 'FlexPark'])(
-      '%s es una obra: cae al área por defecto del tipo y se conserva el nombre',
-      (obra) => {
-        expect(areasDesdeDepartamento(obra, 'mano_de_obra')).toEqual({
-          areas: ['obra'],
-          esArea: false
+    it.each(['Axis Zapopan', 'Axis 3', 'Plenares', 'Kulkana', 'Operaciones'])(
+      '%s se conserva tal cual y la fila sale sin área',
+      (departamento) => {
+        const fila = filaValida({
+          [COL.DEPARTAMENTO]: departamento,
+          [COL.PUESTO]: 'Operador'
         })
-        expect(areasDesdeDepartamento(obra, 'administrativo')).toEqual({
-          areas: ['administracion'],
-          esArea: false
-        })
-
-        const fila = filaValida({ [COL.DEPARTAMENTO]: obra, [COL.PUESTO]: 'Operador' })
-        expect(fila.adscripcion.departamento).toBe(obra)
-        expect(fila.adscripcion.areas).toEqual(['obra'])
-        expect(fila.avisos.join(' ')).toContain('parece una obra')
+        expect(fila.adscripcion.departamento).toBe(departamento)
+        expect(fila.departamento).toBe(departamento)
+        expect(fila.adscripcion.areas).toEqual([])
         expect(fila.errores).toEqual([])
       }
     )
 
-    it('un administrativo siempre sale con un área, que su adscripción exige', () => {
+    it('sin departamento, tampoco inventa un área', () => {
       const fila = filaValida({ [COL.PUESTO]: 'Analista', [COL.DEPARTAMENTO]: null })
       expect(fila.persona.tipo).toBe('administrativo')
-      expect(fila.adscripcion.areas).toEqual(['administracion'])
+      expect(fila.adscripcion.departamento).toBeNull()
+      expect(fila.adscripcion.areas).toEqual([])
     })
   })
 

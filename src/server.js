@@ -4,6 +4,7 @@ const logger = require('./utils/logger')
 const { connect, disconnect } = require('./config/database')
 const { ensureBootstrapAdmin } = require('./services/bootstrapAdmin')
 const { ensureBaseChecklistTemplates } = require('./services/seedChecklistTemplates')
+const { ensureBaseAreas } = require('./services/seedAreas')
 const { advertirSiNoHayBucket } = require('./services/storageService')
 
 /**
@@ -31,6 +32,14 @@ async function iniciar() {
     logger.error('No se pudo crear el administrador inicial', {
       error: error.message
     })
+  }
+
+  // Catálogo de áreas: sin él no se puede adscribir a nadie (D-58). Idempotente,
+  // y sólo agrega las heredadas que de verdad tengan gente.
+  try {
+    await ensureBaseAreas()
+  } catch (error) {
+    logger.error('No se pudo sembrar el catálogo de áreas', { error: error.message })
   }
 
   // Plantillas base del checklist: sin ellas no se puede generar ningún

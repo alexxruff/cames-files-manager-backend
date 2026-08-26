@@ -52,8 +52,8 @@ describe('Alcance por empresa', () => {
     const b = await crearEmpresa({ nombre: 'Empresa B' })
 
     const compartida = await crearEmpleado({ nombre: 'Persona Compartida' })
-    await adscribir(a, compartida, { areas: ['obra'] })
-    await adscribir(b, compartida, { areas: ['proyectos'] })
+    await adscribir(a, compartida, { areas: ['operaciones_urbanizadora'] })
+    await adscribir(b, compartida, { areas: ['costos_y_presupuestos'] })
 
     const desdeA = await crearEmpleadoConSesion({ empresa: a })
     const desdeB = await crearEmpleadoConSesion({ empresa: b })
@@ -70,8 +70,8 @@ describe('Alcance por empresa', () => {
     const a = await crearEmpresa({ nombre: 'Empresa A' })
     const b = await crearEmpresa({ nombre: 'Empresa B' })
     const compartida = await crearEmpleado({ nombre: 'Persona Compartida' })
-    await adscribir(a, compartida, { areas: ['obra'] })
-    await adscribir(b, compartida, { areas: ['ventas'] })
+    await adscribir(a, compartida, { areas: ['operaciones_urbanizadora'] })
+    await adscribir(b, compartida, { areas: ['comercial'] })
 
     const { token } = await crearEmpleadoConSesion({ empresa: a })
     const res = await request(app).get(RUTA).set(auth(token))
@@ -81,7 +81,7 @@ describe('Alcance por empresa', () => {
 
     expect(renglon.adscripciones).toHaveLength(1)
     expect(renglon.adscripciones[0].empresaNombre).toBe('Empresa A')
-    expect(renglon.adscripciones[0].areas).toEqual(['obra'])
+    expect(renglon.adscripciones[0].areas).toEqual(['operaciones_urbanizadora'])
   })
 
   it('pedir el detalle de alguien de otra empresa responde 404, no 403', async () => {
@@ -150,13 +150,13 @@ describe('Alcance por empresa', () => {
       const { token } = await crearEmpleadoConSesion({
         nivelAcceso: 'jefe_area',
         empresa,
-        areas: ['obra']
+        areas: ['operaciones_urbanizadora']
       })
 
       const suArea = await crearEmpleado({ nombre: 'De Obra' })
-      await adscribir(empresa, suArea, { areas: ['obra'] })
+      await adscribir(empresa, suArea, { areas: ['operaciones_urbanizadora'] })
       const otraArea = await crearEmpleado({ nombre: 'De Ventas' })
-      await adscribir(empresa, otraArea, { areas: ['ventas'] })
+      await adscribir(empresa, otraArea, { areas: ['comercial'] })
 
       const res = await request(app).get(RUTA).set(auth(token))
       const nombres = res.body.data.empleados.map((e) => e.empleado.nombre)
@@ -173,7 +173,7 @@ describe('Alcance por empresa', () => {
         areas: []
       })
       const alguien = await crearEmpleado({ nombre: 'Alguien' })
-      await adscribir(empresa, alguien, { areas: ['obra'] })
+      await adscribir(empresa, alguien, { areas: ['operaciones_urbanizadora'] })
 
       const res = await request(app).get(RUTA).set(auth(token))
       expect(res.body.data.empleados).toEqual([])
@@ -189,7 +189,7 @@ describe('GET /empleados — filtros, orden y paginación', () => {
 
     for (const nombre of ['Bruno Vega', 'Ávila Rocío', 'Zulema Gómez']) {
       const persona = await crearEmpleado({ nombre })
-      await adscribir(empresa, persona, { areas: ['obra'] })
+      await adscribir(empresa, persona, { areas: ['operaciones_urbanizadora'] })
     }
     return { empresa, ...sesion }
   }

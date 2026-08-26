@@ -197,8 +197,15 @@ describe('POST /api/v1/empleados/importar', () => {
       const persona = await Employee.findOne({ nombre: /PERSONA0/ })
       const suya = await Affiliation.findOne({ empleadoId: persona._id })
       expect(suya.departamento).toBe('Axis Zapopan')
-      expect(suya.areas).toEqual(['obra'])
-      expect(res.body.data.nuevos[0].avisos.join(' ')).toContain('parece una obra')
+      /*
+       * Desde D-58 el departamento ES el área: se da de alta como TEMPORAL en
+       * vez de caer en un `obra` inventado que no decía nada del archivo.
+       */
+      expect(suya.areas).toEqual(['axis_zapopan'])
+      expect(res.body.data.nuevos[0].avisos.join(' ')).toContain('área TEMPORAL')
+      expect(res.body.data.areasNuevas).toEqual([
+        { nombre: 'Axis Zapopan', clave: 'axis_zapopan', filas: 1 }
+      ])
     })
 
     it('guarda la nómina pero NO la devuelve en ninguna respuesta', async () => {
@@ -427,7 +434,7 @@ describe('POST /api/v1/empleados/importar', () => {
         curp
       })
       await Employee.updateOne({ _id: yaExiste._id }, { $set: { rfc } })
-      await adscribir(otraEmpresa, yaExiste, { areas: ['obra'] })
+      await adscribir(otraEmpresa, yaExiste, { areas: ['operaciones_urbanizadora'] })
 
       const res = await importar(
         sesion.token,
@@ -838,7 +845,7 @@ describe('POST /api/v1/empleados/importar', () => {
       const { empresa, sesion } = await escenario()
       const otra = await crearEmpresa({ nombre: 'Otra Del Grupo' })
       await importar(sesion.token, await archivoCon('Alta'), { empresaId: empresa._id })
-      await adscribir(otra, await persona(), { areas: ['obra'] })
+      await adscribir(otra, await persona(), { areas: ['operaciones_urbanizadora'] })
 
       const res = await importar(sesion.token, await archivoCon('Baja'), {
         empresaId: empresa._id
@@ -926,7 +933,7 @@ describe('POST /api/v1/empleados/importar', () => {
       const otra = await crearEmpresa({ nombre: 'Otra Del Grupo' })
       await importar(sesion.token, await archivoCon('Alta'), { empresaId: empresa._id })
       const persona = await Employee.findOne({ nombre: /PERSONA PRUEBA/ })
-      await adscribir(otra, persona, { areas: ['obra'] })
+      await adscribir(otra, persona, { areas: ['operaciones_urbanizadora'] })
 
       const previa = await previsualizar(sesion.token, await archivoCon('Baja'), {
         empresaId: empresa._id
@@ -966,6 +973,7 @@ describe('POST /api/v1/empleados/importar', () => {
       expect(suyo.accion).toBe('sin_cambios')
       expect(suyo.cambios).toEqual([])
       expect(suyo.avisos).toEqual([])
+      expect(suyo.conflictos).toEqual([])
     })
   })
 
@@ -1135,6 +1143,173 @@ describe('POST /api/v1/empleados/importar', () => {
 
       expect(res.status).toBe(400)
       expect(res.body.errors[0].msg).toContain('forzarArchivoPara')
+    })
+  })
+
+  /*
+   * La columna `Departamento` ES el área (D-58). Lo que no coincide con el
+   * catálogo entra como área TEMPORAL en vez de caer en un `obra` inventado.
+   */
+  describe('el Departamento como área (D-58)', () => {
+    const Area = require('../../src/api/v1/areas/areaModel')
+
+    const archivoCon = (departamento, indice = 0) =>
+      construirArchivo({
+        filas: [
+          fila({
+            id: String(1000 + indice),
+            nombre: 'PERSONA',
+            primerApellido: 'PRUEBA',
+            ...identidad(indice),
+            departamento
+          })
+        ]
+      })
+
+    it('una obra entra como área temporal, y se avisa', async () => {
+      const { empresa, sesion } = await escenario()
+
+      const res = await importar(sesion.token, await archivoCon('Axis Zapopan'), {
+        empresaId: empresa._id
+      })
+
+      expect(res.status).toBe(201)
+      const area = await Area.findOne({ clave: 'axis_zapopan' })
+      expect(area).toMatchObject({ nombre: 'Axis Zapopan', temporal: true, activa: true })
+      expect(area.esBase).toBe(false)
+
+      expect(res.body.data.areasNuevas).toEqual([
+        { nombre: 'Axis Zapopan', clave: 'axis_zapopan', filas: 1 }
+      ])
+      expect(res.body.data.nuevos[0].avisos.join(' ')).toContain('área TEMPORAL')
+      expect(res.body.data.avisos.join(' ')).toContain('área temporal (Axis Zapopan)')
+
+      const persona = await Employee.findOne({ nombre: /PERSONA PRUEBA/ })
+      const suya = await Affiliation.findOne({ empleadoId: persona._id })
+      expect(suya.areas).toEqual(['axis_zapopan'])
+      // El texto original se conserva, como siempre.
+      expect(suya.departamento).toBe('Axis Zapopan')
+    })
+
+    it('la previsualización la anuncia SIN crearla', async () => {
+      const { empresa, sesion } = await escenario()
+
+      const previa = await previsualizar(sesion.token, await archivoCon('Axis 3'), {
+        empresaId: empresa._id
+      })
+
+      expect(previa.body.data.areasNuevas).toEqual([
+        { nombre: 'Axis 3', clave: 'axis_3', filas: 1 }
+      ])
+      // Y no escribió nada: es la garantía de la previsualización (D-46).
+      expect(await Area.findOne({ clave: 'axis_3' })).toBeNull()
+    })
+
+    it('un departamento que SÍ es un área del catálogo la reutiliza, sin crear nada', async () => {
+      const { empresa, sesion } = await escenario()
+
+      const res = await importar(sesion.token, await archivoCon('Recursos Humanos'), {
+        empresaId: empresa._id
+      })
+
+      expect(res.body.data.areasNuevas).toEqual([])
+      const persona = await Employee.findOne({ nombre: /PERSONA PRUEBA/ })
+      const suya = await Affiliation.findOne({ empleadoId: persona._id })
+      expect(suya.areas).toEqual(['recursos_humanos'])
+      expect(await Area.countDocuments({ clave: 'recursos_humanos' })).toBe(1)
+    })
+
+    it('no la duplica al re-subir el mismo archivo', async () => {
+      const { empresa, sesion } = await escenario()
+      await importar(sesion.token, await archivoCon('Axis Zapopan'), {
+        empresaId: empresa._id
+      })
+
+      const segunda = await importar(sesion.token, await archivoCon('Axis Zapopan'), {
+        empresaId: empresa._id
+      })
+
+      expect(await Area.countDocuments({ clave: 'axis_zapopan' })).toBe(1)
+      expect(segunda.body.data.areasNuevas).toEqual([])
+      // Y no la vuelve a anunciar como nueva en cada renglón.
+      expect(segunda.body.data.yaExisten[0].avisos.join(' ')).not.toContain('TEMPORAL')
+    })
+
+    it('si el área estaba dada de baja y el archivo trae gente, se reactiva y se avisa', async () => {
+      const { empresa, sesion } = await escenario()
+      await Area.create({
+        clave: 'axis_zapopan',
+        nombre: 'Axis Zapopan',
+        temporal: true,
+        activa: false
+      })
+
+      const res = await importar(sesion.token, await archivoCon('Axis Zapopan'), {
+        empresaId: empresa._id
+      })
+
+      expect((await Area.findOne({ clave: 'axis_zapopan' })).activa).toBe(true)
+      expect(res.body.data.areasReactivadas).toEqual([
+        { nombre: 'Axis Zapopan', clave: 'axis_zapopan', filas: 1 }
+      ])
+      expect(res.body.data.nuevos[0].avisos.join(' ')).toContain('se reactivará')
+    })
+
+    it('una fila sin departamento queda sin área, y lo dice', async () => {
+      const { empresa, sesion } = await escenario()
+
+      const res = await importar(sesion.token, await archivoCon(null), {
+        empresaId: empresa._id
+      })
+
+      const persona = await Employee.findOne({ nombre: /PERSONA PRUEBA/ })
+      const suya = await Affiliation.findOne({ empleadoId: persona._id })
+      expect(suya.areas).toEqual([])
+      expect(suya.datosPendientes).toContain('areas')
+      expect(res.body.data.nuevos[0].avisos.join(' ')).toContain('sin área')
+    })
+
+    it('el archivo REASIGNA el área de quien ya existe: es lo que corrige las viejas', async () => {
+      const { empresa, sesion } = await escenario()
+      await importar(sesion.token, await archivoCon('Axis Zapopan'), {
+        empresaId: empresa._id
+      })
+
+      const res = await importar(sesion.token, await archivoCon('Recursos Humanos'), {
+        empresaId: empresa._id
+      })
+
+      expect(res.body.data.yaExisten[0].cambios).toContain('areas')
+      const persona = await Employee.findOne({ nombre: /PERSONA PRUEBA/ })
+      const suya = await Affiliation.findOne({ empleadoId: persona._id })
+      expect(suya.areas).toEqual(['recursos_humanos'])
+    })
+
+    it('pero NO pisa un área curada a mano: eso es conflicto (D-57)', async () => {
+      const { empresa, sesion } = await escenario()
+      await importar(sesion.token, await archivoCon('Axis Zapopan'), {
+        empresaId: empresa._id
+      })
+
+      const persona = await Employee.findOne({ nombre: /PERSONA PRUEBA/ })
+      const suya = await Affiliation.findOne({ empleadoId: persona._id })
+      await request(app)
+        .patch(`/api/v1/adscripciones/${suya._id}`)
+        .set(auth(sesion.token))
+        .send({ areas: ['operaciones_urbanizadora'] })
+
+      const res = await importar(sesion.token, await archivoCon('Axis Zapopan'), {
+        empresaId: empresa._id
+      })
+
+      expect(res.body.data.yaExisten[0].conflictos[0]).toMatchObject({
+        campo: 'areas',
+        enElArchivo: 'axis_zapopan',
+        enLaPlataforma: 'operaciones_urbanizadora'
+      })
+      expect((await Affiliation.findById(suya._id)).areas).toEqual([
+        'operaciones_urbanizadora'
+      ])
     })
   })
 

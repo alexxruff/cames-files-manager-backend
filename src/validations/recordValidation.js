@@ -1,5 +1,5 @@
 const { body, param, query } = require('express-validator')
-const { AREAS, DOCUMENT_TYPES, EMPLOYEE_TYPES, RECORD_STATUSES } = require('../constants')
+const { DOCUMENT_TYPES, EMPLOYEE_TYPES, RECORD_STATUSES } = require('../constants')
 const { isCalendarDate } = require('../utils/dates')
 
 exports.recordIdValidation = [
@@ -17,7 +17,10 @@ exports.listRecordsValidation = [
     .optional()
     .isMongoId()
     .withMessage('La empresa indicada no es válida'),
-  query('area').optional().isIn(AREAS).withMessage('Selecciona un área válida'),
+  query('area')
+    .optional()
+    .matches(/^[a-z0-9_]+$/)
+    .withMessage('Selecciona un área válida'),
   query('tipo').optional().isIn(EMPLOYEE_TYPES).withMessage('Selecciona un tipo válido'),
   query('estatus')
     .optional()

@@ -1,5 +1,5 @@
 const mongoose = require('mongoose')
-const { AREAS, CONTRACT_TYPES, isTemporaryContract } = require('../../../constants')
+const { CONTRACT_TYPES, isTemporaryContract } = require('../../../constants')
 const { isCalendarDate, isAfter } = require('../../../utils/dates')
 const { idAString } = require('../../../utils/ids')
 
@@ -46,9 +46,13 @@ const payrollSchema = new mongoose.Schema(
 
 /**
  * Datos que el importador dejó sin capturar y que relajan una invariante hasta
- * que alguien los complete. Hoy sólo uno: ver `datosPendientes` más abajo.
+ * que alguien los complete. Ver `datosPendientes` más abajo.
+ *
+ * `areas` se sumó en D-58: una fila sin `Departamento` ya no cae en un área
+ * inventada, se queda sin ninguna. Marcarlo es lo que permite listar después a
+ * quién hay que asignársela, en vez de que se pierda en silencio.
  */
-const DATOS_PENDIENTES = Object.freeze(['fechaTerminoContrato'])
+const DATOS_PENDIENTES = Object.freeze(['fechaTerminoContrato', 'areas'])
 
 /**
  * Adscripción: el vínculo empresa ↔ empleado (modelo-datos §5b.1).
@@ -75,7 +79,13 @@ const affiliationSchema = new mongoose.Schema(
 
     /** Áreas DENTRO de esta empresa. Un administrativo necesita al menos una. */
     areas: {
-      type: [{ type: String, enum: { values: AREAS, message: 'Área no válida' } }],
+      /*
+       * Sin `enum` desde D-58: las áreas son un catálogo (`areas`) y no una lista
+       * fija. Que existan y estén activas lo valida `areaService.assertUsables`
+       * en los servicios, que es donde se puede consultar la base y dar un
+       * mensaje útil. Aquí sólo se guarda la clave.
+       */
+      type: [{ type: String, trim: true }],
       default: []
     },
 
@@ -139,6 +149,7 @@ const affiliationSchema = new mongoose.Schema(
           active: { type: Boolean, default: null },
           contractType: { type: String, default: null },
           hireDate: { type: String, default: null },
+          areas: { type: [String], default: null },
           importedAt: { type: Date, default: null }
         },
         { _id: false }
@@ -266,6 +277,11 @@ affiliationSchema.pre('validate', function forzarInvariantes(next) {
     this.datosPendientes = this.datosPendientes.filter(
       (dato) => dato !== 'fechaTerminoContrato'
     )
+  }
+
+  // Igual con el área: en cuanto tiene una, deja de estar pendiente.
+  if ((this.areas || []).length > 0 && (this.datosPendientes || []).includes('areas')) {
+    this.datosPendientes = this.datosPendientes.filter((dato) => dato !== 'areas')
   }
 
   if (!this.activo && !this.motivoBaja) {

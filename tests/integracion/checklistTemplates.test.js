@@ -79,7 +79,7 @@ describe('Plantillas base del checklist — spec 6.5', () => {
       expect(porTipo.referencias_laborales.requerido).toBe(false)
       expect(porTipo.cv.requerido).toBe(false)
       expect(porTipo.ine.requerido).toBe(true)
-      expect(obra.areas).toEqual(['obra', 'mantenimiento'])
+      expect(obra.areas).toEqual(['operaciones_urbanizadora', 'operaciones_maquinaria'])
     })
   })
 
@@ -148,29 +148,31 @@ describe('Plantillas base del checklist — spec 6.5', () => {
       resolveTemplate(plantillas, { areas: [area], tipoContrato }).clave
 
     it('obra con indeterminado usa la de obra, no la general', () => {
-      expect(clave('obra', 'indeterminado')).toBe('plantilla-obra')
-      expect(clave('mantenimiento', 'indeterminado')).toBe('plantilla-obra')
+      expect(clave('operaciones_urbanizadora', 'indeterminado')).toBe('plantilla-obra')
+      expect(clave('operaciones_maquinaria', 'indeterminado')).toBe('plantilla-obra')
     })
 
     it('otras áreas con indeterminado usan la general', () => {
-      expect(clave('ventas', 'indeterminado')).toBe('plantilla-general')
+      expect(clave('comercial', 'indeterminado')).toBe('plantilla-general')
       expect(clave('contabilidad', 'indeterminado')).toBe('plantilla-general')
     })
 
     it('los temporales usan la temporal, salvo en obra', () => {
-      expect(clave('ventas', 'determinado')).toBe('plantilla-temporal')
-      expect(clave('proyectos', 'obra_determinada')).toBe('plantilla-temporal')
-      expect(clave('obra', 'determinado')).toBe('plantilla-obra')
+      expect(clave('comercial', 'determinado')).toBe('plantilla-temporal')
+      expect(clave('costos_y_presupuestos', 'obra_determinada')).toBe(
+        'plantilla-temporal'
+      )
+      expect(clave('operaciones_urbanizadora', 'determinado')).toBe('plantilla-obra')
     })
 
     it('el periodo a prueba tiene la suya en cualquier área', () => {
-      expect(clave('obra', 'prueba')).toBe('plantilla-prueba')
-      expect(clave('ventas', 'prueba')).toBe('plantilla-prueba')
+      expect(clave('operaciones_urbanizadora', 'prueba')).toBe('plantilla-prueba')
+      expect(clave('comercial', 'prueba')).toBe('plantilla-prueba')
     })
 
     it('genera un checklist completo y en blanco a partir de la plantilla resuelta', () => {
       const plantilla = resolveTemplate(plantillas, {
-        areas: ['obra'],
+        areas: ['operaciones_urbanizadora'],
         tipoContrato: 'indeterminado'
       })
       const documentos = createChecklist(plantilla)

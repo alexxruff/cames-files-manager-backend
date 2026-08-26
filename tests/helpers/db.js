@@ -1,6 +1,7 @@
 const mongoose = require('mongoose')
 const { MongoMemoryReplSet } = require('mongodb-memory-server')
 const { connect, disconnect } = require('../../src/config/database')
+const { ensureBaseAreas } = require('../../src/services/seedAreas')
 
 /**
  * Base de datos en memoria para las pruebas, como REPLICA SET de un nodo.
@@ -22,6 +23,19 @@ beforeAll(async () => {
     replSet: { count: 1, storageEngine: 'wiredTiger' }
   })
   await connect({ uri: memoria.getUri(), dbName: 'cames_expedientes_test' })
+})
+
+/**
+ * El catálogo de áreas se siembra ANTES de cada prueba, igual que en el arranque
+ * real (D-58).
+ *
+ * Desde que las áreas son una colección y no un enum, adscribir a alguien exige
+ * que su área exista: sin esto, cualquier prueba que cree una adscripción
+ * fallaría con «Áreas no válidas». Va en `beforeEach` y no en `beforeAll` porque
+ * el `afterEach` vacía todas las colecciones.
+ */
+beforeEach(async () => {
+  await ensureBaseAreas()
 })
 
 afterEach(async () => {

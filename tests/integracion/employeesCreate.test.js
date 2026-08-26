@@ -26,7 +26,7 @@ const cuerpo = ({ empresaId, categoriaId, ...extra }) => ({
   numeroEmpleado: siguienteNumero(),
   adscripcion: {
     empresaId,
-    areas: ['obra'],
+    areas: ['operaciones_urbanizadora'],
     tipoContrato: 'obra_determinada',
     fechaIngreso: '2026-09-01',
     fechaTerminoContrato: '2027-03-01'
@@ -69,7 +69,7 @@ describe('POST /api/v1/empleados — el alta', () => {
     expect(renglon.adscripciones[0]).toMatchObject({
       empresaId: empresa._id.toString(),
       empresaNombre: empresa.nombre,
-      areas: ['obra'],
+      areas: ['operaciones_urbanizadora'],
       tipoContrato: 'obra_determinada',
       fechaIngreso: '2026-09-01',
       activo: true
@@ -123,7 +123,7 @@ describe('POST /api/v1/empleados — el alta', () => {
       for (const datos of [
         { nivelAcceso: 'rh_admin' },
         { nivelAcceso: 'rh_consulta' },
-        { nivelAcceso: 'jefe_area', areas: ['obra'] }
+        { nivelAcceso: 'jefe_area', areas: ['operaciones_urbanizadora'] }
       ]) {
         const { token, empresa, categoria } = await escenario(datos)
         const res = await request(app)
@@ -144,7 +144,7 @@ describe('POST /api/v1/empleados — el alta', () => {
     it('403 si rh_consulta o jefe_area piden tipo administrativo', async () => {
       for (const datos of [
         { nivelAcceso: 'rh_consulta' },
-        { nivelAcceso: 'jefe_area', areas: ['obra'] }
+        { nivelAcceso: 'jefe_area', areas: ['operaciones_urbanizadora'] }
       ]) {
         const { token, empresa, categoria } = await escenario(datos, 'administrativo')
         const res = await request(app)
@@ -186,7 +186,7 @@ describe('POST /api/v1/empleados — el alta', () => {
             tipo: 'administrativo',
             adscripcion: {
               empresaId: empresa._id.toString(),
-              areas: ['administracion'],
+              areas: ['finanzas'],
               tipoContrato: 'indeterminado',
               fechaIngreso: '2026-09-01'
             }
@@ -341,7 +341,7 @@ describe('POST /api/v1/empleados — el alta', () => {
             categoriaId: categoria._id.toString(),
             adscripcion: {
               empresaId: empresa._id.toString(),
-              areas: ['obra'],
+              areas: ['operaciones_urbanizadora'],
               tipoContrato: 'obra_determinada',
               fechaIngreso: '2026-09-01',
               fechaTerminoContrato: '2026-08-01'
@@ -359,7 +359,7 @@ describe('POST /api/v1/empleados — el alta', () => {
     it('403 si pide un área que no es suya', async () => {
       const { token, empresa, categoria } = await escenario({
         nivelAcceso: 'jefe_area',
-        areas: ['obra']
+        areas: ['operaciones_urbanizadora']
       })
 
       const res = await request(app)
@@ -371,7 +371,7 @@ describe('POST /api/v1/empleados — el alta', () => {
             categoriaId: categoria._id.toString(),
             adscripcion: {
               empresaId: empresa._id.toString(),
-              areas: ['ventas'],
+              areas: ['comercial'],
               tipoContrato: 'indeterminado',
               fechaIngreso: '2026-09-01'
             }
@@ -379,13 +379,13 @@ describe('POST /api/v1/empleados — el alta', () => {
         )
 
       expect(res.status).toBe(403)
-      expect(res.body.message).toMatch(/tus áreas: obra/i)
+      expect(res.body.message).toMatch(/tus áreas: operaciones_urbanizadora/i)
     })
 
     it('400 si no indica ninguna: crearía a alguien que no podría ver', async () => {
       const { token, empresa, categoria } = await escenario({
         nivelAcceso: 'jefe_area',
-        areas: ['obra']
+        areas: ['operaciones_urbanizadora']
       })
 
       const res = await request(app)
@@ -411,7 +411,7 @@ describe('POST /api/v1/empleados — el alta', () => {
     it('y lo que crea en su área sí lo ve después', async () => {
       const { token, empresa, categoria } = await escenario({
         nivelAcceso: 'jefe_area',
-        areas: ['obra']
+        areas: ['operaciones_urbanizadora']
       })
 
       await request(app)

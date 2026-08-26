@@ -230,6 +230,40 @@ La previsualización ya trae `empresa.rfcCoincide`, así que se puede avisar ant
 
 ---
 
+## La columna `Departamento` es el área (D-58)
+
+Antes se traducía con un mapa fijo del backend, y lo que no estaba en el mapa
+caía a un área inventada (`obra` / `administracion`). Ahora **cada departamento
+es un área del catálogo**:
+
+- Si coincide con una del catálogo (por nombre o por clave), se usa esa.
+- Si no, **se da de alta como área TEMPORAL** — casi siempre una obra. Sale en
+  `areasNuevas`, y en los `avisos` de la fila la primera vez.
+- Si existe pero está **dada de baja**, se reactiva y se avisa: el archivo dice
+  que hay gente ahí otra vez. Sale en `areasReactivadas`.
+- **Sin departamento**, la persona queda **sin área** y con `'areas'` en
+  `datosPendientes`. Antes se le inventaba una.
+
+```jsonc
+"areasNuevas": [{ "nombre": "Axis Zapopan", "clave": "axis_zapopan", "filas": 12 }],
+"areasReactivadas": [],
+"avisos": ["El archivo usa 3 áreas temporales (Axis Zapopan, Axis 3, Plenares): dales de baja cuando la obra termine."]
+```
+
+Igual que `categoriasNuevas`: en la **previsualización** son las que se van a
+crear —sin crearlas—, y al aplicar las que se crearon de verdad.
+
+El aviso por renglón sale sólo la primera vez, cuando el área se crea. Repetirlo
+en cada importación serían 145 avisos al mes que nadie lee; para eso está el
+aviso general y `GET /areas?temporal=true`.
+
+RH da de baja las temporales cuando la obra termina, desde `/areas` (ver
+`ENDPOINTS-AREAS.md`). No hace falta ser administrador de plataforma.
+
+**El archivo reasigna el área**, ya no sólo la rellena: es lo que corrige a quien
+quedó con un área del modelo anterior. Pero si alguien la curó a mano, es
+**conflicto** y no se pisa — ver abajo.
+
 ## El archivo contra lo que se corrigió a mano (D-57)
 
 Es lo que hace útil re-subir el archivo cada mes: no sólo trae a los que faltan,
@@ -242,8 +276,8 @@ Cada importación deja registrado qué dijo el archivo. Al subir el siguiente se
 comparan tres valores: lo que dijo el archivo anterior, lo que hay hoy en la
 plataforma y lo que trae el archivo nuevo.
 
-| Archivo anterior | Plataforma | Archivo nuevo | Resultado                        |
-| ---------------- | ---------- | ------------- | -------------------------------- |
+| Archivo anterior | Plataforma | Archivo nuevo | Resultado                           |
+| ---------------- | ---------- | ------------- | ----------------------------------- |
 | `Alta`           | `Alta`     | `Baja`        | novedad del archivo → **se aplica** |
 | `Alta`           | `Baja`     | `Alta`        | lo cambiaron a mano → **conflicto** |
 
@@ -254,7 +288,7 @@ Cada renglón de `yaExisten` trae `conflictos: []`, y cuando hay algo:
 ```jsonc
 "conflictos": [
   {
-    "campo": "estatus",                    // estatus | tipoContrato | fechaIngreso
+    "campo": "estatus",                    // estatus | tipoContrato | fechaIngreso | areas
     "enElArchivo": "alta",
     "enLaPlataforma": "baja",
     "enLaImportacionAnterior": "alta",
@@ -302,10 +336,9 @@ No son conflictos y no piden decisión: son informativos.
 
 ### Sólo tres campos pueden entrar en conflicto
 
-`estatus`, `tipoContrato` y `fechaIngreso`. Son los únicos que el importador
-escribe **y** se pueden cambiar a mano. `departamento` y `nomina` sólo los
-escribe el importador, `areas` sólo se rellena si está vacía, y los datos de la
-persona nunca se pisan.
+`estatus`, `tipoContrato`, `fechaIngreso` y `areas` (D-58). Son los únicos que
+el importador escribe **y** se pueden cambiar a mano. `departamento` y `nomina`
+sólo los escribe el importador, y los datos de la persona nunca se pisan.
 
 ### En adscripciones viejas empieza a funcionar en la segunda subida
 

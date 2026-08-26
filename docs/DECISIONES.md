@@ -2106,3 +2106,119 @@ que no detectarlo.
    sin adscripción activa y D-55 le daba de baja del sistema, tomando justo la
    decisión que se acababa de dejar en manos del usuario. Ahora, si el estatus no
    se aplica, el renglón no decide nada sobre la persona.
+
+## D-58 · Las áreas son un catálogo administrable, no un enum del código
+
+**Decisión.** `AREAS` deja de ser una lista fija en `constants/areas.js` y pasa a
+la colección **`areas`**, con su recurso `/areas`. El catálogo arranca con nueve
+áreas base, el archivo de nómina da de alta las que no conoce como **temporales**,
+y se dan de baja sin borrarlas.
+
+### El problema
+
+La columna `Departamento` del archivo no trae áreas de la organización: 53 de las
+145 filas de Urbacames traen una **obra** (`Axis Zapopan`, `Axis 3`, `Plenares`).
+El importador las traducía con un mapa fijo escrito en el código, y lo que no
+estaba en el mapa caía a un área por defecto inventada (`obra` para el personal de
+campo, `administracion` para el resto) que no decía nada del archivo: todas las
+obras acababan en la misma área.
+
+Agregar un área —o una obra nueva— exigía editar el código y desplegar. Eso no es
+un catálogo, es una constante.
+
+### Las nueve base
+
+`Dirección`, `Recursos Humanos (RH)`, `Finanzas`, `Operaciones (Maquinaria)`,
+`Operaciones (Urbanizadora)`, `Costos y Presupuestos`, `Comercial`, `Tesorería`,
+`Contabilidad`. Las dio Urbacames. No se pueden dar de baja: son el esqueleto.
+
+### `clave` y `nombre` son cosas distintas
+
+`clave` es el valor del **contrato** —lo que se guarda en `adscripciones.areas`,
+lo que viaja en `req.areasPorEmpresa` y lo que compara el front— y es
+**inmutable**: cambiarla dejaría huérfana a cada adscripción que la guarda.
+`nombre` es lo que se muestra y sí se corrige.
+
+Las claves de las base van escritas a mano y no derivadas del nombre, porque
+tienen que coincidir con lo que ya está guardado: `Recursos Humanos (RH)` tiene
+que seguir siendo `recursos_humanos`. Las demás sí se derivan (`Axis Zapopan` →
+`axis_zapopan`).
+
+### Áreas temporales
+
+Un `Departamento` que no coincide con ninguna área del catálogo **se da de alta
+como temporal**, y la fila lo avisa. Es el mismo trato que ya reciben los puestos
+(D-46): el dato viene del archivo, no es una decisión de catálogo, y rechazar la
+fila por un departamento nuevo dejaría la importación inservible.
+
+El aviso por renglón sale **sólo la primera vez**, cuando el área se crea.
+Repetir «es un área temporal» en cada renglón y en cada importación serían 145
+avisos al mes que nadie lee; para eso está el aviso general del archivo («usa 3
+áreas temporales: …») y `GET /areas?temporal=true`.
+
+**Quién las cierra: RH.** `rh_admin` y `rh_consulta` pueden dar de baja las
+temporales sin ser administradores de plataforma, porque quien sabe que la obra
+terminó son ellos. No alcanza para tocar el resto del catálogo, que sigue siendo
+del administrador de plataforma como las empresas y las categorías.
+
+### Dar de baja no es borrar, y no se hace con gente dentro
+
+El área conserva su registro y se puede reactivar; sólo deja de ofrecerse. Y **no
+se da de baja un área que alguien tiene asignada**: responde `400` diciendo
+cuántas personas la tienen. Mismo candado que las categorías (D-32) y por la
+misma razón: sin él, un jefe de área dejaría de ver a su gente sin que nadie se
+enterara.
+
+Si el archivo trae gente en un área **dada de baja**, se **reactiva** y se avisa:
+RH la cerró porque la obra terminó y el archivo dice que hay gente ahí otra vez.
+Dejarla cerrada habría dejado a esas personas en un área que ningún desplegable
+ofrece.
+
+### Las áreas del modelo anterior no se mapean a mano
+
+`obra`, `administracion`, `proyectos`, `compras`, `ventas` y `mantenimiento` no
+están en la lista nueva, y hay gente con ellas. **Las corrige el archivo** al
+re-importar la nómina (decisión del cliente): la columna `Departamento` reasigna
+a cada persona.
+
+Mientras tanto entran al catálogo como NO base y **activas** —sólo las que de
+verdad tengan gente—, para que nadie pierda su área ni un jefe de área deje de ver
+a los suyos. Cuando el archivo las deje sin nadie, RH las da de baja. Se descartó
+sembrarlas ya dadas de baja: habría dejado a esa gente sin área visible desde el
+primer arranque, antes de que nadie pudiera subir el archivo.
+
+### `areas` pasa a ser un campo donde manda el archivo
+
+Antes el importador **sólo rellenaba** las áreas vacías («una curada a mano vale
+más que una deducida»). Eso ya no sirve: si el archivo no puede reasignar, no
+puede corregir las áreas del modelo anterior, que es justo lo que se le pidió.
+
+Ahora las escribe, pero pasa por el candado de D-57: si alguien curó el área a
+mano, es **conflicto** y no se pisa hasta que se pida con `forzarArchivoPara`. Las
+dos cosas a la vez — el archivo corrige, la captura manual se respeta.
+
+### Una fila sin `Departamento` se queda sin área
+
+Antes se le inventaba una. Ahora se queda sin ninguna y se marca en
+`datosPendientes: ['areas']`, que es lo que permite listar después a quién hay que
+asignársela. `datosPendientes` ya existía para la fecha de término (D-46) y hace
+exactamente esto: relajar una invariante dejando el pendiente a la vista.
+
+### La validación se movió de las rutas al servicio
+
+`isIn(AREAS)` no puede consultar la base. Las rutas validan sólo el **formato** de
+la clave y `areaService` valida contra el catálogo, que es donde se puede dar un
+mensaje útil («Estas áreas están dadas de baja: Axis 3») y distinguir «no existe»
+de «está de baja».
+
+Con una diferencia deliberada entre guardar y filtrar: **guardar** exige un área
+activa; **filtrar** (`?area=`) admite también las dadas de baja, porque a esas
+todavía hay gente asignada y es justo a quien hay que encontrar para reasignar.
+
+### Migrar
+
+`npm run migrate:areas` (con `--dry-run`). Siembra el catálogo, registra cualquier
+área en uso que no conozca ninguna de las dos listas —para que ninguna adscripción
+apunte a un área inexistente, que a partir de aquí impediría editarla— y reporta
+cuánta gente tiene cada área fuera de las base. **No reasigna a nadie.** Después,
+`npm run db:indices`: la colección estrena dos índices únicos.

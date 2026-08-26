@@ -3,6 +3,7 @@ const Affiliation = require('./affiliationModel')
 const Employee = require('../employees/employeeModel')
 const Company = require('../companies/companyModel')
 const Assignment = require('../assignments/assignmentModel')
+const areaService = require('../areas/areaService')
 const Project = require('../projects/projectModel')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { today } = require('../../../utils/dates')
@@ -28,6 +29,7 @@ class AffiliationService {
     contexto = {}
   ) {
     await this.#assertEmpresaVisible(empresaId, contexto)
+    if (area) await areaService.assertExiste(area, 'area')
 
     const filtro = { empresaId: new mongoose.Types.ObjectId(empresaId) }
     // Tres estados excluyentes (D-51): `'true'` (default) sólo activas, `'false'`
@@ -99,6 +101,7 @@ class AffiliationService {
     }
 
     this.#validarAreas(datos.areas, empleado.tipo)
+    await this.#assertAreasDelCatalogo(datos.areas)
 
     const existente = await Affiliation.findOne({ empresaId, empleadoId: empleado._id })
     if (existente && existente.activo) {
@@ -147,6 +150,9 @@ class AffiliationService {
 
     const areasNuevas = datos.areas === undefined ? adscripcion.areas : datos.areas
     this.#validarAreas(areasNuevas, empleado.tipo)
+    // Sólo lo que llega nuevo: una adscripción vieja puede conservar un área que
+    // ya se dio de baja, y editar su fecha de ingreso no debería fallar por eso.
+    if (datos.areas !== undefined) await this.#assertAreasDelCatalogo(datos.areas)
 
     /*
      * Capturar aquí la fecha de término que el importador dejó pendiente la saca
@@ -230,6 +236,11 @@ class AffiliationService {
   async #resincronizarExpediente(empleadoId) {
     const recordService = require('../records/recordService')
     await recordService.sincronizar(empleadoId)
+  }
+
+  /** Que las áreas existan y estén activas en el catálogo (D-58). */
+  async #assertAreasDelCatalogo(areas) {
+    await areaService.assertUsables(areas, 'areas')
   }
 
   /** Un administrativo necesita al menos un área (modelo-datos §5b.1). */

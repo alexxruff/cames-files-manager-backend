@@ -2,6 +2,7 @@ const mongoose = require('mongoose')
 const Employee = require('./employeeModel')
 const Affiliation = require('../affiliations/affiliationModel')
 const categoryService = require('../categories/categoryService')
+const areaService = require('../areas/areaService')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { normalize, escapeRegex } = require('../../../utils/text')
 const { today } = require('../../../utils/dates')
@@ -81,6 +82,10 @@ class EmployeeService {
       filtros.limitePorPagina || POR_PAGINA_MAXIMO,
       Math.max(1, Number(filtros.porPagina) || POR_PAGINA_DEFECTO)
     )
+
+    // Un área inexistente en el filtro es un 400 con mensaje, no una lista
+    // vacía sin explicación (D-58). Las dadas de baja SÍ se pueden filtrar.
+    if (area) await areaService.assertExiste(area, 'area')
 
     const { empresasVisibles = null } = contexto
 
@@ -560,6 +565,9 @@ class EmployeeService {
     }
 
     const areas = adscripcion.areas || []
+
+    // Que existan y estén activas en el catálogo (D-58).
+    await areaService.assertUsables(areas, 'adscripcion.areas')
 
     // Un administrativo necesita al menos un área (modelo-datos §5b.1).
     if (tipoEmpleado === 'administrativo' && areas.length === 0) {

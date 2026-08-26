@@ -350,10 +350,10 @@ describe('Permisos de la administración de accesos', () => {
     for (const nivel of ['rh_consulta', 'jefe_area']) {
       const { empresa, token } = await crearEmpleadoConSesion({
         nivelAcceso: nivel,
-        areas: ['obra']
+        areas: ['operaciones_urbanizadora']
       })
       const persona = await crearEmpleado()
-      await adscribir(empresa, persona, { areas: ['obra'] })
+      await adscribir(empresa, persona, { areas: ['operaciones_urbanizadora'] })
 
       const res = await request(app)
         .post(`/api/v1/empleados/${persona._id}/acceso`)

@@ -34,7 +34,7 @@ describe('GET /api/v1/expedientes', () => {
       tipo: 'mano_de_obra',
       categoriaId: categoria._id
     })
-    await adscribir(sesion.empresa, persona, { areas: ['obra'] })
+    await adscribir(sesion.empresa, persona, { areas: ['operaciones_urbanizadora'] })
     // El expediente nace al consultarlo la primera vez; aquí se fuerza para
     // que ya exista cuando se pida el listado.
     await request(app)
@@ -62,7 +62,7 @@ describe('GET /api/v1/expedientes', () => {
       tipo: 'mano_de_obra',
       categoriaId: categoria._id
     })
-    await adscribir(ajena.empresa, personaAjena, { areas: ['obra'] })
+    await adscribir(ajena.empresa, personaAjena, { areas: ['operaciones_urbanizadora'] })
     await request(app)
       .get(`/api/v1/empleados/${personaAjena._id}/expediente`)
       .set(auth(ajena.token))
@@ -80,7 +80,7 @@ describe('GET /api/v1/expedientes', () => {
       tipo: 'mano_de_obra',
       categoriaId: categoria._id
     })
-    await adscribir(sesion.empresa, persona, { areas: ['obra'] })
+    await adscribir(sesion.empresa, persona, { areas: ['operaciones_urbanizadora'] })
     await request(app)
       .get(`/api/v1/empleados/${persona._id}/expediente`)
       .set(auth(sesion.token))
@@ -100,7 +100,7 @@ describe('GET /api/v1/expedientes', () => {
       tipo: 'mano_de_obra',
       categoriaId: categoria._id
     })
-    await adscribir(sesion.empresa, persona, { areas: ['obra'] })
+    await adscribir(sesion.empresa, persona, { areas: ['operaciones_urbanizadora'] })
     await request(app)
       .get(`/api/v1/empleados/${persona._id}/expediente`)
       .set(auth(sesion.token))
@@ -145,7 +145,7 @@ describe('GET /api/v1/expedientes', () => {
         tipo: 'mano_de_obra',
         categoriaId: categoria._id
       })
-      await adscribir(sesion.empresa, persona, { areas: ['obra'] })
+      await adscribir(sesion.empresa, persona, { areas: ['operaciones_urbanizadora'] })
       await request(app)
         .get(`/api/v1/empleados/${persona._id}/expediente`)
         .set(auth(sesion.token))
