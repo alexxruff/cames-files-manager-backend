@@ -117,10 +117,34 @@ recurso nuevo, modelado, pruebas, dominio de expedientes).
 
 ## Despliegue
 
+**En producción desde el 26 ago 2026**, en Fly.io: <https://cames-api.fly.dev>
+(app `cames-api`, región `dfw`), contra un Atlas M0 propio —proyecto
+`cames-prod`, us-east-1— y el bucket R2 `cames-files` en la carpeta
+`employes-files-prod`. El front vive aparte, en
+<https://cames-expedientes.fly.dev>, y es el único origen que acepta el CORS.
+
 `Dockerfile` listo (`node:20-alpine`, dependencias de producción, usuario sin
 privilegios). El contenedor lee la configuración del entorno y escribe los logs
-en stdout como JSON. Tras un despliegue que cambie índices:
-`npm run db:indices`.
+en stdout como JSON. `fly.toml` trae lo no sensible; lo demás son `fly secrets`:
+`MONGODB_URI`, `JWT_SECRET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` y los
+tres `BOOTSTRAP_ADMIN_*`.
+
+```bash
+export FLY_API_TOKEN="$(cat ~/.config/urbacames/fly-token)"   # cuenta del cliente
+fly deploy --ha=false
+```
+
+**Después de un despliegue que cambie índices**, `autoIndex` está apagado en
+producción, así que hay que sincronizarlos a mano —de ellos depende que
+`numeroEmpleado` sea único—:
+
+```bash
+fly ssh console -a cames-api -C "node scripts/syncIndexes.js"
+```
+
+`BOOTSTRAP_ADMIN_ENABLED` quedó en `false`: el administrador inicial ya existe.
+Encenderlo sólo tiene sentido si se vacía la base, y hay que volver a apagarlo
+enseguida.
 
 Checks para el balanceador: `GET /api/v1/health` (liveness) y
-`GET /api/v1/ready` (readiness, verifica la base).
+`GET /api/v1/ready` (readiness, verifica la base). Es el que usa Fly.

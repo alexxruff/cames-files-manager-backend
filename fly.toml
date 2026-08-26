@@ -1,0 +1,50 @@
+# API de expedientes. La configuración entera viaja por entorno: lo sensible
+# como `fly secrets set`, nunca en este archivo ni en la imagen.
+app = 'cames-api'
+# Dallas: es lo más cercano a México que ofrece esta cuenta.
+primary_region = 'dfw'
+
+[env]
+  NODE_ENV = 'production'
+  PORT = '8080'
+  # En contenedor los logs van a stdout; Fly los recoge de ahí.
+  LOG_TO_FILE = 'false'
+  MONGODB_DB_NAME = 'cames_expedientes'
+  TIMEZONE = 'America/Mexico_City'
+  # El administrador inicial ya se creó en el primer arranque (26 ago 2026).
+  # Apagado desde entonces: sólo actuaría con la colección vacía, pero dejarlo
+  # encendido significa que vaciar la base recrearía una cuenta con la
+  # contraseña de arranque.
+  BOOTSTRAP_ADMIN_ENABLED = 'false'
+  # Sólo el front desplegado. Lo de localhost se queda fuera a propósito: esto
+  # es producción.
+  CORS_ORIGINS = 'https://cames-expedientes.fly.dev'
+  # R2: el id de cuenta, el bucket y la carpeta no son secretos —viven en el
+  # .env.example del repo—; las llaves sí, y van por `fly secrets`.
+  R2_ACCOUNT_ID = 'e1be93af73f5b4aeb190aa2d40a74a86'
+  R2_BUCKET = 'cames-files'
+  # Carpeta aparte de la de desarrollo, para no revolver documentos de prueba
+  # con expedientes reales.
+  R2_PREFIX = 'employes-files-prod'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Suspender, no apagar: la primera petición tras un rato despierta la máquina
+  # y reconecta a Mongo sola. Es un panel interno, no un servicio con tráfico
+  # constante.
+  auto_stop_machines = 'suspend'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+  [[http_service.checks]]
+    # `ready` comprueba la base; `health` sólo diría que el proceso vive.
+    path = '/api/v1/ready'
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'
