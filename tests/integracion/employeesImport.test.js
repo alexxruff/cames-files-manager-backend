@@ -663,6 +663,76 @@ describe('POST /api/v1/empleados/importar', () => {
     })
   })
 
+  /*
+   * Desde D-54 el número es de la PERSONA y único en todo el grupo, así que deja
+   * de ser una llave "dentro de esta empresa": reconoce entre empresas, y puede
+   * chocar con alguien de otra.
+   */
+  describe('el número de trabajador entre empresas (D-54)', () => {
+    it('reconoce por número a quien ya se importó en otra empresa', async () => {
+      const { empresa, sesion } = await escenario()
+      const otraEmpresa = await crearEmpresa({ nombre: 'Otra Del Grupo' })
+      // Existe ya, con número, pero sin la CURP de la fila: la única llave que
+      // queda es el número.
+      const yaExiste = await crearEmpleado({
+        nombre: 'YA EXISTE EN EL GRUPO',
+        numeroEmpleado: '1000'
+      })
+      await adscribir(otraEmpresa, yaExiste)
+
+      const archivo = await construirArchivo({ filas: filas(1) })
+      const res = await importar(sesion.token, archivo, { empresaId: empresa._id })
+
+      expect(res.status).toBe(201)
+      // No se creó a nadie: se le adscribió a la empresa nueva.
+      expect(res.body.data.resumen).toMatchObject({ nuevos: 0, seAdscriben: 1 })
+      expect(res.body.data.yaExisten[0].avisos.join(' ')).toContain(
+        'número de trabajador'
+      )
+      expect(await Affiliation.countDocuments({ empleadoId: yaExiste._id })).toBe(2)
+    })
+
+    it('rechaza la fila cuyo número ya es de otra persona, sin tumbar las demás', async () => {
+      const { empresa, sesion } = await escenario()
+      const { curp, rfc } = identidad(0)
+
+      // Esta persona ES la de la fila (misma CURP), pero el número '1000' lo
+      // tiene un tercero: importarla reventaría el índice único.
+      const laDeLaFila = await crearEmpleado({ nombre: 'LA DE LA FILA', curp, rfc })
+      await adscribir(empresa, laDeLaFila)
+      const tercero = await crearEmpleado({
+        nombre: 'EL DEL NUMERO',
+        numeroEmpleado: '1000'
+      })
+      await adscribir(empresa, tercero)
+
+      const archivo = await construirArchivo({ filas: filas(2) })
+      const res = await importar(sesion.token, archivo, { empresaId: empresa._id })
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.resumen).toMatchObject({ conError: 1, nuevos: 1 })
+      expect(res.body.data.conError[0].motivo).toContain('EL DEL NUMERO')
+      // La otra fila sí entró.
+      expect(await Employee.countDocuments({ nombre: /PERSONA1/ })).toBe(1)
+    })
+
+    it('no pisa un número corregido a mano al re-importar', async () => {
+      const { empresa, sesion } = await escenario()
+      const archivo = await construirArchivo({ filas: filas(1) })
+      await importar(sesion.token, archivo, { empresaId: empresa._id })
+
+      const persona = await Employee.findOne({ nombre: /PERSONA0/ })
+      expect(persona.numeroEmpleado).toBe('1000')
+
+      // RH lo corrige a mano y el archivo vuelve a subirse igual.
+      persona.numeroEmpleado = 'CORREGIDO-1'
+      await persona.save()
+      await importar(sesion.token, archivo, { empresaId: empresa._id })
+
+      expect((await Employee.findById(persona._id)).numeroEmpleado).toBe('CORREGIDO-1')
+    })
+  })
+
   describe('permisos', () => {
     it('403 para rh_consulta', async () => {
       const { empresa, sesion } = await escenario({ nivelAcceso: 'rh_consulta' })
@@ -771,7 +841,7 @@ describe('POST /api/v1/empleados/importar', () => {
       expect((await Affiliation.findById(adscripcion._id)).datosPendientes).toEqual([])
     })
 
-    it('devuelve los tres campos nuevos en el listado de adscripciones', async () => {
+    it('devuelve los campos nuevos en el listado de adscripciones', async () => {
       const { empresa, sesion, persona } = await importarUna(() => ({
         departamento: 'Plenares',
         contrato: 'obra_determinada'
@@ -785,10 +855,12 @@ describe('POST /api/v1/empleados/importar', () => {
         (a) => a.empleadoId === persona._id.toString()
       )
       expect(suya).toMatchObject({
-        numeroEmpleado: '1000',
         departamento: 'Plenares',
         datosPendientes: ['fechaTerminoContrato']
       })
+      // El número es de la persona (D-54): viaja en `empleado`, no en la raíz.
+      expect(suya.numeroEmpleado).toBeUndefined()
+      expect(suya.empleado.numeroEmpleado).toBe('1000')
       expect(suya.nomina).toBeUndefined()
     })
   })

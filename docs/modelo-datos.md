@@ -213,6 +213,12 @@ eso vive en `adscripciones`.
 const empleadoSchema = new mongoose.Schema({
   nombre: { type: String, required: true, trim: true, minlength: 3, maxlength: 120 },
 
+  // Número de trabajador de la nómina. De la PERSONA y único en todo el grupo
+  // (D-54): vivía en la adscripción, único por empresa, y se movió cuando se
+  // pidió capturarlo al dar de alta a alguien que aún no se adscribe a ninguna.
+  // Índice único parcial, igual que la CURP.
+  numeroEmpleado: { type: String, trim: true, maxlength: 30, default: null },
+
   // Clave natural. Ver la nota de abajo: es lo que evita duplicar personas.
   curp: {
     type: String, required: true, unique: true, uppercase: true, trim: true,

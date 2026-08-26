@@ -58,15 +58,30 @@ class AffiliationService {
     }
 
     const adscripciones = await Affiliation.find(filtro)
-      .populate({ path: 'empleadoId', select: 'nombre tipo activo' })
-      // Único dentro de la empresa (D-46, D-50): orden ascendente por defecto.
-      .sort({ numeroEmpleado: orden === 'numero_desc' ? -1 : 1, createdAt: -1 })
+      .populate({ path: 'empleadoId', select: 'nombre numeroEmpleado tipo activo' })
+      .sort({ createdAt: -1 })
 
-    return {
-      adscripciones: adscripciones
-        .filter((a) => a.empleadoId)
-        .map((a) => this.#formatear(a))
-    }
+    /*
+     * El orden por número se hace EN MEMORIA porque desde D-54 `numeroEmpleado`
+     * es de la persona, no de la adscripción, y Mongo no ordena por un campo
+     * poblado. No pesa: este listado no está paginado —devuelve las
+     * adscripciones de UNA empresa— y ya las trajo todas para formatearlas.
+     *
+     * Quien no tiene número va al final en los dos sentidos, igual que en
+     * `GET /empleados` (D-53).
+     */
+    const direccion = orden === 'numero_desc' ? -1 : 1
+    const filas = adscripciones.filter((a) => a.empleadoId)
+    filas.sort((a, b) => {
+      const na = a.empleadoId.numeroEmpleado
+      const nb = b.empleadoId.numeroEmpleado
+      if (!na && !nb) return 0
+      if (!na) return 1
+      if (!nb) return -1
+      return na === nb ? 0 : (na < nb ? -1 : 1) * direccion
+    })
+
+    return { adscripciones: filas.map((a) => this.#formatear(a)) }
   }
 
   /**
@@ -272,6 +287,8 @@ class AffiliationService {
       empleado: {
         _id: persona._id.toString(),
         nombre: persona.nombre,
+        // De la persona desde D-54; el renglón ya no lo trae en la raíz.
+        numeroEmpleado: persona.numeroEmpleado ?? null,
         tipo: persona.tipo,
         activo: persona.activo
       }

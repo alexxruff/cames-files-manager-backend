@@ -422,6 +422,7 @@ describe('Importación de colaboradores · mapeo puro', () => {
       teletrabajador: false,
       cuenta: '072320010550241376'
     })
-    expect(fila.adscripcion.numeroEmpleado).toBe('0001')
+    // De la persona desde D-54, aunque la columna venga en la misma fila.
+    expect(fila.persona.numeroEmpleado).toBe('0001')
   })
 })

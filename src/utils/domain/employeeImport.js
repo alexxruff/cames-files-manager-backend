@@ -405,8 +405,9 @@ function mapearFila({ numero, celdas }) {
   if (!puesto) errores.push('La fila no trae puesto')
   const tipo = tipoEmpleadoDesdePuesto(puesto)
 
-  // ─── Relación laboral ────────────────────────────────────────────────────
   const numeroEmpleado = aTexto(leer(celdas, COL.ID))
+
+  // ─── Relación laboral ────────────────────────────────────────────────────
 
   const fechaIngresoCruda = leer(celdas, COL.FECHA_INGRESO)
   const fechaIngreso = aFechaCalendario(fechaIngresoCruda)
@@ -462,9 +463,18 @@ function mapearFila({ numero, celdas }) {
     puesto,
     estatus,
     departamento,
-    persona: { nombre, curp, rfc, nss, fechaNacimiento, email, telefono, tipo },
-    adscripcion: {
+    persona: {
+      nombre,
       numeroEmpleado,
+      curp,
+      rfc,
+      nss,
+      fechaNacimiento,
+      email,
+      telefono,
+      tipo
+    },
+    adscripcion: {
       departamento,
       areas,
       tipoContrato,

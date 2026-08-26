@@ -45,6 +45,81 @@ describe('PATCH /api/v1/empleados/:id — editar a la persona', () => {
     expect(res.body.data.empleado.adscripciones[0].empresaNombre).toBe(empresa.nombre)
   })
 
+  describe('el número de trabajador (D-54)', () => {
+    it('se puede corregir', async () => {
+      const { token, persona } = await escenario({
+        persona: { numeroEmpleado: 'NE-VIEJO' }
+      })
+
+      const res = await request(app)
+        .patch(`${RUTA}/${persona._id}`)
+        .set(auth(token))
+        .send({ numeroEmpleado: 'NE-NUEVO' })
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.empleado.empleado.numeroEmpleado).toBe('NE-NUEVO')
+      expect((await Employee.findById(persona._id)).numeroEmpleado).toBe('NE-NUEVO')
+    })
+
+    it('se puede poner por primera vez a quien no lo tenía', async () => {
+      const { token, persona } = await escenario()
+      expect(persona.numeroEmpleado).toBeNull()
+
+      const res = await request(app)
+        .patch(`${RUTA}/${persona._id}`)
+        .set(auth(token))
+        .send({ numeroEmpleado: 'NE-PRIMERO' })
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.empleado.empleado.numeroEmpleado).toBe('NE-PRIMERO')
+    })
+
+    it('409 si ese número ya es de otra persona', async () => {
+      const { token, persona, empresa } = await escenario()
+      const otro = await crearEmpleado({
+        nombre: 'Ya Lo Tiene',
+        numeroEmpleado: 'NE-OCUPADO'
+      })
+      await adscribir(empresa, otro, { areas: ['obra'] })
+
+      const res = await request(app)
+        .patch(`${RUTA}/${persona._id}`)
+        .set(auth(token))
+        .send({ numeroEmpleado: 'NE-OCUPADO' })
+
+      expect(res.status).toBe(409)
+      expect(res.body.code).toBe('NUMERO_EMPLEADO_DUPLICADO')
+      expect(res.body.errors[0].path).toBe('numeroEmpleado')
+    })
+
+    it('deja reenviar el mismo que ya tenía', async () => {
+      const { token, persona } = await escenario({
+        persona: { numeroEmpleado: 'NE-IGUAL' }
+      })
+
+      const res = await request(app)
+        .patch(`${RUTA}/${persona._id}`)
+        .set(auth(token))
+        .send({ numeroEmpleado: 'NE-IGUAL', telefono: '3312345678' })
+
+      expect(res.status).toBe(200)
+    })
+
+    it('400 si llega vacío: se corrige con el nuevo, no se borra', async () => {
+      const { token, persona } = await escenario({
+        persona: { numeroEmpleado: 'NE-NO-BORRAR' }
+      })
+
+      const res = await request(app)
+        .patch(`${RUTA}/${persona._id}`)
+        .set(auth(token))
+        .send({ numeroEmpleado: '' })
+
+      expect(res.status).toBe(400)
+      expect(res.body.errors[0].path).toBe('numeroEmpleado')
+    })
+  })
+
   it('completa la CURP de un alta provisional', async () => {
     const { token, persona } = await escenario()
     expect(persona.curp).toBeNull()

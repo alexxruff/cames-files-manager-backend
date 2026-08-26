@@ -47,6 +47,9 @@ async function crearEmpleado(datos = {}) {
 
   const empleado = await Employee.create({
     nombre: datos.nombre || `Empleado Prueba ${n}`,
+    // De la persona y único en el grupo (D-54). Null por defecto: la mayoría de
+    // las pruebas no lo necesita y un valor fijo colisionaría entre ellas.
+    numeroEmpleado: datos.numeroEmpleado ?? null,
     curp: datos.curp ?? null,
     categoriaId,
     tipo,
@@ -83,7 +86,6 @@ async function adscribir(empresa, empleado, datos = {}) {
   return Affiliation.create({
     empresaId: empresa._id,
     empleadoId: empleado._id,
-    numeroEmpleado: datos.numeroEmpleado ?? null,
     areas: datos.areas || [],
     tipoContrato: datos.tipoContrato || 'indeterminado',
     fechaIngreso: datos.fechaIngreso || '2026-01-15',

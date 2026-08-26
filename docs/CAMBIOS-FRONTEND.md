@@ -358,7 +358,7 @@ export interface FiltrosEmpleados {
   categoriaId?: string // D-51
   soloConAcceso?: boolean
   activo?: 'true' | 'false' | 'todos' // reemplaza a incluirInactivos (D-51)
-  orden?: 'nombre_asc' | 'nombre_desc' | 'numero_asc' | 'numero_desc' // numero_* exige empresaId (D-51)
+  orden?: 'nombre_asc' | 'nombre_desc' | 'numero_asc' | 'numero_desc' // numero_* funciona con o sin empresaId (D-53)
   pagina?: number
   porPagina?: number
 }

@@ -1768,3 +1768,151 @@ basta que UNA adscripción visible tenga ese número.
 `employeeService.list` — los dos se actualizaron para mandar `activo` en vez de
 `incluirInactivos`. `alertService` manda `activo: 'true'` fijo: un dado de baja
 no genera alertas de documentación ni de cumpleaños.
+
+## D-53 · Ordenar por número de empleado ya NO exige `empresaId`
+
+> **Actualizado por D-54.** La regla del mínimo y el máximo que se describe abajo
+> dejó de hacer falta cuando el número pasó a ser de la persona: hay un solo valor
+> por renglón y el orden es un `$sort` directo. Lo que sigue vigente es que
+> `numero_asc`/`numero_desc` no piden `empresaId` y que los que no tienen número
+> van al final.
+
+**Decisión.** `GET /empleados?orden=numero_asc|numero_desc` funciona **con o sin**
+`empresaId`. Revierte la mitad de D-51 que respondía `400` pidiendo una empresa.
+
+### Por qué se revierte
+
+D-51 razonó que sin `empresaId` no había "un único valor por el que ordenar" —
+cierto— y de ahí concluyó que había que rechazar la petición. El front pidió lo
+contrario: la tabla **general** es la que más se ordena por número, y ahí no hay
+empresa seleccionada. Un `400` en la columna que la gente va a picar primero no
+es una salvaguarda, es un endpoint que no sirve para su caso principal.
+
+### La regla que colapsa el arreglo a un valor
+
+Ordenar un arreglo no es ambiguo si se dice cuál elemento manda:
+
+- `numero_asc` → el **menor** número de la persona.
+- `numero_desc` → el **mayor**.
+
+Es exactamente lo que hace MongoDB al ordenar por un campo de arreglo, sólo que
+escrito a mano (`$addFields` con `$min`/`$max` sobre `adscripciones.numeroEmpleado`)
+para poder mandar los nulos al final. Siempre sobre las adscripciones **ya
+recortadas al alcance**: el orden no puede depender de un número de una empresa
+que el usuario no ve.
+
+Con `empresaId` el arreglo trae un solo elemento, el mínimo y el máximo son ese
+número, y el orden es idéntico al de D-51. Nadie que ya usara el parámetro nota
+el cambio.
+
+### Los que no tienen número van al final, en los dos sentidos
+
+`numeroEmpleado` es opcional (`default: null`) y quien no tiene ninguna
+adscripción visible tampoco tiene número. Sin cuidarlo, `numero_asc` los pondría
+arriba —los nulos son lo más chico en Mongo— y la tabla abriría con puros
+renglones vacíos. Un campo auxiliar (`sinNumero: 0|1`) los empuja al final tanto
+en ascendente como en descendente: en una tabla ordenada por número, el que no
+tiene número es siempre lo último que interesa.
+
+### Sigue comparando texto
+
+No cambia lo de D-51: `numeroEmpleado` es un `String` libre y se ordena como
+texto. Con los ceros a la izquierda del archivo de nómina coincide con el orden
+numérico.
+
+## D-54 · `numeroEmpleado` es de la PERSONA, único en todo el grupo
+
+**Decisión.** El número de trabajador se mueve de `affiliations` a `employees`.
+Deja de ser único por empresa y pasa a serlo en todo el grupo. Se captura en
+`POST /empleados` —**obligatorio, con o sin adscripción**— y se corrige en
+`PATCH /empleados/:id`, que antes no lo aceptaba por ningún camino.
+
+### El problema
+
+D-46 lo puso en la adscripción porque el archivo de nómina se importa **empresa
+por empresa** y ahí el número es único dentro de esa empresa. De ahí salieron dos
+consecuencias que el front reportó como defectos, y lo eran:
+
+1. **El alta exigía elegir empresa para poder capturar el número.** Sin empresa
+   —el alta del administrador de plataforma, que llena el catálogo— el campo no
+   existía: un número único "por empresa" no tiene dónde vivir si no hay empresa.
+2. **El número no se podía corregir.** Ni en `PATCH /empleados/:id` (no era campo
+   de la persona) ni en `PATCH /adscripciones/:id` (bloqueado a propósito por
+   D-46 y D-50). Un error de captura obligaba a re-importar la fila.
+
+### Por qué del grupo y no por empresa
+
+Se preguntó explícitamente antes de mover nada, porque las dos lecturas eran
+defendibles y llevaban a implementaciones distintas. Urbacames confirmó que la
+numeración de nómina es **una sola para el grupo**: dos personas no comparten
+número aunque estén en empresas distintas.
+
+Eso es lo que hace correcto el índice único global (parcial, sobre
+`{ numeroEmpleado: { $type: 'string' } }`, igual que la CURP y por lo mismo: con
+`default: null` el campo existe y un índice disperso no lo omitiría). Si algún día
+dos empresas del grupo repitieran numeración, esta decisión es la que hay que
+revisar — no el índice.
+
+### Lo que gana el importador, y lo que cambia
+
+La tercera llave de reconocimiento (CURP → RFC → número) deja de buscarse "dentro
+de esta empresa" y se busca en el catálogo completo: ahora **reconoce a quien se
+importó primero en otra empresa del grupo**, que antes se duplicaba.
+
+Dos cambios que van con eso:
+
+- **El número pasa de autoritativo a rellenable.** El archivo lo escribe si la
+  persona no tiene, pero **no lo pisa**. Desde que se puede corregir a mano,
+  pisarlo en cada re-importación desharía la corrección y cambiaría la identidad
+  con la que el importador reconoce a la persona.
+- **Choque de número = error de fila, no `E11000` a medio camino.** Si la CURP
+  identifica a alguien y el número de esa fila lo tiene un tercero, la fila se
+  rechaza con un mensaje que nombra al tercero, y las demás siguen.
+
+### Dónde viaja ahora en las respuestas
+
+En `empleado`, porque es de la persona:
+
+- `GET /empleados` → `empleados[].empleado.numeroEmpleado`. **Ya no está** en
+  `adscripciones[].numeroEmpleado`.
+- `GET /empresas/:id/adscripciones` → `adscripciones[].empleado.numeroEmpleado`.
+  **Ya no está** en la raíz del renglón.
+
+Se consideró dejarlo también en la raíz de la adscripción para no tocar al front,
+y se descartó: el documento ya no tiene ese campo, y un espejo invitaría a
+mandarlo en `PATCH /adscripciones/:id`, que responde `400`. Es una corrección
+mecánica en dos lecturas y evita una confusión permanente.
+
+### El 409 no nombra a quien no puedes ver
+
+El número es único en el grupo, así que el choque puede venir de una empresa que
+quien pregunta no ve. Si esa persona está en su alcance, el mensaje la nombra
+(«ya lo tiene Roberto Aguilar»); si no, dice que está en uso en el grupo y nada
+más. Decir el nombre sería filtrar la nómina de otra empresa, y el alcance se
+respeta también en los mensajes de error.
+
+### El orden por número se simplificó
+
+D-53 tenía que colapsar el arreglo de adscripciones a un valor (mínimo en
+ascendente, máximo en descendente) porque una persona traía varios números. Con
+uno solo por persona es un `$sort` directo. Lo único que sobrevive es el campo
+auxiliar `sinNumero`, que manda al final a quien no tiene — los nulos son lo más
+chico en Mongo y si no la tabla abriría con renglones vacíos.
+
+`GET /empresas/:id/adscripciones` ordena **en memoria**: el campo es de un
+documento poblado y Mongo no ordena por eso. No pesa — ese listado no está
+paginado y ya traía todas las filas para formatearlas.
+
+### Migrar lo que ya está capturado
+
+`npm run migrate:numeros` (`scripts/migrateEmployeeNumbers.js`) copia
+`affiliations.numeroEmpleado` → `employees.numeroEmpleado`. Lee el campo con el
+driver crudo, porque ya no está en el esquema y Mongoose lo ignoraría. Es
+idempotente, acepta `--dry-run`, y **no escribe los dos conflictos que el modelo
+nuevo no admite**: una persona con números distintos en dos empresas (gana el de
+la adscripción activa más antigua) y dos personas con el mismo número (gana la
+primera). Los reporta para resolverlos a mano.
+
+No borra nada: el campo viejo se conserva como respaldo hasta que se corra con
+`--limpiar`, que es lo único destructivo y va aparte a propósito. Después,
+`npm run db:indices` crea el índice nuevo y borra el de `affiliations`.

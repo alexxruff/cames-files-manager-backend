@@ -40,6 +40,7 @@ const POR_PAGINA_MAXIMO = 100
  */
 const CAMPOS_EDITABLES = Object.freeze([
   'nombre',
+  'numeroEmpleado',
   'curp',
   'rfc',
   'nss',
@@ -66,24 +67,6 @@ class EmployeeService {
       activo = 'true',
       orden = 'nombre_asc'
     } = filtros
-
-    /*
-     * Ordenar por número de empleado exige una empresa: es un campo de la
-     * ADSCRIPCIÓN (por empresa), no de la persona, así que sin acotar a una sola
-     * empresa no hay un único valor por el que ordenar.
-     */
-    if ((orden === 'numero_asc' || orden === 'numero_desc') && !empresaId) {
-      throw AppError.validation(
-        'Para ordenar por número de empleado indica una empresa: la persona puede ' +
-          'tener un número distinto en cada una',
-        [
-          {
-            msg: 'Indica una empresa para ordenar por número de empleado',
-            path: 'empresaId'
-          }
-        ]
-      )
-    }
 
     const pagina = Math.max(1, Number(filtros.pagina) || 1)
     /*
@@ -121,14 +104,14 @@ class EmployeeService {
     if (soloConAcceso) match.acceso = { $ne: null }
 
     /*
-     * La búsqueda por nombre no se puede resolver aquí si también busca por
-     * `numeroEmpleado` (D-51): ese campo vive en la adscripción, que todavía no
-     * se ha cruzado. Se calcula el patrón y se aplica DESPUÉS del `$lookup`.
+     * Nombre O número de trabajador (D-51). Los dos son campos de la PERSONA
+     * desde D-54, así que se resuelven en el primer `$match` —antes del
+     * `$lookup`, con índice— en vez de después de cruzar las adscripciones.
      */
-    const terminoBusqueda = busqueda ? normalize(busqueda) : null
-    const regexBusqueda = terminoBusqueda
-      ? new RegExp(escapeRegex(terminoBusqueda), 'i')
-      : null
+    if (busqueda) {
+      const patron = new RegExp(escapeRegex(normalize(busqueda)), 'i')
+      match.$or = [{ nombreNormalizado: patron }, { numeroEmpleado: patron }]
+    }
 
     // ─── 2. Adscripciones, ya recortadas al alcance ─────────────────────────
     const filtroEmpresas = []
@@ -179,7 +162,6 @@ class EmployeeService {
                 _id: 1,
                 empresaId: 1,
                 empresaNombre: '$empresa.nombre',
-                numeroEmpleado: 1,
                 areas: 1,
                 tipoContrato: 1,
                 fechaIngreso: 1,
@@ -209,23 +191,6 @@ class EmployeeService {
     const restriccionAreas = this.#matchDeAreas(contexto)
     if (restriccionAreas) pipeline.push({ $match: restriccionAreas })
 
-    /*
-     * Nombre O número de empleado (D-51): busca por cualquiera de los dos, no
-     * sólo por nombre. `adscripciones.numeroEmpleado` con notación de punto
-     * coincide si CUALQUIER adscripción del arreglo (ya recortado al alcance)
-     * lo tiene.
-     */
-    if (regexBusqueda) {
-      pipeline.push({
-        $match: {
-          $or: [
-            { nombreNormalizado: regexBusqueda },
-            { 'adscripciones.numeroEmpleado': regexBusqueda }
-          ]
-        }
-      })
-    }
-
     pipeline.push(
       {
         $lookup: {
@@ -236,15 +201,7 @@ class EmployeeService {
         }
       },
       { $unwind: { path: '$categoria', preserveNullAndEmptyArrays: true } },
-      {
-        $sort:
-          orden === 'numero_asc' || orden === 'numero_desc'
-            ? {
-                'adscripciones.numeroEmpleado': orden === 'numero_desc' ? -1 : 1,
-                _id: 1
-              }
-            : { nombreNormalizado: orden === 'nombre_desc' ? -1 : 1, _id: 1 }
-      },
+      ...this.#etapasDeOrden(orden),
       {
         // El orden se calcula sobre el total y DESPUÉS se corta la página.
         $facet: {
@@ -353,11 +310,14 @@ class EmployeeService {
     // 3. La categoría tiene que existir y servir para este tipo de persona.
     await categoryService.assertUsableParaTipo(datos.categoriaId, tipo)
 
-    // 4. Duplicados: es el riesgo real de un catálogo compartido con tres
+    // 4. El número de trabajador es único en todo el grupo (D-54).
+    await this.#assertNumeroLibre(datos.numeroEmpleado, null, contexto)
+
+    // 5. Duplicados: es el riesgo real de un catálogo compartido con tres
     //    niveles capturando y CURP opcional.
     await this.#assertNoEsDuplicado(datos, contexto)
 
-    // 5. Alta atómica.
+    // 6. Alta atómica.
     const sesion = await mongoose.startSession()
     let creado
     try {
@@ -366,6 +326,7 @@ class EmployeeService {
           [
             {
               nombre: datos.nombre,
+              numeroEmpleado: datos.numeroEmpleado,
               curp: datos.curp || null,
               rfc: datos.rfc || null,
               nss: datos.nss || null,
@@ -388,8 +349,7 @@ class EmployeeService {
                 areas: adscripcion.areas || [],
                 tipoContrato: adscripcion.tipoContrato,
                 fechaIngreso: adscripcion.fechaIngreso,
-                fechaTerminoContrato: adscripcion.fechaTerminoContrato || null,
-                numeroEmpleado: adscripcion.numeroEmpleado
+                fechaTerminoContrato: adscripcion.fechaTerminoContrato || null
               }
             ],
             { session: sesion }
@@ -482,6 +442,12 @@ class EmployeeService {
           'Antes de convertirlo en administrativo, asígnale al menos un área en cada empresa donde esté adscrito'
         )
       }
+    }
+
+    // El número de trabajador es único en el grupo: corregirlo no puede pisar
+    // el de otra persona (D-54).
+    if (datos.numeroEmpleado && datos.numeroEmpleado !== empleado.numeroEmpleado) {
+      await this.#assertNumeroLibre(datos.numeroEmpleado, empleado._id, contexto)
     }
 
     // La CURP es la identidad: si se completa o se corrige, no puede chocar.
@@ -593,28 +559,6 @@ class EmployeeService {
       throw AppError.notFound('La empresa no existe')
     }
 
-    // Único dentro de la empresa (mismo índice que usa la importación, D-46):
-    // se revisa antes de la transacción para devolver un mensaje claro y no un
-    // E11000 crudo.
-    const numeroDuplicado = await Affiliation.findOne({
-      empresaId: adscripcion.empresaId,
-      numeroEmpleado: adscripcion.numeroEmpleado
-    })
-    if (numeroDuplicado) {
-      throw AppError.conflict(
-        `Ya existe un empleado con el número ${adscripcion.numeroEmpleado} en esta empresa`,
-        {
-          code: 'NUMERO_EMPLEADO_DUPLICADO',
-          errors: [
-            {
-              msg: 'Ese número de empleado ya está en uso',
-              path: 'adscripcion.numeroEmpleado'
-            }
-          ]
-        }
-      )
-    }
-
     const areas = adscripcion.areas || []
 
     // Un administrativo necesita al menos un área (modelo-datos §5b.1).
@@ -655,6 +599,52 @@ class EmployeeService {
    *   Si de verdad es otra persona, la petición lo dice con
    *   `confirmarDuplicado: true`.
    */
+  /**
+   * El número de trabajador es único en TODO el grupo (D-54).
+   *
+   * Se revisa antes de la transacción, igual que la CURP, para responder `409`
+   * con un mensaje legible en vez de dejar salir un `E11000` crudo.
+   *
+   * El nombre de quien ya lo tiene se dice **sólo si esa persona es visible**
+   * para quien pregunta: el número es único en el grupo, así que el choque puede
+   * venir de una empresa que este usuario no ve, y decir "lo tiene Fulano" sería
+   * filtrar la nómina de otra empresa. Sin visibilidad se dice que está ocupado
+   * y ya — suficiente para corregirlo, y es RH quien lo resuelve.
+   *
+   * @param {string} numero
+   * @param {object|null} excluirId el propio empleado, al editar
+   */
+  async #assertNumeroLibre(numero, excluirId, contexto = {}) {
+    if (!numero) return
+
+    const filtro = { numeroEmpleado: numero }
+    if (excluirId) filtro._id = { $ne: excluirId }
+    const otro = await Employee.findOne(filtro)
+    if (!otro) return
+
+    const { empresasVisibles = null } = contexto
+    const visible =
+      empresasVisibles === null ||
+      (await Affiliation.exists({
+        empleadoId: otro._id,
+        empresaId: {
+          $in: empresasVisibles.map((id) => new mongoose.Types.ObjectId(id))
+        }
+      }))
+
+    throw AppError.conflict(
+      visible
+        ? `El número de trabajador ${numero} ya lo tiene ${otro.nombre}`
+        : `El número de trabajador ${numero} ya está en uso en el grupo`,
+      {
+        code: 'NUMERO_EMPLEADO_DUPLICADO',
+        errors: [
+          { msg: 'Ese número de trabajador ya está en uso', path: 'numeroEmpleado' }
+        ]
+      }
+    )
+  }
+
   async #assertNoEsDuplicado(datos, contexto) {
     if (datos.curp) {
       const existente = await Employee.findOne({ curp: datos.curp.toUpperCase() })
@@ -723,6 +713,36 @@ class EmployeeService {
     }))
   }
 
+  /**
+   * Etapas de `$sort` según el orden pedido.
+   *
+   * Desde D-54 `numeroEmpleado` es de la persona y hay UN valor por renglón, así
+   * que ordenar por él es un `$sort` directo — la tabla general se ordena por
+   * número sin acotar a una empresa (D-53), sin colapsar nada.
+   *
+   * El único cuidado es el campo auxiliar `sinNumero`: quien no lo tiene va al
+   * final en los DOS sentidos. Sin él, `numero_asc` los pondría arriba —los
+   * nulos son lo más chico en Mongo— y la tabla abriría con renglones vacíos.
+   */
+  #etapasDeOrden(orden) {
+    if (orden !== 'numero_asc' && orden !== 'numero_desc') {
+      return [{ $sort: { nombreNormalizado: orden === 'nombre_desc' ? -1 : 1, _id: 1 } }]
+    }
+
+    return [
+      {
+        $addFields: { sinNumero: { $cond: [{ $eq: ['$numeroEmpleado', null] }, 1, 0] } }
+      },
+      {
+        $sort: {
+          sinNumero: 1,
+          numeroEmpleado: orden === 'numero_desc' ? -1 : 1,
+          _id: 1
+        }
+      }
+    ]
+  }
+
   /** Restricción por áreas del jefe de área, empresa por empresa. */
   #matchDeAreas(contexto) {
     const { user, empresasVisibles, areasPorEmpresa = {} } = contexto
@@ -756,7 +776,6 @@ class EmployeeService {
         _id: a._id.toString(),
         empresaId: a.empresaId.toString(),
         empresaNombre: a.empresaNombre ?? null,
-        numeroEmpleado: a.numeroEmpleado ?? null,
         areas: a.areas || [],
         tipoContrato: a.tipoContrato,
         fechaIngreso: a.fechaIngreso,

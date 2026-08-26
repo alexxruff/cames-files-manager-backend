@@ -196,11 +196,13 @@ describe('Adscripciones', () => {
       const categoria = await crearCategoria('Albañil', 'mano_de_obra')
 
       for (const numeroEmpleado of ['0003', '0001', '0002']) {
+        // El número es de la persona desde D-54, no de la adscripción.
         const persona = await crearEmpleado({
           tipo: 'mano_de_obra',
-          categoriaId: categoria._id
+          categoriaId: categoria._id,
+          numeroEmpleado
         })
-        await adscribir(sesion.empresa, persona, { areas: ['obra'], numeroEmpleado })
+        await adscribir(sesion.empresa, persona, { areas: ['obra'] })
       }
 
       const porDefecto = await request(app)
@@ -212,9 +214,11 @@ describe('Adscripciones', () => {
         )
         .set(auth(sesion.token))
 
-      const numerosAsc = porDefecto.body.data.adscripciones.map((a) => a.numeroEmpleado)
+      const numerosAsc = porDefecto.body.data.adscripciones.map(
+        (a) => a.empleado.numeroEmpleado
+      )
       expect(numerosAsc).toEqual(['0001', '0002', '0003'])
-      expect(desc.body.data.adscripciones.map((a) => a.numeroEmpleado)).toEqual(
+      expect(desc.body.data.adscripciones.map((a) => a.empleado.numeroEmpleado)).toEqual(
         [...numerosAsc].reverse()
       )
     })

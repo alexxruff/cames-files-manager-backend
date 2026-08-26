@@ -249,6 +249,8 @@ export interface AccesoEmpleado {
 export interface Empleado {
   _id: string
   nombre: string
+  /** Número de trabajador. De la persona y único en el grupo (D-54). */
+  numeroEmpleado: string | null
   curp: string | null // puede faltar en un alta provisional
   rfc: string | null
   nss: string | null
@@ -279,10 +281,12 @@ export interface AdscripcionDeEmpleado {
 
 /*
  * OJO: la adscripción que devuelven `/empresas/:id/adscripciones` y
- * `/adscripciones/:id` trae TRES campos más —`numeroEmpleado`, `departamento` y
- * `datosPendientes`— que agregó la importación desde .xlsx (D-46). Son
- * aditivos: nada cambió de nombre ni de forma. El renglón del listado de
- * empleados, el de arriba, sigue igual. Detalle en
+ * `/adscripciones/:id` trae dos campos más —`departamento` y
+ * `datosPendientes`— que agregó la importación desde .xlsx (D-46).
+ *
+ * CAMBIO (D-54): `numeroEmpleado` estaba también ahí y SE MOVIÓ a la persona.
+ * En el renglón de `/empresas/:id/adscripciones` ahora viaja en
+ * `empleado.numeroEmpleado`, no en la raíz. Detalle en
  * `docs/ENDPOINTS-ADSCRIPCIONES.md`.
  */
 
@@ -403,16 +407,17 @@ Query, todos opcionales:
 - Un `jefe_area` sólo ve a la gente de sus áreas; si no tiene áreas asignadas, ve
   **cero**, no todo.
 - `empresaId` de una empresa que no es suya → `404`.
-- **`numeroEmpleado`, dentro de cada adscripción del renglón** (D-51): antes no
-  se devolvía en este listado; ahora sí, igual que en `GET
-/empresas/:id/adscripciones`.
-- **`orden=numero_asc` / `numero_desc` exige `empresaId`** (D-51): el número de
-  empleado es de la adscripción —por empresa—, no de la persona; sin acotar a
-  una empresa no habría un único valor por el que ordenar. Sin `empresaId`,
-  `400` con `errors[0].path: "empresaId"`. El orden compara el texto tal cual
-  (no numérico): si van a mostrarlo con ceros a la izquierda (`'0001'`,
-  `'0002'`…) el orden alfabético coincide con el numérico; con números sin
-  rellenar podría no coincidir.
+- **`numeroEmpleado` está en `empleado`, no en las adscripciones** (D-54): es de
+  la persona y único en todo el grupo. Si lo estabas leyendo de
+  `adscripciones[].numeroEmpleado`, cámbialo a `empleado.numeroEmpleado` — ahí ya
+  no viene.
+- **`orden=numero_asc` / `numero_desc` NO exige `empresaId`** (D-53): la tabla
+  general se ordena por número sin filtrar por empresa. Desde D-54 el número es de
+  la persona y hay uno solo por renglón, así que no hay ambigüedad: se ordena por
+  `empleado.numeroEmpleado` y quien no lo tiene queda **al final** en los dos
+  sentidos. El orden compara el texto tal cual (no numérico): si van a mostrarlo
+  con ceros a la izquierda (`'0001'`, `'0002'`…) el orden alfabético coincide con
+  el numérico; con números sin rellenar podría no coincidir.
 
 ### `GET /empleados/:id`
 
@@ -486,13 +491,13 @@ agregación: `empleados` (adscripciones activas), `clientes` (cartera activa) y
   "nombre": "Roberto Aguilar Sosa",
   "tipo": "mano_de_obra",              // o "administrativo"
   "categoriaId": "…",                  // del tipo que corresponda
+  "numeroEmpleado": "0248",            // OBLIGATORIO, con o sin empresa (D-54)
   "curp": "AUSR900101HJCGSB03",        // opcional
   "rfc": null, "nss": null, "fechaNacimiento": null, "email": null, "telefono": null,
 
   // Obligatoria salvo para el administrador de plataforma.
   "adscripcion": {
     "empresaId": "…",
-    "numeroEmpleado": "0248",             // obligatorio en el alta manual, ver abajo
     "areas": ["obra"],
     "tipoContrato": "obra_determinada",
     "fechaIngreso": "2026-09-01",
@@ -509,11 +514,18 @@ agregación: `empleados` (adscripciones activas), `clientes` (cartera activa) y
 **Persona y adscripción se crean en una transacción**: o las dos, o ninguna. Nunca
 queda una persona huérfana e invisible.
 
-**`adscripcion.numeroEmpleado` es obligatorio aquí.** Es el mismo campo que trae
-la columna `ID` del archivo de nómina (D-46): cuando la persona entra por el
-importador lo pone el archivo, pero en el alta manual nadie más lo captura, así
-que se pide. Único **dentro de la empresa** — dos personas de la misma empresa no
-pueden compartir número, pero sí pueden repetirlo entre empresas distintas.
+**`numeroEmpleado` es obligatorio y va en la raíz, no en `adscripcion`** (D-54).
+Es el mismo campo que trae la columna `ID` del archivo de nómina (D-46): cuando la
+persona entra por el importador lo pone el archivo, pero en el alta manual nadie
+más lo captura, así que se pide.
+
+**Se captura con o sin empresa.** Es de la persona, así que el alta sin
+adscripción —la del administrador de plataforma— también lo lleva. Es único en
+**todo el grupo**: dos personas no pueden compartirlo ni estando en empresas
+distintas, y pedirlo repetido responde `409` con
+`errors[0].path: "numeroEmpleado"`. El mensaje nombra a quien ya lo tiene sólo si
+esa persona está dentro de tu alcance; si es de una empresa que no ves, dice que
+está en uso y ya.
 
 | Quien pide          | Puede crear         | La adscripción                            |
 | ------------------- | ------------------- | ----------------------------------------- |
@@ -522,12 +534,12 @@ pueden compartir número, pero sí pueden repetirlo entre empresas distintas.
 | `rh_consulta`       | sólo `mano_de_obra` | obligatoria, sólo sus empresas            |
 | `jefe_area`         | sólo `mano_de_obra` | obligatoria, sus empresas y **sus áreas** |
 
-| Código | Cuándo                                                                                                                                                                                                                          |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `400`  | Falta nombre o `categoriaId`; falta la adscripción; falta `adscripcion.numeroEmpleado`; CURP mal formada; un administrativo sin áreas; contrato temporal con término anterior al ingreso; la categoría no corresponde al `tipo` |
-| `403`  | `tipo: 'administrativo'` pedido por `rh_consulta` o `jefe_area`; o un `jefe_area` pidiendo un área que no es suya (el mensaje lista las suyas)                                                                                  |
-| `404`  | `empresaId` que no es suya, o `categoriaId` inexistente                                                                                                                                                                         |
-| `409`  | Duplicado — ver abajo                                                                                                                                                                                                           |
+| Código | Cuándo                                                                                                                                                                                                        |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `400`  | Falta nombre, `categoriaId` o `numeroEmpleado`; falta la adscripción; CURP mal formada; un administrativo sin áreas; contrato temporal con término anterior al ingreso; la categoría no corresponde al `tipo` |
+| `403`  | `tipo: 'administrativo'` pedido por `rh_consulta` o `jefe_area`; o un `jefe_area` pidiendo un área que no es suya (el mensaje lista las suyas)                                                                |
+| `404`  | `empresaId` que no es suya, o `categoriaId` inexistente                                                                                                                                                       |
+| `409`  | Duplicado — ver abajo                                                                                                                                                                                         |
 
 #### Duplicados
 
@@ -563,15 +575,16 @@ pueden compartir número, pero sí pueden repetirlo entre empresas distintas.
   está.
 
 ```jsonc
-// 409 con número de empleado repetido EN ESA EMPRESA
+// 409 con número de trabajador repetido EN TODO EL GRUPO (D-54)
 {
   "status": "fail",
-  "message": "Ya existe un empleado con el número 0248 en esta empresa",
+  "message": "El número de trabajador 0248 ya lo tiene Roberto Aguilar Sosa",
+  // …o "ya está en uso en el grupo", si esa persona no está en tu alcance
   "code": "NUMERO_EMPLEADO_DUPLICADO",
   "errors": [
     {
-      "msg": "Ese número de empleado ya está en uso",
-      "path": "adscripcion.numeroEmpleado"
+      "msg": "Ese número de trabajador ya está en uso",
+      "path": "numeroEmpleado"
     }
   ]
 }
@@ -588,12 +601,12 @@ pueden compartir número, pero sí pueden repetirlo entre empresas distintas.
 `rh_consulta` o un `jefe_area` corrige a su personal de obra sin pedírselo a un
 administrador; a un administrativo, sólo `rh_admin`.
 
-Acepta **estos nueve campos y ninguno más**: `nombre`, `curp`, `rfc`, `nss`,
-`fechaNacimiento`, `email`, `telefono`, `categoriaId`, `tipo`.
+Acepta **estos diez campos y ninguno más**: `nombre`, `numeroEmpleado`, `curp`,
+`rfc`, `nss`, `fechaNacimiento`, `email`, `telefono`, `categoriaId`, `tipo`.
 
 ```jsonc
 // petición — sólo lo que cambia
-{ "nombre": "Roberto Aguilar Sosa", "curp": "AUSR900101HJCGSB03", "telefono": "3312345678" }
+{ "nombre": "Roberto Aguilar Sosa", "numeroEmpleado": "0249", "telefono": "3312345678" }
 
 // data — el RenglonEmpleado completo, igual que GET /empleados
 { "empleado": { "empleado": { … }, "categoriaNombre": "…", "adscripciones": [ … ], … } }
@@ -615,7 +628,7 @@ Mandar cualquiera de ellos devuelve `400` **con la ruta correcta en el mensaje**
 | `400`  | Cuerpo vacío; campo no editable; formato inválido (`errors[].path` lo señala); la categoría no corresponde al `tipo`; volverlo administrativo cuando su adscripción no tiene área |
 | `403`  | `rh_consulta` o `jefe_area`; o cambiar el `tipo` a `administrativo` sin poder crear administrativos                                                                               |
 | `404`  | No existe o no es visible                                                                                                                                                         |
-| `409`  | `CURP_DUPLICADA` — la CURP nueva ya es de otra persona, con el candidato en `data.candidatos`                                                                                     |
+| `409`  | `CURP_DUPLICADA` — la CURP nueva ya es de otra persona, con el candidato en `data.candidatos`; `NUMERO_EMPLEADO_DUPLICADO` — ese número ya es de alguien más                      |
 
 Detalles que importan para la UI:
 
@@ -624,6 +637,11 @@ Detalles que importan para la UI:
 - **Corregir el nombre no se bloquea por duplicado**, a diferencia del alta:
   cambiar "Roberto Aguilar" por "Roberto Aguilar Sosa" es justo la corrección que
   se está haciendo. La identidad la cuida la CURP.
+- **`numeroEmpleado` ya se puede corregir aquí** (D-54): antes no era editable
+  por ningún camino. Único en todo el grupo, así que un número ocupado responde
+  `409`. **No acepta `null` ni `""`**: el alta lo exige, así que vaciarlo dejaría
+  a la persona en un estado que el alta no permite crear — para corregirlo se
+  manda el nuevo.
 - **Vaciar un opcional**: mándenlo como `null` (nunca `""`).
 - **Cambiar el `tipo`** exige mandar también una `categoriaId` del tipo nuevo, o
   responde `400`.

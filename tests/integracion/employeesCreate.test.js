@@ -15,7 +15,7 @@ const {
 const RUTA = '/api/v1/empleados'
 
 let contadorNumero = 0
-/** Único por empresa (D-50); cada llamada saca uno nuevo para no colisionar. */
+/** Único en TODO el grupo (D-54); cada llamada saca uno nuevo. */
 const siguienteNumero = () => `NE-${++contadorNumero}`
 
 /** Alta de personal: persona + adscripción en una transacción. */
@@ -23,9 +23,9 @@ const cuerpo = ({ empresaId, categoriaId, ...extra }) => ({
   nombre: 'Roberto Aguilar Sosa',
   tipo: 'mano_de_obra',
   categoriaId,
+  numeroEmpleado: siguienteNumero(),
   adscripcion: {
     empresaId,
-    numeroEmpleado: siguienteNumero(),
     areas: ['obra'],
     tipoContrato: 'obra_determinada',
     fechaIngreso: '2026-09-01',
@@ -186,7 +186,6 @@ describe('POST /api/v1/empleados — el alta', () => {
             tipo: 'administrativo',
             adscripcion: {
               empresaId: empresa._id.toString(),
-              numeroEmpleado: siguienteNumero(),
               areas: ['administracion'],
               tipoContrato: 'indeterminado',
               fechaIngreso: '2026-09-01'
@@ -206,7 +205,8 @@ describe('POST /api/v1/empleados — el alta', () => {
       const res = await request(app).post(RUTA).set(auth(token)).send({
         nombre: 'Sin Empresa',
         tipo: 'mano_de_obra',
-        categoriaId: categoria._id.toString()
+        categoriaId: categoria._id.toString(),
+        numeroEmpleado: siguienteNumero()
       })
 
       expect(res.status).toBe(400)
@@ -224,11 +224,82 @@ describe('POST /api/v1/empleados — el alta', () => {
       const res = await request(app).post(RUTA).set(auth(token)).send({
         nombre: 'Persona Del Catálogo',
         tipo: 'mano_de_obra',
-        categoriaId: categoria._id.toString()
+        categoriaId: categoria._id.toString(),
+        numeroEmpleado: 'SIN-EMPRESA-1'
       })
 
       expect(res.status).toBe(201)
       expect(res.body.data.empleado.adscripciones).toEqual([])
+      // El número se captura aunque no haya empresa: es de la persona (D-54).
+      expect(res.body.data.empleado.empleado.numeroEmpleado).toBe('SIN-EMPRESA-1')
+    })
+
+    it('el número de trabajador es requerido, con o sin empresa (D-54)', async () => {
+      const { token } = await crearEmpleadoConSesion({
+        alcanceGlobal: true,
+        sinAdscripcion: true
+      })
+      const categoria = await crearCategoria(undefined, 'mano_de_obra')
+
+      const res = await request(app).post(RUTA).set(auth(token)).send({
+        nombre: 'Sin Numero',
+        tipo: 'mano_de_obra',
+        categoriaId: categoria._id.toString()
+      })
+
+      expect(res.status).toBe(400)
+      expect(res.body.errors[0].path).toBe('numeroEmpleado')
+    })
+
+    it('409 si el número de trabajador ya lo tiene otra persona, aunque sea de otra empresa (D-54)', async () => {
+      const { token, empresa, categoria } = await escenario({ nivelAcceso: 'rh_admin' })
+      const otraEmpresa = await crearEmpresa()
+      const otro = await crearEmpleado({
+        nombre: 'De Otra Empresa',
+        numeroEmpleado: 'NE-100'
+      })
+      await adscribir(otraEmpresa, otro)
+
+      const res = await request(app)
+        .post(RUTA)
+        .set(auth(token))
+        .send(
+          cuerpo({
+            empresaId: empresa._id.toString(),
+            categoriaId: categoria._id.toString(),
+            numeroEmpleado: 'NE-100'
+          })
+        )
+
+      expect(res.status).toBe(409)
+      expect(res.body.code).toBe('NUMERO_EMPLEADO_DUPLICADO')
+      expect(res.body.errors[0].path).toBe('numeroEmpleado')
+      // No se nombra a alguien de una empresa que este usuario no ve.
+      expect(res.body.message).not.toMatch(/De Otra Empresa/)
+      expect(await Employee.countDocuments({ nombre: 'Roberto Aguilar Sosa' })).toBe(0)
+    })
+
+    it('el 409 sí nombra a quien tiene el número cuando está a la vista', async () => {
+      const { token, empresa, categoria } = await escenario({ nivelAcceso: 'rh_admin' })
+      const otro = await crearEmpleado({
+        nombre: 'Ya Registrado',
+        numeroEmpleado: 'NE-200'
+      })
+      await adscribir(empresa, otro)
+
+      const res = await request(app)
+        .post(RUTA)
+        .set(auth(token))
+        .send(
+          cuerpo({
+            empresaId: empresa._id.toString(),
+            categoriaId: categoria._id.toString(),
+            numeroEmpleado: 'NE-200'
+          })
+        )
+
+      expect(res.status).toBe(409)
+      expect(res.body.message).toMatch(/Ya Registrado/)
     })
 
     it('un administrativo necesita al menos un área', async () => {
@@ -247,7 +318,6 @@ describe('POST /api/v1/empleados — el alta', () => {
             tipo: 'administrativo',
             adscripcion: {
               empresaId: empresa._id.toString(),
-              numeroEmpleado: siguienteNumero(),
               areas: [],
               tipoContrato: 'indeterminado',
               fechaIngreso: '2026-09-01'
@@ -257,86 +327,6 @@ describe('POST /api/v1/empleados — el alta', () => {
 
       expect(res.status).toBe(400)
       expect(res.body.errors[0].path).toBe('adscripcion.areas')
-    })
-
-    it('numeroEmpleado es requerido (D-50)', async () => {
-      const { token, empresa, categoria } = await escenario({ nivelAcceso: 'rh_admin' })
-
-      const res = await request(app)
-        .post(RUTA)
-        .set(auth(token))
-        .send(
-          cuerpo({
-            empresaId: empresa._id.toString(),
-            categoriaId: categoria._id.toString(),
-            adscripcion: {
-              empresaId: empresa._id.toString(),
-              areas: ['obra'],
-              tipoContrato: 'obra_determinada',
-              fechaIngreso: '2026-09-01',
-              fechaTerminoContrato: '2027-03-01'
-            }
-          })
-        )
-
-      expect(res.status).toBe(400)
-      expect(res.body.errors[0].path).toBe('adscripcion.numeroEmpleado')
-    })
-
-    it('409 si el número de empleado ya está en uso en esa empresa', async () => {
-      const { token, empresa, categoria } = await escenario({ nivelAcceso: 'rh_admin' })
-      const otro = await crearEmpleado({ nombre: 'Ya Registrado' })
-      await adscribir(empresa, otro, { numeroEmpleado: 'NE-100' })
-
-      const res = await request(app)
-        .post(RUTA)
-        .set(auth(token))
-        .send(
-          cuerpo({
-            empresaId: empresa._id.toString(),
-            categoriaId: categoria._id.toString(),
-            adscripcion: {
-              empresaId: empresa._id.toString(),
-              numeroEmpleado: 'NE-100',
-              areas: ['obra'],
-              tipoContrato: 'obra_determinada',
-              fechaIngreso: '2026-09-01',
-              fechaTerminoContrato: '2027-03-01'
-            }
-          })
-        )
-
-      expect(res.status).toBe(409)
-      expect(res.body.code).toBe('NUMERO_EMPLEADO_DUPLICADO')
-      expect(res.body.errors[0].path).toBe('adscripcion.numeroEmpleado')
-      expect(await Employee.countDocuments({ nombre: 'Roberto Aguilar Sosa' })).toBe(0)
-    })
-
-    it('el mismo número de empleado sí puede repetirse en otra empresa', async () => {
-      const { token, empresa, categoria } = await escenario({ nivelAcceso: 'rh_admin' })
-      const otraEmpresa = await crearEmpresa()
-      const otro = await crearEmpleado({ nombre: 'De Otra Empresa' })
-      await adscribir(otraEmpresa, otro, { numeroEmpleado: 'NE-100' })
-
-      const res = await request(app)
-        .post(RUTA)
-        .set(auth(token))
-        .send(
-          cuerpo({
-            empresaId: empresa._id.toString(),
-            categoriaId: categoria._id.toString(),
-            adscripcion: {
-              empresaId: empresa._id.toString(),
-              numeroEmpleado: 'NE-100',
-              areas: ['obra'],
-              tipoContrato: 'obra_determinada',
-              fechaIngreso: '2026-09-01',
-              fechaTerminoContrato: '2027-03-01'
-            }
-          })
-        )
-
-      expect(res.status).toBe(201)
     })
 
     it('un contrato temporal exige fecha de término posterior al ingreso', async () => {
@@ -351,7 +341,6 @@ describe('POST /api/v1/empleados — el alta', () => {
             categoriaId: categoria._id.toString(),
             adscripcion: {
               empresaId: empresa._id.toString(),
-              numeroEmpleado: siguienteNumero(),
               areas: ['obra'],
               tipoContrato: 'obra_determinada',
               fechaIngreso: '2026-09-01',
@@ -382,7 +371,6 @@ describe('POST /api/v1/empleados — el alta', () => {
             categoriaId: categoria._id.toString(),
             adscripcion: {
               empresaId: empresa._id.toString(),
-              numeroEmpleado: siguienteNumero(),
               areas: ['ventas'],
               tipoContrato: 'indeterminado',
               fechaIngreso: '2026-09-01'
@@ -409,7 +397,6 @@ describe('POST /api/v1/empleados — el alta', () => {
             categoriaId: categoria._id.toString(),
             adscripcion: {
               empresaId: empresa._id.toString(),
-              numeroEmpleado: siguienteNumero(),
               areas: [],
               tipoContrato: 'indeterminado',
               fechaIngreso: '2026-09-01'

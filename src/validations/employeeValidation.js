@@ -73,6 +73,19 @@ exports.createEmployeeValidation = [
 
   body('categoriaId').isMongoId().withMessage('Selecciona una categoría válida'),
 
+  /**
+   * Se pide SIEMPRE, con o sin empresa (D-54). Antes colgaba de `adscripcion` y
+   * por eso el alta sin empresa —la del administrador de plataforma— era la
+   * única que no lo capturaba; ahora es de la persona y no depende de nadie.
+   */
+  body('numeroEmpleado')
+    .trim()
+    .notEmpty()
+    .withMessage('El número de trabajador es requerido')
+    .bail()
+    .isLength({ max: 30 })
+    .withMessage('El número de trabajador no puede exceder 30 caracteres'),
+
   body('curp')
     .optional({ values: 'falsy' })
     .trim()
@@ -125,18 +138,6 @@ exports.createEmployeeValidation = [
       }
       return true
     }),
-  /**
-   * En la importación desde .xlsx lo trae el archivo (columna `ID`, D-46); en el
-   * alta manual nadie más lo captura, así que aquí se vuelve obligatorio.
-   */
-  body('adscripcion.numeroEmpleado')
-    .if(body('adscripcion').exists())
-    .trim()
-    .notEmpty()
-    .withMessage('El número de empleado es requerido')
-    .bail()
-    .isLength({ max: 30 })
-    .withMessage('El número de empleado no puede exceder 30 caracteres'),
   fechaCalendario('adscripcion.fechaTerminoContrato', 'La fecha de término'),
   body('adscripcion.areas')
     .optional()
@@ -161,6 +162,7 @@ exports.createEmployeeValidation = [
 /** Campos que `PATCH /empleados/:id` acepta. Cualquier otro → 400. */
 const CAMPOS_EDITABLES = [
   'nombre',
+  'numeroEmpleado',
   'curp',
   'rfc',
   'nss',
@@ -201,6 +203,19 @@ exports.updateEmployeeValidation = [
     .trim()
     .isLength({ min: 3, max: 120 })
     .withMessage('El nombre debe tener entre 3 y 120 caracteres'),
+  /**
+   * Editable (D-54), y a diferencia de los demás opcionales NO acepta `null`:
+   * el alta lo exige, así que vaciarlo dejaría a alguien en un estado que el
+   * alta no permite crear. Para corregir un número se manda el nuevo.
+   */
+  body('numeroEmpleado')
+    .optional()
+    .trim()
+    .notEmpty()
+    .withMessage('El número de trabajador es requerido')
+    .bail()
+    .isLength({ max: 30 })
+    .withMessage('El número de trabajador no puede exceder 30 caracteres'),
   body('tipo')
     .optional()
     .isIn(EMPLOYEE_TYPES)

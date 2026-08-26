@@ -63,8 +63,17 @@ const MAX_DETALLE = 500
 
 const MOTIVO_BAJA = 'Baja registrada en el archivo de nómina importado'
 
-/** Campos de la persona que el archivo puede rellenar si están vacíos. */
+/**
+ * Campos de la persona que el archivo puede rellenar si están vacíos.
+ *
+ * `numeroEmpleado` está aquí y NO entre los autoritativos, aunque el archivo de
+ * nómina sea su origen (D-54): es la tercera llave de reconocimiento y desde que
+ * se puede corregir a mano (`PATCH /empleados/:id`), pisarlo en cada
+ * re-importación desharía esa corrección y cambiaría la identidad con la que el
+ * importador reconoce a la persona.
+ */
 const CAMPOS_PERSONA_RELLENABLES = Object.freeze([
+  'numeroEmpleado',
   'curp',
   'rfc',
   'nss',
@@ -75,7 +84,6 @@ const CAMPOS_PERSONA_RELLENABLES = Object.freeze([
 
 /** Campos de la adscripción en los que manda el archivo. */
 const CAMPOS_ADSCRIPCION_AUTORITATIVOS = Object.freeze([
-  'numeroEmpleado',
   'departamento',
   'tipoContrato',
   'fechaIngreso'
@@ -265,7 +273,7 @@ class EmployeeImportService {
         vistas.set(curp, fila.fila)
       }
 
-      const numero = fila.adscripcion.numeroEmpleado
+      const numero = fila.persona.numeroEmpleado
       if (numero) {
         if (numeros.has(numero)) {
           fila.errores.push(
@@ -363,8 +371,13 @@ class EmployeeImportService {
    * Decide qué va a pasar con cada fila.
    *
    * **Cómo se reconoce a alguien que ya existe**, en este orden: CURP → RFC →
-   * número de empleado dentro de esta empresa. Los 145 del archivo traen CURP y
-   * RFC, así que el tercero es sólo una red para cuando la CURP se capturó mal.
+   * número de trabajador. Los 145 del archivo traen CURP y RFC, así que el
+   * tercero es sólo una red para cuando la CURP se capturó mal.
+   *
+   * Desde D-54 el número es de la persona y único en todo el grupo, así que esa
+   * tercera llave ya no se busca "dentro de esta empresa" sino en el catálogo
+   * completo: reconoce también a quien se importó primero en otra empresa del
+   * grupo, que antes se duplicaba.
    */
   async #clasificar(filas, empresa) {
     const validas = filas.filter((f) => f.errores.length === 0)
@@ -372,16 +385,25 @@ class EmployeeImportService {
 
     const curps = [...new Set(validas.map((f) => f.persona.curp).filter(Boolean))]
     const rfcs = [...new Set(validas.map((f) => f.persona.rfc).filter(Boolean))]
+    const numeros = [
+      ...new Set(validas.map((f) => f.persona.numeroEmpleado).filter(Boolean))
+    ]
 
     const porCurp = new Map()
     const porRfc = new Map()
+    const porNumero = new Map()
     const encontrados = await Employee.find({
-      $or: [{ curp: { $in: curps } }, { rfc: { $in: rfcs } }]
+      $or: [
+        { curp: { $in: curps } },
+        { rfc: { $in: rfcs } },
+        { numeroEmpleado: { $in: numeros } }
+      ]
     })
     for (const empleado of encontrados) {
       if (empleado.curp) porCurp.set(empleado.curp, empleado)
       // El RFC no es único en `employees`: gana el primero y se avisa después.
       if (empleado.rfc && !porRfc.has(empleado.rfc)) porRfc.set(empleado.rfc, empleado)
+      if (empleado.numeroEmpleado) porNumero.set(empleado.numeroEmpleado, empleado)
     }
 
     // Adscripciones de ESTA empresa, con la nómina, para poder comparar.
@@ -391,26 +413,6 @@ class EmployeeImportService {
     const adscripcionPorEmpleado = new Map(
       adscripciones.map((a) => [a.empleadoId.toString(), a])
     )
-    const adscripcionPorNumero = new Map(
-      adscripciones.filter((a) => a.numeroEmpleado).map((a) => [a.numeroEmpleado, a])
-    )
-
-    /*
-     * Tercera llave: el número de empleado. Sólo se consulta para las filas que
-     * no se reconocieron por CURP ni por RFC, y los empleados que apunta se
-     * traen en una segunda consulta (son pocos o ninguno).
-     */
-    const idsPorNumero = validas
-      .filter((f) => !porCurp.has(f.persona.curp) && !porRfc.has(f.persona.rfc))
-      .map((f) => adscripcionPorNumero.get(f.adscripcion.numeroEmpleado))
-      .filter(Boolean)
-      .map((a) => a.empleadoId)
-
-    const porId = new Map()
-    if (idsPorNumero.length > 0) {
-      const extra = await Employee.find({ _id: { $in: idsPorNumero } })
-      for (const empleado of extra) porId.set(empleado._id.toString(), empleado)
-    }
 
     for (const fila of validas) {
       const porCurpFila = fila.persona.curp ? porCurp.get(fila.persona.curp) : null
@@ -424,17 +426,29 @@ class EmployeeImportService {
         continue
       }
 
+      const numero = fila.persona.numeroEmpleado
+      const porNumeroFila = numero ? porNumero.get(numero) || null : null
+
       let empleado = porCurpFila || porRfcFila
-      if (!empleado) {
-        const porNumero = adscripcionPorNumero.get(fila.adscripcion.numeroEmpleado)
-        if (porNumero) {
-          empleado = porId.get(porNumero.empleadoId.toString()) || null
-          if (empleado) {
-            fila.avisos.push(
-              `Se reconoció por número de empleado (${fila.adscripcion.numeroEmpleado}), no por CURP: revisa que sea la misma persona`
-            )
-          }
-        }
+
+      /*
+       * El número ya es de otra persona. Sólo puede pasar cuando la CURP o el
+       * RFC identificaron a alguien Y ese número lo tiene un tercero: como es
+       * único en todo el grupo (D-54), importar la fila reventaría con un
+       * `E11000` a medio camino. Se corta antes y se dice quién lo tiene.
+       */
+      if (empleado && porNumeroFila && !porNumeroFila._id.equals(empleado._id)) {
+        fila.errores.push(
+          `El número de trabajador ${numero} ya lo tiene "${porNumeroFila.nombre}", que es otra persona: corrígelo en el archivo o en el registro`
+        )
+        continue
+      }
+
+      if (!empleado && porNumeroFila) {
+        empleado = porNumeroFila
+        fila.avisos.push(
+          `Se reconoció por número de trabajador (${numero}), no por CURP: revisa que sea la misma persona`
+        )
       }
 
       if (!empleado) {
@@ -750,7 +764,7 @@ class EmployeeImportService {
         empleadoId: f.empleadoId ? f.empleadoId.toString() : null,
         nombre: f.persona.nombre,
         curp: f.persona.curp,
-        numeroEmpleado: f.adscripcion.numeroEmpleado,
+        numeroEmpleado: f.persona.numeroEmpleado,
         puesto: f.puesto,
         tipo: f.persona.tipo,
         estatus: f.estatus,
@@ -763,7 +777,7 @@ class EmployeeImportService {
         empleadoId: f.empleadoId ? f.empleadoId.toString() : null,
         nombre: f.nombreEnBase || f.persona.nombre,
         curp: f.persona.curp,
-        numeroEmpleado: f.adscripcion.numeroEmpleado,
+        numeroEmpleado: f.persona.numeroEmpleado,
         accion: f.accion,
         cambios: [...(f.cambiosPersona || []), ...(f.cambiosAdscripcion || [])],
         avisos: f.avisos

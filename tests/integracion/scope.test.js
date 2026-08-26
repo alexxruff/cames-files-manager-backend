@@ -252,8 +252,11 @@ describe('GET /empleados — filtros, orden y paginación', () => {
   it('busca también por número de empleado (D-51)', async () => {
     const empresa = await crearEmpresa()
     const { token } = await crearEmpleadoConSesion({ empresa })
-    const persona = await crearEmpleado({ nombre: 'Persona Con Número' })
-    await adscribir(empresa, persona, { numeroEmpleado: '0042' })
+    const persona = await crearEmpleado({
+      nombre: 'Persona Con Número',
+      numeroEmpleado: '0042'
+    })
+    await adscribir(empresa, persona)
 
     const res = await request(app).get(`${RUTA}?busqueda=0042`).set(auth(token))
     expect(res.body.data.empleados.map((e) => e.empleado.nombre)).toEqual([
@@ -369,12 +372,59 @@ describe('GET /empleados — filtros, orden y paginación', () => {
   })
 
   describe('orden por número de empleado (D-50)', () => {
-    it('exige empresaId: el número es por empresa, no de la persona', async () => {
-      const { token } = await prepararEquipo()
-      const res = await request(app).get(`${RUTA}?orden=numero_asc`).set(auth(token))
+    it('ordena sin empresaId, aunque sean de empresas distintas (D-53)', async () => {
+      const empresaA = await crearEmpresa({ nombre: 'Empresa A' })
+      const empresaB = await crearEmpresa({ nombre: 'Empresa B' })
+      const { token } = await crearEmpleadoConSesion({
+        alcanceGlobal: true,
+        sinAdscripcion: true
+      })
 
-      expect(res.status).toBe(400)
-      expect(res.body.errors[0].path).toBe('empresaId')
+      for (const [nombre, numeroEmpleado, empresa] of [
+        ['Persona Seis', '0006', empresaB],
+        ['Persona Dos', '0002', empresaA],
+        ['Persona Cinco', '0005', empresaA]
+      ]) {
+        const persona = await crearEmpleado({ nombre, numeroEmpleado })
+        await adscribir(empresa, persona)
+      }
+
+      const nuestras = ['Persona Dos', 'Persona Cinco', 'Persona Seis']
+      const ordenados = async (orden) => {
+        const res = await request(app).get(`${RUTA}?orden=${orden}`).set(auth(token))
+        expect(res.status).toBe(200)
+        return res.body.data.empleados
+          .map((e) => e.empleado.nombre)
+          .filter((nombre) => nuestras.includes(nombre))
+      }
+
+      expect(await ordenados('numero_asc')).toEqual(nuestras)
+      expect(await ordenados('numero_desc')).toEqual([...nuestras].reverse())
+    })
+
+    it('manda al final a quien no tiene número, en los dos sentidos', async () => {
+      const empresa = await crearEmpresa()
+      const { token } = await crearEmpleadoConSesion({
+        alcanceGlobal: true,
+        sinAdscripcion: true
+      })
+
+      const conNumero = await crearEmpleado({
+        nombre: 'Con Numero',
+        numeroEmpleado: '0007'
+      })
+      await adscribir(empresa, conNumero)
+      const sinNumero = await crearEmpleado({ nombre: 'Sin Numero' })
+      await adscribir(empresa, sinNumero)
+
+      for (const orden of ['numero_asc', 'numero_desc']) {
+        const res = await request(app).get(`${RUTA}?orden=${orden}`).set(auth(token))
+        const nombres = res.body.data.empleados.map((e) => e.empleado.nombre)
+        // El único con número encabeza; el resto (sin número, la sesión incluida)
+        // queda detrás.
+        expect(nombres[0]).toBe('Con Numero')
+        expect(nombres).toContain('Sin Numero')
+      }
     })
 
     it('ordena por numeroEmpleado en los dos sentidos, dentro de una empresa', async () => {
@@ -391,8 +441,8 @@ describe('GET /empleados — filtros, orden y paginación', () => {
         ['Persona A', '0001'],
         ['Persona B', '0002']
       ]) {
-        const persona = await crearEmpleado({ nombre })
-        await adscribir(empresa, persona, { numeroEmpleado })
+        const persona = await crearEmpleado({ nombre, numeroEmpleado })
+        await adscribir(empresa, persona)
       }
 
       const asc = await request(app)
@@ -402,13 +452,11 @@ describe('GET /empleados — filtros, orden y paginación', () => {
         .get(`${RUTA}?empresaId=${empresa._id}&orden=numero_desc`)
         .set(auth(token))
 
-      const numerosAsc = asc.body.data.empleados.map(
-        (e) => e.adscripciones[0].numeroEmpleado
-      )
+      const numerosAsc = asc.body.data.empleados.map((e) => e.empleado.numeroEmpleado)
       expect(numerosAsc).toEqual(['0001', '0002', '0003'])
-      expect(
-        desc.body.data.empleados.map((e) => e.adscripciones[0].numeroEmpleado)
-      ).toEqual([...numerosAsc].reverse())
+      expect(desc.body.data.empleados.map((e) => e.empleado.numeroEmpleado)).toEqual(
+        [...numerosAsc].reverse()
+      )
     })
   })
 })

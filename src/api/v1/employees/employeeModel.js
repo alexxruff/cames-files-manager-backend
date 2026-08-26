@@ -92,6 +92,20 @@ const employeeSchema = new mongoose.Schema(
         'La CURP no tiene un formato válido'
       ]
     },
+    /**
+     * Número de trabajador de la nómina — **de la PERSONA, único en el grupo**
+     * (D-54).
+     *
+     * Vivía en la adscripción, único por empresa, porque el archivo de nómina se
+     * importa empresa por empresa (D-46). Se movió aquí cuando se pidió poder
+     * capturarlo al dar de alta a alguien que todavía no se adscribe a ninguna
+     * empresa: sin empresa, un número único "por empresa" no tiene dónde vivir.
+     *
+     * `default: null` porque la migración y el importador pueden dejarlo vacío;
+     * `POST /empleados` sí lo exige.
+     */
+    numeroEmpleado: { type: String, trim: true, maxlength: 30, default: null },
+
     rfc: { type: String, uppercase: true, trim: true, maxlength: 13, default: null },
     nss: { type: String, trim: true, maxlength: 11, default: null },
 
@@ -146,6 +160,7 @@ const employeeSchema = new mongoose.Schema(
         return {
           _id: ret._id.toString(),
           nombre: ret.nombre,
+          numeroEmpleado: ret.numeroEmpleado ?? null,
           curp: ret.curp ?? null,
           rfc: ret.rfc ?? null,
           nss: ret.nss ?? null,
@@ -181,6 +196,10 @@ const employeeSchema = new mongoose.Schema(
 employeeSchema.index(
   { curp: 1 },
   { unique: true, partialFilterExpression: { curp: { $type: 'string' } } }
+)
+employeeSchema.index(
+  { numeroEmpleado: 1 },
+  { unique: true, partialFilterExpression: { numeroEmpleado: { $type: 'string' } } }
 )
 employeeSchema.index(
   { 'acceso.email': 1 },

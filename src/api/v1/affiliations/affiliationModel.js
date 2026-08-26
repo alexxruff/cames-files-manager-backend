@@ -102,14 +102,6 @@ const affiliationSchema = new mongoose.Schema(
     },
 
     /**
-     * Número de empleado en ESTA empresa (la columna `ID` del archivo de
-     * nómina). No es la identidad de la persona —eso es la CURP— pero sí la
-     * última red con la que la re-importación reconoce a alguien cuya CURP se
-     * capturó mal.
-     */
-    numeroEmpleado: { type: String, trim: true, default: null },
-
-    /**
      * El departamento **tal como lo dice la nómina**, sin traducir.
      *
      * No es lo mismo que `areas`: en el archivo de Urbacames, 53 de 145 filas
@@ -173,7 +165,6 @@ const affiliationSchema = new mongoose.Schema(
           empresaId: idAString(ret.empresaId),
           empleadoId: idAString(ret.empleadoId),
           areas: ret.areas || [],
-          numeroEmpleado: ret.numeroEmpleado ?? null,
           departamento: ret.departamento ?? null,
           tipoContrato: ret.tipoContrato,
           fechaIngreso: ret.fechaIngreso,
@@ -198,16 +189,10 @@ affiliationSchema.index({ empresaId: 1, empleadoId: 1 }, { unique: true })
 affiliationSchema.index({ empresaId: 1, activo: 1, areas: 1 })
 affiliationSchema.index({ empleadoId: 1, activo: 1 })
 /*
- * El número de empleado es único DENTRO de la empresa: es la llave con la que la
- * re-importación reconoce a alguien, y dos personas con el mismo número la
- * volverían ambigua. Parcial y no `sparse`, por lo mismo que en `employees`: con
- * `default: null` el campo existe y un índice disperso no lo omitiría, así que
- * todas las adscripciones capturadas a mano colisionarían entre sí.
+ * El número de empleado YA NO VIVE AQUÍ: es de la persona y único en todo el
+ * grupo (D-54). El índice `(empresaId, numeroEmpleado)` se fue con él;
+ * `npm run db:indices` lo borra.
  */
-affiliationSchema.index(
-  { empresaId: 1, numeroEmpleado: 1 },
-  { unique: true, partialFilterExpression: { numeroEmpleado: { $type: 'string' } } }
-)
 
 affiliationSchema.pre('validate', function forzarInvariantes(next) {
   // El importador puede dejar la fecha de término pendiente (D-46); esa es la

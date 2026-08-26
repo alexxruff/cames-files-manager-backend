@@ -41,10 +41,10 @@ activas) — sin mezclar (D-51).** `false` trae **sólo** las dadas de baja; par
 ver las dos, hay que pedirlo explícito con `todos`.
 
 `tipo` y `categoriaId` son de la **persona**, no de la adscripción (D-51).
-`orden` compara `numeroEmpleado` como texto (no numérico): con el archivo de
-nómina, que rellena con ceros a la izquierda, coincide con el orden numérico.
-Las adscripciones capturadas a mano sin `numeroEmpleado` (`null`) van primero en
-`numero_asc` y al final en `numero_desc`.
+`orden` ordena por `empleado.numeroEmpleado` —de la persona desde D-54— y lo
+compara como texto (no numérico): con el archivo de nómina, que rellena con ceros
+a la izquierda, coincide con el orden numérico. Quien no tiene número (`null`)
+va **al final en los dos sentidos**.
 
 ```jsonc
 // data
@@ -55,7 +55,7 @@ Las adscripciones capturadas a mano sin `numeroEmpleado` (`null`) van primero en
       "empresaId": "…",
       "empleadoId": "…",
       "areas": ["obra"],
-      "numeroEmpleado": null, // nuevo (D-46): el ID de la nómina
+      // OJO (D-54): `numeroEmpleado` ya NO está aquí — se movió a `empleado`.
       "departamento": null, // nuevo (D-46): tal como lo dice la nómina
       "tipoContrato": "indeterminado",
       "fechaIngreso": "2026-01-15",
@@ -67,6 +67,7 @@ Las adscripciones capturadas a mano sin `numeroEmpleado` (`null`) van primero en
       "empleado": {
         "_id": "…",
         "nombre": "Roberto Aguilar Sosa",
+        "numeroEmpleado": "0248", // aquí desde D-54, antes en la raíz
         "tipo": "mano_de_obra",
         "activo": true
       }
@@ -163,22 +164,22 @@ reactivar la adscripción.
 
 ## Tres campos nuevos en la adscripción (D-46)
 
-La importación desde el .xlsx de nómina agregó tres campos a **toda** respuesta
+La importación desde el .xlsx de nómina agregó dos campos a **toda** respuesta
 que devuelva una adscripción. Son **aditivos**: nada cambió de forma ni de
-nombre, así que el front sigue funcionando sin tocarse.
+nombre.
 
 | Campo             | Tipo           | Qué es                                                       |
 | ----------------- | -------------- | ------------------------------------------------------------ |
-| `numeroEmpleado`  | `string\|null` | El `ID` de la nómina en **esa** empresa                      |
 | `departamento`    | `string\|null` | El departamento **tal como lo dice la nómina**, sin traducir |
 | `datosPendientes` | `string[]`     | Datos que el importador dejó sin capturar                    |
 
-**`numeroEmpleado` ya no es exclusivo del importador.** `POST /empleados` lo pide
-como obligatorio al dar de alta a alguien (es el alta y su primera adscripción,
-en un solo paso — ver `INTEGRACION-FRONTEND.md`). Sigue siendo `null` sólo cuando
-la adscripción se agregó con **este** endpoint, `POST /empresas/:id/adscripciones`
-(sumarle a alguien que ya existe una segunda empresa): ahí no se pide, y no hay
-manera de capturarlo después — ni aquí ni en `PATCH /adscripciones/:id`.
+**`numeroEmpleado` se movió a la persona (D-54).** Estaba aquí, único por
+empresa; ahora es de la persona y único en **todo el grupo**, así que en el
+renglón viaja en `empleado.numeroEmpleado` y ya no en la raíz de la adscripción.
+Se captura en `POST /empleados` (obligatorio, con o sin empresa) y se corrige en
+`PATCH /empleados/:id` — nunca desde las adscripciones. `POST
+/empresas/:id/adscripciones`, que sólo suma una empresa a alguien que ya existe,
+tampoco lo pide: la persona ya lo trae.
 
 **`departamento` no es lo mismo que `areas`.** En el archivo de Urbacames, 53 de
 145 filas traen aquí una **obra** (`Axis Zapopan`, `Plenares`) y no un área.
