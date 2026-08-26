@@ -1916,3 +1916,193 @@ primera). Los reporta para resolverlos a mano.
 No borra nada: el campo viejo se conserva como respaldo hasta que se corra con
 `--limpiar`, que es lo único destructivo y va aparte a propósito. Después,
 `npm run db:indices` crea el índice nuevo y borra el de `affiliations`.
+
+## D-55 · La `Baja` del archivo alcanza también a la persona, no sólo a la empresa
+
+**Decisión.** Cuando el `Estatus` de la nómina dice `Baja` y a esa persona **no le
+queda ninguna adscripción activa**, la importación le da de baja también **del
+sistema** (`employees.activo = false`). `Alta` y `Reingreso` siguen siendo
+activos, y un `Reingreso` reactiva a la persona **si su baja la había puesto una
+importación**.
+
+### El defecto
+
+El `Estatus` siempre se leyó bien —`alta`/`reingreso` → activo, `baja` →
+inactivo— y la adscripción quedaba cerrada, con motivo y fecha. Lo que no se
+tocaba era la persona, y ahí la baja se perdía: quedaba en **tierra de nadie**.
+
+| `GET /empleados`            | Alguien importado en `Baja` |
+| --------------------------- | --------------------------- |
+| `activo=true` (por defecto) | no sale — correcto          |
+| `activo=false` (las bajas)  | **no salía** ← el defecto   |
+| `activo=todos`              | salía, con `activo: true`   |
+
+El filtro pensado para "los que ya se fueron" los excluía —la persona figuraba
+activa— y el de activos también —no tiene adscripción vigente—. La pantalla de
+bajas salía vacía después de importar una nómina con bajas, que es justo lo que
+reportó el front.
+
+### Por qué "sin ninguna adscripción activa" y no "dice Baja"
+
+`modelo-datos.md` §5b.1 dice que dar de baja una adscripción **no** da de baja al
+empleado, y que si era la única "es razonable proponer también la baja global,
+pero es una decisión de quien la ejecuta, no automática". Eso sigue siendo cierto
+para `PATCH /adscripciones/:id/estado`, que se hace persona por persona.
+
+Aquí quien ejecuta **es el archivo de nómina**, que ya es la autoridad sobre la
+relación laboral (D-46). La condición no es "la fila dice Baja" sino "con ésta no
+le queda ninguna empresa": alguien de baja en Edificación que sigue en
+Infraestructura **no** se da de baja del sistema, y la fila lo dice en un aviso.
+Es una desviación anotada de §5b.1, acotada al importador.
+
+### La vuelta es más estrecha que la ida
+
+Un `Reingreso` reactiva a la persona **sólo si `motivoBaja` es el del importador**.
+Una baja capturada a mano —un despido— no la deshace un archivo de nómina: para
+esa se conserva el aviso de siempre, ahora diciendo que la baja fue manual. Sin
+esa asimetría, volver a subir el export mensual resucitaría a quien RH dio de
+baja por causa.
+
+### Se delega en `employeeService.setEstado`
+
+No se escribe el documento a mano: esa ruta ya desactiva el acceso a la
+plataforma en la misma transacción y **se niega a dejar al sistema sin
+administrador global**. Si una fila intentara dar de baja al último admin, cae en
+error con su motivo y las demás siguen — que es lo correcto.
+
+### Se ve antes de aplicar
+
+`#marcarEstadoDeLaPersona` corre en el análisis, que comparten la previsualización
+y la importación (D-46), así que el cambio de estado aparece en `avisos` y en
+`cambios: ['activo']` **antes** de escribir nada. Una fila que sólo cambia el
+estado de la persona deja de contar como `sin_cambios` y pasa a `actualizar`: si
+no, el resumen diría que no pasa nada mientras la persona se da de baja.
+
+## D-56 · El cambio de `Estatus` se ve en el renglón, no sólo en el resumen
+
+**Decisión.** `cambios` de un renglón de `yaExisten` incluye **`'estatus'`** cuando
+el alta/baja del archivo no coincide con la que está registrada en esa empresa, y
+el renglón trae un aviso con el antes y el después.
+
+### El defecto
+
+D-55 hizo que la baja se aplicara bien, y el resumen la contaba
+(`seDanDeBaja`, `seReactivan`). Pero la lista `cambios` —lo que el front pinta
+como «qué cambió en esta persona»— no la incluía: `#cambiosDeAdscripcion` sólo
+recorría `CAMPOS_ADSCRIPCION_AUTORITATIVOS`, y `activo` no está ahí porque el alta
+y la baja no se escriben con una asignación, pasan por
+`affiliationService.setEstado` (que además cierra las asignaciones abiertas, D-38).
+
+El resultado se veía al re-subir el archivo:
+
+| Caso                                   | `accion`      | `cambios` antes |
+| -------------------------------------- | ------------- | --------------- |
+| Alta → Baja, era su única empresa      | `dar_de_baja` | `['activo']` ¹  |
+| **Alta → Baja, sigue en otra empresa** | `dar_de_baja` | **`[]`**        |
+| Baja → Reingreso                       | `reactivar`   | `['activo']` ¹  |
+
+¹ y sólo por casualidad: era el cambio de la PERSONA que agregó D-55, no el de la
+adscripción.
+
+El segundo renglón llegaba a la pantalla de revisión **sin ningún dato cambiado**
+aunque su estatus sí cambió: la persona seguía activa —tiene otra empresa— y el
+cambio de la adscripción no se listaba.
+
+### `estatus` y `activo` son dos cosas distintas
+
+Se usan dos nombres a propósito, y no uno solo:
+
+- **`estatus`** — alta o baja **en esa empresa**. Es el nombre de la columna del
+  archivo, que es lo que la persona está revisando.
+- **`activo`** — alta o baja **del sistema**, la persona completa (D-55).
+
+Colapsarlos en `activo` habría hecho imposible distinguir «se fue de esta
+empresa» de «se fue del grupo», que es justo la diferencia que el modelo sostiene
+desde el principio.
+
+### El aviso lleva el antes y el después
+
+`cambios` dice **qué** campo cambió; el aviso dice **de qué a qué**, en español y
+mostrable tal cual: _«El estatus cambió: estaba de alta en Maquinaria Cames y el
+archivo la trae como "Baja"»_. Es la información que hace revisable la
+previsualización sin abrir el Excel al lado.
+
+### Lo que sigue igual
+
+Re-subir el mismo archivo sin cambios deja `accion: 'sin_cambios'`, `cambios: []`
+y `avisos: []`. La detección de cambios no se volvió ruidosa: sólo dejó de callar
+el único que faltaba.
+
+## D-57 · El archivo no pisa lo que se corrigió a mano: se pregunta
+
+**Decisión.** La importación compara el archivo nuevo contra **lo que trajo el
+archivo anterior** (`affiliations.payrollSnapshot`). Lo que cambió en la
+plataforma después de esa importación se considera **captura manual y gana**: el
+archivo no lo pisa, el renglón lo reporta en `conflictos`, y para que gane el
+archivo hay que pedirlo por persona en `forzarArchivoPara`.
+
+Además, los datos de la **persona** que difieren se reportan en `diferencias`.
+Esos nunca se pisan (D-46), así que no hay nada que decidir — pero hasta ahora se
+callaban.
+
+### Por qué hace falta guardar lo del archivo anterior
+
+Sin historial, dos situaciones distintas son indistinguibles:
+
+| Archivo anterior | Plataforma | Archivo nuevo | Qué pasó                          |
+| ---------------- | ---------- | ------------- | --------------------------------- |
+| `Alta`           | `Alta`     | `Baja`        | **el archivo** trae la novedad    |
+| `Alta`           | `Baja`     | `Alta`        | **alguien** la dio de baja a mano |
+
+En las dos el archivo dice algo distinto de lo que está guardado. Sólo comparando
+contra lo que dijo el archivo la vez pasada se sabe cuál es cuál: lo que difiere
+de la base es cambio del archivo, y lo que difiere entre la base y el documento
+es cambio a mano. Por eso el snapshot, y no un `updatedAt` — que dice _cuándo_ se
+tocó el registro, no _qué_ decía el archivo.
+
+### Sólo tres campos, y por qué sólo esos
+
+`estatus`, `tipoContrato` y `fechaIngreso`. Son los únicos donde el choque es
+real: el importador los escribe **y** existe una ruta para cambiarlos a mano.
+`departamento` y `nomina` sólo los escribe el importador; `areas` sólo se rellena
+si está vacía; los campos de la persona nunca se pisan. Guardar más sería
+contabilidad que nadie consulta.
+
+### Gana la plataforma, y la vuelta atrás no existe
+
+El default es conservar lo capturado porque **es lo que no se puede recuperar**:
+el archivo se vuelve a subir cuando se quiera; una corrección hecha a mano, si se
+pisa, se perdió. Elegir es explícito y por persona (`forzarArchivoPara`, ids de
+la previsualización), no un interruptor global: aceptar el archivo para uno no
+debería aceptarlo para los otros 144.
+
+### Sigue preguntando mientras siga divergente
+
+El snapshot guarda **lo que dijo el archivo, no lo que se aplicó**. Si el
+conflicto se resuelve a favor de la plataforma, el mes siguiente el archivo vuelve
+a traer lo mismo y el conflicto vuelve a aparecer. Es deliberado: la discrepancia
+sigue ahí y callarla la escondería. Si algún día molesta, lo que falta es un
+«ya lo revisé» explícito por campo, no borrar el registro.
+
+### Sin snapshot, manda el archivo
+
+Las adscripciones anteriores a esta versión, y las creadas a mano, no tienen
+contra qué comparar: se comportan como siempre, el archivo manda. El registro se
+escribe en **toda** importación —incluidas las filas `sin_cambios`—, así que la
+primera vez que se re-suba el archivo el historial queda armado y a partir de ahí
+la detección funciona. Inventar un conflicto donde no se sabe habría sido peor
+que no detectarlo.
+
+### Dos bugs que salieron al probarlo
+
+1. **`cambiosPersona` servía para dos cosas.** Era a la vez la lista de etiquetas
+   de la respuesta y la lista de campos que `#rellenarPersona` **copia** del
+   archivo. El `'activo'` que agregó D-55 acababa en `empleado.activo = undefined`
+   y la invariante del modelo rechazaba el guardado pidiendo el motivo de la baja.
+   Ahora la etiqueta va en `cambiosDeEstado`, aparte. Estaba latente desde D-55:
+   sólo no reventó porque el orden de las operaciones lo tapaba.
+2. **La baja del sistema se colaba por la puerta de atrás.** Con el estatus en
+   conflicto —el archivo dice alta, la plataforma dice baja— la persona se quedaba
+   sin adscripción activa y D-55 le daba de baja del sistema, tomando justo la
+   decisión que se acababa de dejar en manos del usuario. Ahora, si el estatus no
+   se aplica, el renglón no decide nada sobre la persona.

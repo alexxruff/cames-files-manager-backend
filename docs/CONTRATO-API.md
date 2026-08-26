@@ -123,6 +123,11 @@ interface ResultadoImportacion {
     sinCambios: number
     yaExisten: number // suma de los cinco anteriores
     conError: number
+    /**
+     * Filas que necesitan una decisión: el archivo chocó con un cambio hecho a
+     * mano y NO se aplicó (D-57). Se cruza con las anteriores, no se suma.
+     */
+    conConflicto: number
   }
   categoriasNuevas: { nombre: string; tipo: TipoEmpleado; filas: number }[]
   nuevos: {
@@ -145,7 +150,19 @@ interface ResultadoImportacion {
     curp: string | null
     numeroEmpleado: string | null
     accion: 'adscribir' | 'reactivar' | 'dar_de_baja' | 'actualizar' | 'sin_cambios'
-    cambios: string[] // qué campos va a cambiar (o cambió)
+    // Lo que el archivo NO aplicó por chocar con un cambio manual (D-57).
+    conflictos: {
+      campo: 'estatus' | 'tipoContrato' | 'fechaIngreso'
+      enElArchivo: string
+      enLaPlataforma: string
+      enLaImportacionAnterior: string
+      cambiadoEn: string | null // 'YYYY-MM-DD', sólo en la baja
+      mensaje: string // mostrable tal cual
+    }[]
+    // Datos de la persona que difieren. NUNCA se pisan: informativo (D-57).
+    diferencias: { campo: string; enElArchivo: string; enLaPlataforma: string; mensaje: string }[]
+    cambios: string[] // qué campos va a cambiar (o cambió). 'estatus' = alta/baja
+    //                   en ESA empresa; 'activo' = alta/baja del sistema (D-55, D-56)
     avisos: string[]
   }[]
   conError: {

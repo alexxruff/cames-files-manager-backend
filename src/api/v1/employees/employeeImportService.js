@@ -82,6 +82,30 @@ const CAMPOS_PERSONA_RELLENABLES = Object.freeze([
   'telefono'
 ])
 
+/**
+ * Los tres campos donde el archivo y una edición manual pueden chocar (D-57).
+ *
+ * No son todos los que escribe el importador: `departamento` y `nomina` no
+ * tienen ruta para editarse a mano, y `areas` sólo se rellena si está vacía. Sin
+ * choque posible no hay nada que preguntar.
+ */
+const CAMPOS_EN_DISPUTA = Object.freeze(['estatus', 'tipoContrato', 'fechaIngreso'])
+
+/** Nombre mostrable de cada campo, para los avisos y los conflictos. */
+const ETIQUETAS = Object.freeze({
+  estatus: 'el estatus',
+  tipoContrato: 'el tipo de contrato',
+  fechaIngreso: 'la fecha de ingreso',
+  nombre: 'el nombre',
+  numeroEmpleado: 'el número de trabajador',
+  curp: 'la CURP',
+  rfc: 'el RFC',
+  nss: 'el NSS',
+  fechaNacimiento: 'la fecha de nacimiento',
+  email: 'el correo',
+  telefono: 'el teléfono'
+})
+
 /** Campos de la adscripción en los que manda el archivo. */
 const CAMPOS_ADSCRIPCION_AUTORITATIVOS = Object.freeze([
   'departamento',
@@ -129,7 +153,8 @@ class EmployeeImportService {
    * Lee el archivo, lo compara contra la base y clasifica cada fila. **No
    * escribe nada.**
    */
-  async #analizar(buffer, { empresaId }, contexto) {
+  async #analizar(buffer, opciones, contexto) {
+    const { empresaId } = opciones
     const empresa = await this.#empresaDestino(empresaId, contexto)
 
     const hoja = await leerHoja(buffer, {
@@ -186,7 +211,7 @@ class EmployeeImportService {
       }
     }
 
-    await this.#clasificar(filas, empresa)
+    await this.#clasificar(filas, empresa, opciones)
 
     const rfcArchivo = hoja.meta[META_RFC]
       ? String(hoja.meta[META_RFC]).toUpperCase()
@@ -379,7 +404,7 @@ class EmployeeImportService {
    * completo: reconoce también a quien se importó primero en otra empresa del
    * grupo, que antes se duplicaba.
    */
-  async #clasificar(filas, empresa) {
+  async #clasificar(filas, empresa, opciones = {}) {
     const validas = filas.filter((f) => f.errores.length === 0)
     if (validas.length === 0) return
 
@@ -408,11 +433,17 @@ class EmployeeImportService {
 
     // Adscripciones de ESTA empresa, con la nómina, para poder comparar.
     const adscripciones = await Affiliation.find({ empresaId: empresa._id }).select(
-      '+nomina'
+      '+nomina +payrollSnapshot'
     )
     const adscripcionPorEmpleado = new Map(
       adscripciones.map((a) => [a.empleadoId.toString(), a])
     )
+
+    /*
+     * A quién se le pidió explícitamente que gane el archivo. Viene de la
+     * previsualización, donde el usuario vio el conflicto y eligió.
+     */
+    const forzadas = new Set((opciones.forzarArchivoPara || []).map(String))
 
     for (const fila of validas) {
       const porCurpFila = fila.persona.curp ? porCurp.get(fila.persona.curp) : null
@@ -459,12 +490,11 @@ class EmployeeImportService {
       fila.empleadoId = empleado._id
       fila.nombreEnBase = empleado.nombre
       fila.cambiosPersona = this.#cambiosDePersona(fila, empleado)
-
-      if (!empleado.activo) {
-        fila.avisos.push(
-          'Esta persona está dada de baja DEL SISTEMA: la importación no la reactiva, sólo actualiza su adscripción'
-        )
-      }
+      // Lo que hace falta para decidir la baja o el alta del sistema, sin
+      // arrastrar el documento entero hasta la respuesta.
+      fila.personaActiva = empleado.activo
+      fila.personaMotivoBaja = empleado.motivoBaja ?? null
+      fila.diferenciasPersona = this.#diferenciasDePersona(fila, empleado)
 
       if (fila.categoriaId && !empleado.categoriaId.equals(fila.categoriaId)) {
         fila.avisos.push(
@@ -479,14 +509,238 @@ class EmployeeImportService {
       }
 
       fila.adscripcionId = adscripcion._id
-      fila.cambiosAdscripcion = this.#cambiosDeAdscripcion(fila, adscripcion)
 
-      if (fila.adscripcion.activo && !adscripcion.activo) fila.accion = 'reactivar'
-      else if (!fila.adscripcion.activo && adscripcion.activo) fila.accion = 'dar_de_baja'
+      /*
+       * Qué del archivo choca con un cambio hecho a mano (D-57). Lo que quede en
+       * conflicto NO se aplica —gana la plataforma— salvo que esta persona venga
+       * en `forzarArchivoPara`.
+       */
+      fila.conflictos = this.#conflictos(fila, adscripcion, empresa, forzadas)
+      const enConflicto = new Set(fila.conflictos.map((c) => c.campo))
+      fila.camposEnConflicto = [...enConflicto]
+
+      fila.cambiosAdscripcion = this.#cambiosDeAdscripcion(fila, adscripcion, enConflicto)
+
+      /*
+       * `quedaActivaEnLaEmpresa` es lo que va a quedar, que no es lo mismo que lo
+       * que dice el archivo: si el estatus está en conflicto, se conserva el de
+       * la plataforma. Lo usa `#marcarEstadoDeLaPersona` para no dar de baja del
+       * sistema a alguien cuya baja acabamos de decidir NO aplicar.
+       */
+      const cambiaEstatus =
+        fila.adscripcion.activo !== adscripcion.activo && !enConflicto.has('estatus')
+      fila.quedaActivaEnLaEmpresa = enConflicto.has('estatus')
+        ? adscripcion.activo
+        : fila.adscripcion.activo
+
+      if (cambiaEstatus) {
+        fila.avisos.push(
+          `El estatus cambió: estaba de ${adscripcion.activo ? 'alta' : 'baja'} en ` +
+            `${empresa.nombre} y el archivo la trae como "${fila.estatus}"`
+        )
+      }
+
+      if (cambiaEstatus && fila.adscripcion.activo) fila.accion = 'reactivar'
+      else if (cambiaEstatus && !fila.adscripcion.activo) fila.accion = 'dar_de_baja'
       else if (fila.cambiosPersona.length + fila.cambiosAdscripcion.length > 0) {
         fila.accion = 'actualizar'
       } else fila.accion = 'sin_cambios'
     }
+
+    await this.#marcarEstadoDeLaPersona(validas, empresa)
+  }
+
+  /**
+   * Quién queda dado de baja **del sistema** y quién vuelve, según el `Estatus`
+   * del archivo (D-55).
+   *
+   * La baja de la columna `Estatus` es de ESTA empresa, y por eso se aplica a la
+   * adscripción. Pero una persona a la que no le queda **ninguna** adscripción
+   * activa ya no trabaja en el grupo, y dejarla marcada como activa la escondía
+   * de los dos filtros de `GET /empleados`: fuera de los activos —no tiene
+   * empresa vigente— y fuera de las bajas —la persona figuraba activa—.
+   *
+   * Sólo cuenta lo que pasa en OTRAS empresas: la adscripción de ésta la decide
+   * el archivo que se está importando.
+   *
+   * La vuelta es deliberadamente más estrecha: se reactiva **sólo si la baja la
+   * había puesto una importación**. Una baja capturada a mano —un despido— no la
+   * deshace un archivo de nómina; para esa se conserva el aviso de siempre.
+   */
+  async #marcarEstadoDeLaPersona(filas, empresa) {
+    const conPersona = filas.filter((f) => f.empleadoId && f.errores.length === 0)
+    if (conPersona.length === 0) return
+
+    const otras = await Affiliation.find({
+      empleadoId: { $in: conPersona.map((f) => f.empleadoId) },
+      activo: true,
+      empresaId: { $ne: empresa._id }
+    }).select('empleadoId')
+    const sigueEnOtraEmpresa = new Set(otras.map((a) => a.empleadoId.toString()))
+
+    for (const fila of conPersona) {
+      const enOtra = sigueEnOtraEmpresa.has(fila.empleadoId.toString())
+
+      /*
+       * Si el estatus quedó en conflicto, lo que manda es la plataforma y este
+       * renglón NO decide nada sobre la persona (D-57): dar de baja del sistema
+       * a alguien cuya baja acabamos de decidir no aplicar sería tomar por la
+       * puerta de atrás la decisión que se acaba de dejar en manos del usuario.
+       */
+      const quedaActiva = fila.quedaActivaEnLaEmpresa ?? fila.adscripcion.activo
+      if (quedaActiva !== fila.adscripcion.activo) continue
+
+      if (!quedaActiva) {
+        if (fila.personaActiva && !enOtra) {
+          fila.bajaDelSistema = true
+          fila.avisos.push(
+            'Se da de baja DEL SISTEMA: con ésta no le queda ninguna empresa activa'
+          )
+        } else if (fila.personaActiva && enOtra) {
+          fila.avisos.push(
+            'Sigue activa en el sistema: tiene otra empresa del grupo vigente'
+          )
+        }
+      } else if (!fila.personaActiva) {
+        if (fila.personaMotivoBaja === MOTIVO_BAJA) {
+          fila.reactivarDelSistema = true
+          fila.avisos.push(
+            'Se reactiva EN EL SISTEMA: la baja anterior también la había puesto una importación'
+          )
+        } else {
+          fila.avisos.push(
+            'Esta persona está dada de baja DEL SISTEMA y la baja se capturó a mano: la importación NO la reactiva, sólo actualiza su adscripción'
+          )
+        }
+      }
+
+      /*
+       * Que el resumen y la previsualización no digan "sin cambios" cuando el
+       * estado de la persona sí cambia.
+       *
+       * Va en `cambiosDeEstado` y NO en `cambiosPersona`: esa segunda lista es la
+       * de campos que `#rellenarPersona` COPIA del archivo, y `activo` no es un
+       * campo del archivo. Meterlo ahí hacía `empleado.activo = undefined`, que
+       * la invariante del modelo rechazaba pidiendo el motivo de la baja.
+       */
+      if (fila.bajaDelSistema || fila.reactivarDelSistema) {
+        fila.cambiosDeEstado = ['activo']
+        if (fila.accion === 'sin_cambios') fila.accion = 'actualizar'
+      }
+    }
+  }
+
+  /**
+   * Lo que el archivo cambiaría **pisando un cambio hecho a mano** (D-57).
+   *
+   * Tres valores por campo, y los tres hacen falta:
+   *
+   * - `base`   — lo que trajo el archivo ANTERIOR (`payrollSnapshot`).
+   * - `actual` — lo que está hoy en la plataforma.
+   * - `nuevo`  — lo que trae el archivo que se está subiendo.
+   *
+   * `actual !== base` significa que alguien lo cambió a mano después de la última
+   * importación. Si además el archivo trae algo distinto de lo que está, hay que
+   * decidir: sin la comparación contra `base` no se puede distinguir de una
+   * novedad legítima del archivo.
+   *
+   * **Gana la plataforma**, que es lo que no se puede recuperar: el archivo se
+   * vuelve a subir, un dato corregido a mano no se recupera solo. Para que gane
+   * el archivo hay que pedirlo por persona en `forzarArchivoPara`.
+   *
+   * Sin `payrollSnapshot` —adscripciones anteriores a D-57 o creadas a mano— no
+   * hay contra qué comparar y **manda el archivo, como siempre**: inventar un
+   * conflicto donde no se sabe sería peor que no detectarlo.
+   */
+  #conflictos(fila, adscripcion, empresa, forzadas) {
+    const base = adscripcion.payrollSnapshot
+    if (!base || !base.importedAt) return []
+    if (forzadas.has(String(adscripcion.empleadoId))) return []
+
+    const comparables = {
+      estatus: {
+        base: base.active,
+        actual: adscripcion.activo,
+        nuevo: fila.adscripcion.activo,
+        texto: (v) => (v ? 'alta' : 'baja'),
+        // La fecha de la baja es un dato real; para el alta no hay equivalente.
+        cambiadoEn: adscripcion.activo ? null : (adscripcion.fechaBaja ?? null)
+      },
+      tipoContrato: {
+        base: base.contractType,
+        actual: adscripcion.tipoContrato,
+        nuevo: fila.adscripcion.tipoContrato,
+        texto: (v) => v,
+        cambiadoEn: null
+      },
+      fechaIngreso: {
+        base: base.hireDate,
+        actual: adscripcion.fechaIngreso,
+        nuevo: fila.adscripcion.fechaIngreso,
+        texto: (v) => v,
+        cambiadoEn: null
+      }
+    }
+
+    const conflictos = []
+    for (const campo of CAMPOS_EN_DISPUTA) {
+      const { base: previo, actual, nuevo, texto, cambiadoEn } = comparables[campo]
+      // Sin valor previo registrado no hay forma de saber quién cambió qué.
+      if (previo === null || previo === undefined) continue
+      if (nuevo === null || nuevo === undefined) continue
+
+      const cambiadoAMano = String(actual) !== String(previo)
+      const archivoDifiere = String(nuevo) !== String(actual)
+      if (!cambiadoAMano || !archivoDifiere) continue
+
+      conflictos.push({
+        campo,
+        enElArchivo: texto(nuevo),
+        enLaPlataforma: texto(actual),
+        enLaImportacionAnterior: texto(previo),
+        cambiadoEn,
+        // Mostrable tal cual: es el texto que va a leer quien decide.
+        mensaje:
+          `El archivo dice que ${ETIQUETAS[campo]} es "${texto(nuevo)}", pero en la ` +
+          `plataforma se cambió a "${texto(actual)}"${cambiadoEn ? ` el ${cambiadoEn}` : ''}` +
+          ` (${empresa.nombre}). Se conserva lo de la plataforma; para que gane el ` +
+          `archivo, vuelve a enviarlo con esta persona en forzarArchivoPara.`
+      })
+    }
+
+    return conflictos
+  }
+
+  /**
+   * Datos de la PERSONA en los que el archivo y la plataforma no coinciden
+   * (D-57).
+   *
+   * No son conflictos: estos campos **nunca** se pisan (D-46, el archivo sólo
+   * rellena lo vacío), así que no hay nada que decidir. Se reportan porque hasta
+   * ahora se callaban: quien revisa la importación no tenía forma de enterarse
+   * de que el archivo trae una CURP o un teléfono distintos del capturado.
+   */
+  #diferenciasDePersona(fila, empleado) {
+    const diferencias = []
+    for (const campo of CAMPOS_PERSONA_RELLENABLES) {
+      const delArchivo = fila.persona[campo]
+      if (delArchivo === null || delArchivo === undefined || delArchivo === '') continue
+
+      const actual = empleado[campo]
+      // Vacío se rellena, no difiere: eso ya lo reporta `cambiosPersona`.
+      if (actual === null || actual === undefined || actual === '') continue
+      if (String(actual) === String(delArchivo)) continue
+
+      diferencias.push({
+        campo,
+        enElArchivo: delArchivo,
+        enLaPlataforma: actual,
+        mensaje:
+          `El archivo trae ${ETIQUETAS[campo] || campo} "${delArchivo}" y en la ` +
+          `plataforma está "${actual}": se conserva lo de la plataforma`
+      })
+    }
+    return diferencias
   }
 
   /** Campos de la persona que están vacíos en la base y el archivo puede llenar. */
@@ -502,10 +756,23 @@ class EmployeeImportService {
   }
 
   /** Campos de la adscripción que el archivo va a cambiar. */
-  #cambiosDeAdscripcion(fila, adscripcion) {
+  #cambiosDeAdscripcion(fila, adscripcion, enConflicto = new Set()) {
     const cambios = []
 
+    /*
+     * El `Estatus` primero, porque es el cambio que más se revisa al re-subir el
+     * archivo (D-56). No sale de `CAMPOS_ADSCRIPCION_AUTORITATIVOS` —ahí sólo van
+     * los campos que se escriben con una asignación— porque el alta y la baja
+     * pasan por `affiliationService.setEstado`, que además cierra las
+     * asignaciones abiertas. Sin esto, un renglón que sólo cambia de alta a baja
+     * llegaba al front con `cambios: []`.
+     */
+    if (fila.adscripcion.activo !== adscripcion.activo && !enConflicto.has('estatus')) {
+      cambios.push('estatus')
+    }
+
     for (const campo of CAMPOS_ADSCRIPCION_AUTORITATIVOS) {
+      if (enConflicto.has(campo)) continue
       const nuevo = fila.adscripcion[campo]
       if (nuevo === null || nuevo === undefined) continue
       if (String(adscripcion[campo] ?? '') !== String(nuevo)) cambios.push(campo)
@@ -532,6 +799,8 @@ class EmployeeImportService {
   async #aplicar(analisis, contexto) {
     for (const fila of analisis.filas) {
       if (fila.errores.length > 0 || !fila.accion) continue
+      // Antes del switch: `crear` y `adscribir` lo asignan al vuelo.
+      const yaTeniaAdscripcion = Boolean(fila.adscripcionId)
       try {
         switch (fila.accion) {
           case 'crear':
@@ -552,6 +821,14 @@ class EmployeeImportService {
           default:
             break
         }
+        await this.#aplicarEstadoDeLaPersona(fila, contexto)
+        /*
+         * El registro de lo que dijo el archivo se refresca SIEMPRE, incluso en
+         * las filas `sin_cambios`: es lo que arranca el historial en las
+         * adscripciones que ya existían antes de D-57, y sin él nunca podrían
+         * detectar un cambio manual.
+         */
+        if (yaTeniaAdscripcion) await this.#refrescarSnapshot(fila)
         fila.aplicada = true
       } catch (error) {
         /*
@@ -574,8 +851,23 @@ class EmployeeImportService {
     const sesion = await mongoose.startSession()
     try {
       await sesion.withTransaction(async () => {
+        /*
+         * Si el archivo la trae en `Baja`, la persona NACE dada de baja del
+         * sistema (D-55). Su única adscripción es la que este mismo renglón crea
+         * y viene cerrada, así que dejarla activa la volvía invisible: no salía
+         * entre los activos —no tiene adscripción vigente— ni entre las bajas
+         * —la persona figuraba activa—.
+         */
         const [empleado] = await Employee.create(
-          [{ ...fila.persona, categoriaId: fila.categoriaId }],
+          [
+            {
+              ...fila.persona,
+              categoriaId: fila.categoriaId,
+              ...(fila.adscripcion.activo
+                ? {}
+                : { activo: false, motivoBaja: MOTIVO_BAJA, fechaBaja: today() })
+            }
+          ],
           { session: sesion }
         )
         fila.empleadoId = empleado._id
@@ -592,6 +884,34 @@ class EmployeeImportService {
     } finally {
       await sesion.endSession()
     }
+  }
+
+  /**
+   * Baja o alta **del sistema**, cuando el `Estatus` del archivo lo implica
+   * (D-55). Lo marcó `#marcarEstadoDeLaPersona`; aquí sólo se ejecuta.
+   *
+   * Se delega en `employeeService.setEstado` en vez de escribir el documento a
+   * mano, para heredar lo que ya cuida esa ruta: desactiva el acceso a la
+   * plataforma en la misma transacción y **se niega a dejar al sistema sin
+   * administrador global**. Si por eso falla, la fila cae en error con su motivo
+   * y las demás siguen — que es justo lo que debe pasar.
+   */
+  async #aplicarEstadoDeLaPersona(fila, contexto) {
+    if (!fila.bajaDelSistema && !fila.reactivarDelSistema) return
+
+    /*
+     * `require` aquí y no arriba: `employeeService` no requiere a este módulo,
+     * pero sí a `recordService`, que sí lo hace. Pedirlo en el momento de usarlo
+     * evita depender del orden de carga.
+     */
+    const employeeService = require('./employeeService')
+    await employeeService.setEstado(
+      fila.empleadoId,
+      fila.bajaDelSistema
+        ? { activo: false, motivo: MOTIVO_BAJA, fecha: today() }
+        : { activo: true },
+      contexto
+    )
   }
 
   /** Ya existe como persona, pero no en esta empresa: sólo se adscribe. */
@@ -648,7 +968,10 @@ class EmployeeImportService {
     const adscripcion = await Affiliation.findById(fila.adscripcionId).select('+nomina')
     if (!adscripcion) return
 
+    // Lo que está en conflicto con un cambio manual NO se pisa (D-57).
+    const enConflicto = new Set(fila.camposEnConflicto || [])
     for (const campo of CAMPOS_ADSCRIPCION_AUTORITATIVOS) {
+      if (enConflicto.has(campo)) continue
       const nuevo = fila.adscripcion[campo]
       if (nuevo !== null && nuevo !== undefined) adscripcion[campo] = nuevo
     }
@@ -687,7 +1010,34 @@ class EmployeeImportService {
       empresaId,
       empleadoId: fila.empleadoId,
       activo,
+      payrollSnapshot: this.#snapshot(fila),
       ...(activo ? {} : { motivoBaja: MOTIVO_BAJA, fechaBaja: today() })
+    }
+  }
+
+  /**
+   * Lo que dijo ESTE archivo, para poder compararlo con el siguiente (D-57).
+   *
+   * Guarda lo que trae el archivo, **no lo que quedó aplicado**: si un conflicto
+   * se resolvió a favor de la plataforma, el archivo sigue diciendo lo suyo y la
+   * próxima importación tiene que volver a preguntarlo. Guardar lo aplicado
+   * borraría la discrepancia y la haría desaparecer en silencio.
+   */
+  /** Deja constancia de lo que dijo este archivo en una adscripción que ya existía. */
+  async #refrescarSnapshot(fila) {
+    if (!fila.adscripcionId) return
+    await Affiliation.updateOne(
+      { _id: fila.adscripcionId },
+      { $set: { payrollSnapshot: this.#snapshot(fila) } }
+    )
+  }
+
+  #snapshot(fila) {
+    return {
+      active: fila.adscripcion.activo,
+      contractType: fila.adscripcion.tipoContrato ?? null,
+      hireDate: fila.adscripcion.fechaIngreso ?? null,
+      importedAt: new Date()
     }
   }
 
@@ -756,6 +1106,11 @@ class EmployeeImportService {
         actualizan: cuenta('actualizar'),
         sinCambios: cuenta('sin_cambios'),
         yaExisten: yaExisten.length,
+        /*
+         * Filas que necesitan una decisión: el archivo pisaría un cambio hecho a
+         * mano (D-57). No se aplicaron; se conservó lo de la plataforma.
+         */
+        conConflicto: validas.filter((f) => (f.conflictos || []).length > 0).length,
         conError: conError.length
       },
       categoriasNuevas,
@@ -779,7 +1134,18 @@ class EmployeeImportService {
         curp: f.persona.curp,
         numeroEmpleado: f.persona.numeroEmpleado,
         accion: f.accion,
-        cambios: [...(f.cambiosPersona || []), ...(f.cambiosAdscripcion || [])],
+        cambios: [
+          ...(f.cambiosPersona || []),
+          ...(f.cambiosDeEstado || []),
+          ...(f.cambiosAdscripcion || [])
+        ],
+        /*
+         * Lo que NO se aplicó porque choca con un cambio manual, y lo que
+         * difiere pero nunca se pisa (D-57). Los dos son arreglos vacíos en el
+         * caso normal, así que no estorban.
+         */
+        conflictos: f.conflictos || [],
+        diferencias: f.diferenciasPersona || [],
         avisos: f.avisos
       })),
       conError: conError.slice(0, MAX_DETALLE).map((f) => ({

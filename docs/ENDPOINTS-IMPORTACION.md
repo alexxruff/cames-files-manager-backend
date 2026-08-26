@@ -149,6 +149,43 @@ Aplica. Devuelve el mismo objeto con `aplicado: true` y los `empleadoId` reales.
 | `actualizar`  | Cambia algo: los campos van en `cambios`                            |
 | `sin_cambios` | Nada que hacer. Es lo normal al re-subir el mismo archivo           |
 
+### La columna `Estatus` y quién queda dado de baja (D-55)
+
+`Alta` y `Reingreso` entran activos; `Baja`, no. Esa baja es **de la empresa** y
+va en la adscripción, pero además:
+
+- **Si con esa baja no le queda ninguna empresa activa, se le da de baja también
+  del sistema** (`empleado.activo: false`). Antes no: la persona quedaba activa
+  sin ninguna adscripción vigente y no salía ni en `activo=true` ni en
+  `activo=false`.
+- **Si sigue activa en otra empresa del grupo, NO se le da de baja del sistema.**
+  Sale en `avisos`.
+- **Un `Reingreso` la reactiva** — pero sólo si la baja anterior la había puesto
+  una importación. Una baja capturada a mano (un despido) no la deshace un
+  archivo; también sale en `avisos`.
+
+Todo esto aparece en la **previsualización**, no sólo al aplicar.
+
+### Cómo se ve un cambio de estatus en el renglón (D-56)
+
+Re-subir el archivo no sirve sólo para dar de alta a los que faltan: sirve para
+revisar **qué cambió** en los que ya están. Cuando el `Estatus` de alguien es
+distinto al que tiene registrado, su renglón de `yaExisten` trae:
+
+- `accion`: `dar_de_baja` o `reactivar`.
+- `cambios`: incluye **`'estatus'`** — el alta/baja **en esa empresa**. Si además
+  alcanza al sistema, incluye también **`'activo'`** — el alta/baja **de la
+  persona**. Son dos cosas distintas y por eso son dos nombres distintos.
+- `avisos`: una frase con el antes y el después, mostrable tal cual —
+  _«El estatus cambió: estaba de alta en Maquinaria Cames y el archivo la trae
+  como "Baja"»_ — y, cuando aplica, si se da de baja del sistema o si sigue
+  activa por tener otra empresa del grupo.
+
+Una fila que sólo cambia el estado cuenta como `actualizar` o
+`dar_de_baja`/`reactivar`, **nunca** como `sin_cambios`. Y al revés: re-subir el
+mismo archivo sin cambios deja `cambios: []` y `avisos: []` — no se inventa
+ruido.
+
 ---
 
 ## Lo que hay que saber para armar la pantalla
@@ -193,18 +230,103 @@ La previsualización ya trae `empresa.rfcCoincide`, así que se puede avisar ant
 
 ---
 
+## El archivo contra lo que se corrigió a mano (D-57)
+
+Es lo que hace útil re-subir el archivo cada mes: no sólo trae a los que faltan,
+también **avisa cuándo el archivo contradice algo que se cambió en la
+plataforma** — y no lo pisa.
+
+### Cómo lo distingue
+
+Cada importación deja registrado qué dijo el archivo. Al subir el siguiente se
+comparan tres valores: lo que dijo el archivo anterior, lo que hay hoy en la
+plataforma y lo que trae el archivo nuevo.
+
+| Archivo anterior | Plataforma | Archivo nuevo | Resultado                        |
+| ---------------- | ---------- | ------------- | -------------------------------- |
+| `Alta`           | `Alta`     | `Baja`        | novedad del archivo → **se aplica** |
+| `Alta`           | `Baja`     | `Alta`        | lo cambiaron a mano → **conflicto** |
+
+### `conflictos` — lo que NO se aplicó
+
+Cada renglón de `yaExisten` trae `conflictos: []`, y cuando hay algo:
+
+```jsonc
+"conflictos": [
+  {
+    "campo": "estatus",                    // estatus | tipoContrato | fechaIngreso
+    "enElArchivo": "alta",
+    "enLaPlataforma": "baja",
+    "enLaImportacionAnterior": "alta",
+    "cambiadoEn": "2026-08-26",            // fecha de la baja; null si no aplica
+    "mensaje": "El archivo dice que el estatus es \"alta\", pero en la plataforma se cambió a \"baja\" el 2026-08-26 (Maquinaria Cames). Se conserva lo de la plataforma; para que gane el archivo, vuelve a enviarlo con esta persona en forzarArchivoPara."
+  }
+]
+```
+
+**Gana la plataforma.** El campo no se toca y la fila cuenta en
+`resumen.conConflicto`. Es a propósito: el archivo se vuelve a subir cuando se
+quiera, una corrección hecha a mano no se recupera.
+
+### Cómo elige el usuario
+
+Se vuelve a enviar con **`forzarArchivoPara`**, los `empleadoId` —los de la misma
+previsualización— cuyo conflicto se resuelve a favor del archivo. Se acepta
+repetido (`forzarArchivoPara=a&forzarArchivoPara=b`) o separado por comas, y
+funciona igual en previsualizar, para ver el efecto antes de aplicar.
+
+Es **por persona**, no un interruptor global: aceptar el archivo para uno no
+debería aceptarlo para los otros 144. Fuerza **todos** los conflictos de esa
+persona.
+
+Si se resuelve a favor de la plataforma, el mes que viene el archivo volverá a
+traer lo mismo y el conflicto **volverá a aparecer**: la discrepancia sigue ahí.
+
+### `diferencias` — lo que difiere pero nunca se pisa
+
+Los datos de la persona (nombre, CURP, teléfono, correo…) el archivo **sólo los
+rellena si están vacíos**, nunca los pisa. Cuando difieren, ahora se dicen:
+
+```jsonc
+"diferencias": [
+  {
+    "campo": "telefono",
+    "enElArchivo": "3311112222",
+    "enLaPlataforma": "3399999999",
+    "mensaje": "El archivo trae el teléfono \"3311112222\" y en la plataforma está \"3399999999\": se conserva lo de la plataforma"
+  }
+]
+```
+
+No son conflictos y no piden decisión: son informativos.
+
+### Sólo tres campos pueden entrar en conflicto
+
+`estatus`, `tipoContrato` y `fechaIngreso`. Son los únicos que el importador
+escribe **y** se pueden cambiar a mano. `departamento` y `nomina` sólo los
+escribe el importador, `areas` sólo se rellena si está vacía, y los datos de la
+persona nunca se pisan.
+
+### En adscripciones viejas empieza a funcionar en la segunda subida
+
+Las que ya existían antes de esta versión no tienen contra qué comparar: esa
+importación se comporta como siempre (manda el archivo) y deja el registro. De
+ahí en adelante la detección funciona.
+
 ## Lo que la importación NO hace
 
 - **No da de baja a quien desaparece del archivo.** Que alguien no venga en el
   archivo de este mes no significa que se fue: sólo un `Baja` explícito lo da de
-  baja, y **de esa empresa**, no del sistema.
+  baja. Esa baja es **de esa empresa**, y alcanza al sistema únicamente cuando no
+  le queda ninguna otra empresa activa (D-55).
 - **No crea accesos a la plataforma.** Los importados entran como personas sin
   login. Dar acceso sigue siendo `POST /empleados/:id/acceso`, uno por uno.
 - **No cambia el puesto de quien ya existe.** Si el archivo trae otro puesto, sale
   en `avisos` y se cambia desde el empleado.
 - **No pisa datos de la persona capturados a mano.** En la persona el archivo sólo
-  **rellena lo que está vacío**; en la relación laboral (contrato, departamento,
-  nómina) sí manda el archivo.
+  **rellena lo que está vacío**, y lo que difiere sale en `diferencias` (D-57). En
+  la relación laboral manda el archivo, **salvo** que choque con un cambio hecho a
+  mano: eso sale en `conflictos` y no se aplica hasta que se pida (D-57).
 - **No toca las adscripciones a otras empresas**, ni el expediente, ni los
   documentos.
 - **No crea empresas** ni **asigna a proyectos**.

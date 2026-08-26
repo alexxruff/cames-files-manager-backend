@@ -15,6 +15,23 @@ const { body } = require('express-validator')
  */
 const BOOLEANOS = ['true', 'false', '1', '0', 'on', true, false]
 
+/**
+ * `forzarArchivoPara` — los empleados cuyo conflicto se resuelve a favor del
+ * archivo (D-57).
+ *
+ * En `multipart/form-data` una lista puede llegar de dos formas y las dos son
+ * legítimas: el campo repetido (`forzarArchivoPara=a&forzarArchivoPara=b`), que
+ * express entrega como arreglo, o una sola cadena separada por comas. Se aceptan
+ * las dos y el controlador las normaliza.
+ */
+const aListaDeIds = (valor) => {
+  if (valor === undefined || valor === null || valor === '') return []
+  const crudos = Array.isArray(valor) ? valor : String(valor).split(',')
+  return crudos.map((v) => String(v).trim()).filter(Boolean)
+}
+
+exports.aListaDeIds = aListaDeIds
+
 exports.importEmployeesValidation = [
   body('empresaId')
     .exists()
@@ -26,5 +43,18 @@ exports.importEmployeesValidation = [
   body('confirmarRfcDistinto')
     .optional({ values: 'falsy' })
     .isIn(BOOLEANOS)
-    .withMessage('confirmarRfcDistinto debe ser verdadero o falso')
+    .withMessage('confirmarRfcDistinto debe ser verdadero o falso'),
+
+  body('forzarArchivoPara')
+    .optional({ values: 'falsy' })
+    .custom((valor) => {
+      const ids = aListaDeIds(valor)
+      const invalidos = ids.filter((id) => !/^[0-9a-fA-F]{24}$/.test(id))
+      if (invalidos.length > 0) {
+        throw new Error(
+          `forzarArchivoPara debe traer ids de empleado válidos: ${invalidos.join(', ')}`
+        )
+      }
+      return true
+    })
 ]

@@ -116,6 +116,38 @@ const affiliationSchema = new mongoose.Schema(
     nomina: { type: payrollSchema, default: () => ({}), select: false },
 
     /**
+     * Lo que trajo el **último archivo de nómina importado**, para poder
+     * distinguir «el archivo cambió» de «lo cambiaron a mano» (D-57).
+     *
+     * Sin esto, al re-importar no hay forma de saberlo: si el archivo dice
+     * `Alta` y en la plataforma está de baja, puede ser que el archivo traiga
+     * novedad o que alguien la haya dado de baja a mano y el archivo siga
+     * repitiendo lo de siempre. Comparar contra este registro lo resuelve:
+     * lo que difiere de aquí es cambio del ARCHIVO; lo que difiere entre aquí y
+     * el documento es cambio A MANO.
+     *
+     * Sólo guarda los tres campos donde el archivo y una edición manual pueden
+     * chocar de verdad: el resto o no lo escribe el importador, o no tiene ruta
+     * para editarse a mano.
+     *
+     * En inglés y **sin serializar** porque es contabilidad interna del
+     * importador, no parte del contrato.
+     */
+    payrollSnapshot: {
+      type: new mongoose.Schema(
+        {
+          active: { type: Boolean, default: null },
+          contractType: { type: String, default: null },
+          hireDate: { type: String, default: null },
+          importedAt: { type: Date, default: null }
+        },
+        { _id: false }
+      ),
+      default: null,
+      select: false
+    },
+
+    /**
      * Invariantes relajadas a propósito, con nombre y por campo.
      *
      * Existe por un caso concreto: el archivo de nómina **no trae fecha de

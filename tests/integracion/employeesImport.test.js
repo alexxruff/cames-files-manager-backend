@@ -166,8 +166,12 @@ describe('POST /api/v1/empleados/importar', () => {
       expect(suya.activo).toBe(false)
       expect(suya.motivoBaja).toBeTruthy()
       expect(suya.fechaBaja).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-      // La persona NO se da de baja del sistema: sólo de esta empresa.
-      expect(baja.activo).toBe(true)
+      /*
+       * Y también del sistema (D-55): entró sin ninguna empresa activa, así que
+       * dejarla activa la escondía de los dos filtros de `GET /empleados`.
+       */
+      expect(baja.activo).toBe(false)
+      expect(baja.motivoBaja).toBeTruthy()
     })
 
     it('Reingreso cuenta como activo, igual que Alta', async () => {
@@ -290,7 +294,8 @@ describe('POST /api/v1/empleados/importar', () => {
       const persona = await Employee.findOne({ nombre: /PERSONA0/ })
       const suya = await Affiliation.findOne({ empleadoId: persona._id })
       expect(suya.activo).toBe(false)
-      expect(persona.activo).toBe(true)
+      // Era su única empresa: la baja alcanza también al sistema (D-55).
+      expect(persona.activo).toBe(false)
     })
 
     it('un Baja que ahora viene como Reingreso reactiva la adscripción', async () => {
@@ -730,6 +735,406 @@ describe('POST /api/v1/empleados/importar', () => {
       await importar(sesion.token, archivo, { empresaId: empresa._id })
 
       expect((await Employee.findById(persona._id)).numeroEmpleado).toBe('CORREGIDO-1')
+    })
+  })
+
+  /*
+   * La columna `Estatus` (D-55). `Alta` y `Reingreso` son activos; `Baja` no.
+   * Esa baja es de la EMPRESA —va en la adscripción—, pero a quien no le queda
+   * ninguna empresa activa se le da de baja también del sistema: si no, no salía
+   * ni entre los activos ni entre las bajas.
+   */
+  describe('el Estatus del archivo (D-55)', () => {
+    /** Un archivo de una sola fila con el estatus que se le pida. */
+    const archivoCon = (estatus, indice = 0) =>
+      construirArchivo({
+        filas: [
+          fila({
+            // El número identifica a la persona (D-54): distinto por índice, o la
+            // segunda importación reconocería a la primera en vez de crearla.
+            id: String(1000 + indice),
+            nombre: 'PERSONA',
+            primerApellido: 'PRUEBA',
+            ...identidad(indice),
+            estatus
+          })
+        ]
+      })
+
+    const persona = () => Employee.findOne({ nombre: /PERSONA PRUEBA/ })
+
+    it('quien entra en Baja nace dado de baja del sistema, no sólo de la empresa', async () => {
+      const { empresa, sesion } = await escenario()
+
+      const res = await importar(sesion.token, await archivoCon('Baja'), {
+        empresaId: empresa._id
+      })
+
+      expect(res.status).toBe(201)
+      const creada = await persona()
+      expect(creada.activo).toBe(false)
+      expect(creada.motivoBaja).toBe('Baja registrada en el archivo de nómina importado')
+      const suya = await Affiliation.findOne({ empleadoId: creada._id })
+      expect(suya.activo).toBe(false)
+    })
+
+    it('y aparece en el filtro de bajas, no en tierra de nadie', async () => {
+      const { empresa, sesion } = await escenario()
+      await importar(sesion.token, await archivoCon('Baja'), { empresaId: empresa._id })
+
+      const nombres = async (activo) => {
+        const res = await request(app)
+          .get(`/api/v1/empleados?activo=${activo}&porPagina=100`)
+          .set(auth(sesion.token))
+        return res.body.data.empleados.map((e) => e.empleado.nombre)
+      }
+
+      expect(await nombres('false')).toContain('PERSONA PRUEBA')
+      expect(await nombres('true')).not.toContain('PERSONA PRUEBA')
+    })
+
+    it('Alta y Reingreso entran activos', async () => {
+      const { empresa, sesion } = await escenario()
+
+      for (const [estatus, indice] of [
+        ['Alta', 0],
+        ['Reingreso', 1]
+      ]) {
+        const res = await importar(sesion.token, await archivoCon(estatus, indice), {
+          empresaId: empresa._id
+        })
+        expect(res.status).toBe(201)
+      }
+
+      const todas = await Employee.find({ nombre: /PERSONA PRUEBA/ })
+      expect(todas).toHaveLength(2)
+      expect(todas.every((p) => p.activo)).toBe(true)
+    })
+
+    it('el ciclo completo: alta, baja y reingreso sobre la misma persona', async () => {
+      const { empresa, sesion } = await escenario()
+
+      await importar(sesion.token, await archivoCon('Alta'), { empresaId: empresa._id })
+      expect((await persona()).activo).toBe(true)
+
+      const baja = await importar(sesion.token, await archivoCon('Baja'), {
+        empresaId: empresa._id
+      })
+      expect(baja.body.data.resumen).toMatchObject({ seDanDeBaja: 1 })
+      expect((await persona()).activo).toBe(false)
+      expect(baja.body.data.yaExisten[0].avisos.join(' ')).toContain('baja DEL SISTEMA')
+
+      const reingreso = await importar(sesion.token, await archivoCon('Reingreso'), {
+        empresaId: empresa._id
+      })
+      expect((await persona()).activo).toBe(true)
+      expect((await persona()).motivoBaja).toBeNull()
+      expect(reingreso.body.data.yaExisten[0].avisos.join(' ')).toContain(
+        'reactiva EN EL SISTEMA'
+      )
+    })
+
+    it('NO la da de baja del sistema si sigue activa en otra empresa del grupo', async () => {
+      const { empresa, sesion } = await escenario()
+      const otra = await crearEmpresa({ nombre: 'Otra Del Grupo' })
+      await importar(sesion.token, await archivoCon('Alta'), { empresaId: empresa._id })
+      await adscribir(otra, await persona(), { areas: ['obra'] })
+
+      const res = await importar(sesion.token, await archivoCon('Baja'), {
+        empresaId: empresa._id
+      })
+
+      expect((await persona()).activo).toBe(true)
+      expect(res.body.data.yaExisten[0].avisos.join(' ')).toContain(
+        'otra empresa del grupo vigente'
+      )
+    })
+
+    it('NO deshace una baja capturada a mano: esa no la reactiva un archivo', async () => {
+      const { empresa, sesion } = await escenario()
+      await importar(sesion.token, await archivoCon('Alta'), { empresaId: empresa._id })
+
+      await request(app)
+        .patch(`/api/v1/empleados/${(await persona())._id}/estado`)
+        .set(auth(sesion.token))
+        .send({ activo: false, motivo: 'Despido por causa justificada' })
+
+      const res = await importar(sesion.token, await archivoCon('Alta'), {
+        empresaId: empresa._id
+      })
+
+      const despues = await persona()
+      expect(despues.activo).toBe(false)
+      expect(despues.motivoBaja).toBe('Despido por causa justificada')
+      expect(res.body.data.yaExisten[0].avisos.join(' ')).toContain('se capturó a mano')
+    })
+
+    it('la previsualización ya lo anuncia, sin escribir nada', async () => {
+      const { empresa, sesion } = await escenario()
+      await importar(sesion.token, await archivoCon('Alta'), { empresaId: empresa._id })
+
+      const previa = await previsualizar(sesion.token, await archivoCon('Baja'), {
+        empresaId: empresa._id
+      })
+
+      expect(previa.body.data.aplicado).toBe(false)
+      expect(previa.body.data.yaExisten[0].avisos.join(' ')).toContain('baja DEL SISTEMA')
+      expect(previa.body.data.yaExisten[0].cambios).toContain('activo')
+      // No escribió: la persona sigue activa.
+      expect((await persona()).activo).toBe(true)
+    })
+  })
+
+  /*
+   * Re-subir el archivo no sirve sólo para dar de alta a los que faltan: sirve
+   * para ver QUÉ cambió en los que ya están. El cambio de `Estatus` tiene que
+   * llegar al renglón de la revisión, no sólo al resumen (D-56).
+   */
+  describe('la revisión marca el cambio de Estatus (D-56)', () => {
+    const archivoCon = (estatus) =>
+      construirArchivo({
+        filas: [
+          fila({
+            id: '1000',
+            nombre: 'PERSONA',
+            primerApellido: 'PRUEBA',
+            ...identidad(0),
+            estatus
+          })
+        ]
+      })
+
+    const renglon = (res) => res.body.data.yaExisten[0]
+
+    it('un Alta que ahora viene en Baja trae `estatus` en cambios, con el antes y el después', async () => {
+      const { empresa, sesion } = await escenario()
+      await importar(sesion.token, await archivoCon('Alta'), { empresaId: empresa._id })
+
+      const previa = await previsualizar(sesion.token, await archivoCon('Baja'), {
+        empresaId: empresa._id
+      })
+
+      const suyo = renglon(previa)
+      expect(suyo.accion).toBe('dar_de_baja')
+      expect(suyo.cambios).toContain('estatus')
+      expect(suyo.avisos.join(' ')).toContain('El estatus cambió')
+      expect(suyo.avisos.join(' ')).toContain('"Baja"')
+    })
+
+    it('lo marca aunque la baja NO alcance al sistema por estar en otra empresa', async () => {
+      const { empresa, sesion } = await escenario()
+      const otra = await crearEmpresa({ nombre: 'Otra Del Grupo' })
+      await importar(sesion.token, await archivoCon('Alta'), { empresaId: empresa._id })
+      const persona = await Employee.findOne({ nombre: /PERSONA PRUEBA/ })
+      await adscribir(otra, persona, { areas: ['obra'] })
+
+      const previa = await previsualizar(sesion.token, await archivoCon('Baja'), {
+        empresaId: empresa._id
+      })
+
+      /*
+       * Éste era el renglón que llegaba con `cambios: []`: la persona sigue
+       * activa —tiene otra empresa— así que no había cambio de persona, y el de
+       * la adscripción no se listaba.
+       */
+      expect(renglon(previa).cambios).toEqual(['estatus'])
+    })
+
+    it('una Baja que ahora viene en Reingreso también se marca', async () => {
+      const { empresa, sesion } = await escenario()
+      await importar(sesion.token, await archivoCon('Baja'), { empresaId: empresa._id })
+
+      const previa = await previsualizar(sesion.token, await archivoCon('Reingreso'), {
+        empresaId: empresa._id
+      })
+
+      const suyo = renglon(previa)
+      expect(suyo.accion).toBe('reactivar')
+      expect(suyo.cambios).toContain('estatus')
+      expect(suyo.avisos.join(' ')).toContain('estaba de baja')
+    })
+
+    it('y el mismo archivo sin cambios NO inventa ninguno', async () => {
+      const { empresa, sesion } = await escenario()
+      await importar(sesion.token, await archivoCon('Alta'), { empresaId: empresa._id })
+
+      const previa = await previsualizar(sesion.token, await archivoCon('Alta'), {
+        empresaId: empresa._id
+      })
+
+      const suyo = renglon(previa)
+      expect(suyo.accion).toBe('sin_cambios')
+      expect(suyo.cambios).toEqual([])
+      expect(suyo.avisos).toEqual([])
+    })
+  })
+
+  /*
+   * El archivo contra los cambios hechos a mano (D-57). Se compara con lo que
+   * trajo la importación ANTERIOR: eso es lo que distingue «el archivo cambió»
+   * de «alguien lo cambió en la plataforma».
+   */
+  describe('conflictos con lo capturado a mano (D-57)', () => {
+    const archivoCon = (extra = {}) =>
+      construirArchivo({
+        filas: [
+          fila({
+            id: '1000',
+            nombre: 'TRABAJADOR',
+            primerApellido: 'CINCO',
+            ...identidad(0),
+            estatus: 'Alta',
+            celular: '3311112222',
+            ...extra
+          })
+        ]
+      })
+
+    const persona = () => Employee.findOne({ nombre: /TRABAJADOR CINCO/ })
+    const suAdscripcion = async () =>
+      Affiliation.findOne({ empleadoId: (await persona())._id })
+
+    /** Importa el alta y la da de baja a mano, que es el escenario del reporte. */
+    const bajaAMano = async () => {
+      const { empresa, sesion } = await escenario()
+      await importar(sesion.token, await archivoCon(), { empresaId: empresa._id })
+
+      await request(app)
+        .patch(`/api/v1/adscripciones/${(await suAdscripcion())._id}/estado`)
+        .set(auth(sesion.token))
+        .send({ activo: false, motivo: 'Renuncia voluntaria entregada en oficina' })
+
+      return { empresa, sesion }
+    }
+
+    it('avisa cuando el archivo dice Alta y en la plataforma se dio de baja, con la fecha', async () => {
+      const { empresa, sesion } = await bajaAMano()
+
+      const previa = await previsualizar(sesion.token, await archivoCon(), {
+        empresaId: empresa._id
+      })
+
+      expect(previa.body.data.resumen.conConflicto).toBe(1)
+      const suyo = previa.body.data.yaExisten[0]
+      expect(suyo.conflictos).toHaveLength(1)
+      expect(suyo.conflictos[0]).toMatchObject({
+        campo: 'estatus',
+        enElArchivo: 'alta',
+        enLaPlataforma: 'baja',
+        enLaImportacionAnterior: 'alta'
+      })
+      expect(suyo.conflictos[0].cambiadoEn).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(suyo.conflictos[0].mensaje).toContain('se cambió a "baja"')
+    })
+
+    it('y NO lo aplica: gana lo de la plataforma', async () => {
+      const { empresa, sesion } = await bajaAMano()
+
+      const res = await importar(sesion.token, await archivoCon(), {
+        empresaId: empresa._id
+      })
+
+      expect(res.body.data.resumen.conConflicto).toBe(1)
+      expect((await suAdscripcion()).activo).toBe(false)
+      // Y tampoco toca a la persona por la puerta de atrás.
+      expect((await persona()).activo).toBe(true)
+    })
+
+    it('salvo que se pida con forzarArchivoPara, y entonces gana el archivo', async () => {
+      const { empresa, sesion } = await bajaAMano()
+
+      const res = await importar(sesion.token, await archivoCon(), {
+        empresaId: empresa._id,
+        forzarArchivoPara: (await persona())._id.toString()
+      })
+
+      expect(res.body.data.resumen).toMatchObject({ conConflicto: 0, seReactivan: 1 })
+      expect(res.body.data.yaExisten[0].cambios).toContain('estatus')
+      expect((await suAdscripcion()).activo).toBe(true)
+    })
+
+    it('un cambio del ARCHIVO no es conflicto: se aplica sin preguntar', async () => {
+      const { empresa, sesion } = await escenario()
+      await importar(sesion.token, await archivoCon(), { empresaId: empresa._id })
+
+      // Nadie tocó nada a mano; el archivo ahora dice Baja.
+      const res = await importar(sesion.token, await archivoCon({ estatus: 'Baja' }), {
+        empresaId: empresa._id
+      })
+
+      expect(res.body.data.resumen).toMatchObject({ conConflicto: 0, seDanDeBaja: 1 })
+      expect((await suAdscripcion()).activo).toBe(false)
+    })
+
+    it('también protege el tipo de contrato corregido a mano', async () => {
+      const { empresa, sesion } = await escenario()
+      await importar(sesion.token, await archivoCon(), { empresaId: empresa._id })
+
+      await request(app)
+        .patch(`/api/v1/adscripciones/${(await suAdscripcion())._id}`)
+        .set(auth(sesion.token))
+        .send({ tipoContrato: 'obra_determinada', fechaTerminoContrato: '2027-03-01' })
+
+      const res = await importar(sesion.token, await archivoCon(), {
+        empresaId: empresa._id
+      })
+
+      expect(res.body.data.yaExisten[0].conflictos[0]).toMatchObject({
+        campo: 'tipoContrato',
+        enElArchivo: 'indeterminado',
+        enLaPlataforma: 'obra_determinada'
+      })
+      expect((await suAdscripcion()).tipoContrato).toBe('obra_determinada')
+    })
+
+    it('reporta los datos de la persona que difieren, sin pisarlos', async () => {
+      const { empresa, sesion } = await escenario()
+      await importar(sesion.token, await archivoCon(), { empresaId: empresa._id })
+
+      await request(app)
+        .patch(`/api/v1/empleados/${(await persona())._id}`)
+        .set(auth(sesion.token))
+        .send({ telefono: '3399999999' })
+
+      const res = await importar(sesion.token, await archivoCon(), {
+        empresaId: empresa._id
+      })
+
+      const suyo = res.body.data.yaExisten[0]
+      expect(suyo.diferencias).toEqual([
+        {
+          campo: 'telefono',
+          enElArchivo: '3311112222',
+          enLaPlataforma: '3399999999',
+          mensaje: expect.stringContaining('se conserva lo de la plataforma')
+        }
+      ])
+      // Es un aviso, NO un conflicto: estos campos nunca se pisan.
+      expect(suyo.conflictos).toEqual([])
+      expect((await persona()).telefono).toBe('3399999999')
+    })
+
+    it('la primera importación no inventa conflictos: no hay contra qué comparar', async () => {
+      const { empresa, sesion } = await escenario()
+
+      const res = await importar(sesion.token, await archivoCon(), {
+        empresaId: empresa._id
+      })
+
+      expect(res.body.data.resumen.conConflicto).toBe(0)
+      expect(res.body.data.nuevos).toHaveLength(1)
+    })
+
+    it('400 si forzarArchivoPara no trae ids válidos', async () => {
+      const { empresa, sesion } = await escenario()
+
+      const res = await importar(sesion.token, await archivoCon(), {
+        empresaId: empresa._id,
+        forzarArchivoPara: 'no-es-un-id'
+      })
+
+      expect(res.status).toBe(400)
+      expect(res.body.errors[0].msg).toContain('forzarArchivoPara')
     })
   })
 

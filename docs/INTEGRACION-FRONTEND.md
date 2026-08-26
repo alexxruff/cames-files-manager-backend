@@ -404,6 +404,11 @@ Query, todos opcionales:
   Es así de exclusivo porque **por defecto sólo deben verse los activos**, y
   pedir los de baja tiene que traer exactamente eso, no una mezcla que haya que
   filtrar en el front.
+- **Los importados en `Baja` ya salen en `activo=false`** (D-55). Antes no: la
+  importación cerraba la adscripción pero dejaba a la persona activa, así que no
+  aparecía ni entre los activos ni entre las bajas. Ahora, cuando el `Estatus`
+  del archivo dice `Baja` y no le queda ninguna empresa activa, la persona queda
+  `activo: false` con su motivo. Si sigue en otra empresa del grupo, no.
 - Un `jefe_area` sólo ve a la gente de sus áreas; si no tiene áreas asignadas, ve
   **cero**, no todo.
 - `empresaId` de una empresa que no es suya → `404`.

@@ -5,6 +5,7 @@ const { ok, created, noContent } = require('../../../utils/response')
 const { empresaFiltro } = require('../../../middlewares/scopeMiddleware')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { CAMPO } = require('../../../middlewares/uploadMiddleware')
+const { aListaDeIds } = require('../../../validations/employeeImportValidation')
 
 /**
  * HTTP del catálogo de empleados y de sus accesos.
@@ -124,7 +125,12 @@ class EmployeeController {
   previewImport = async (req, res) => {
     const resultado = await employeeImportService.previsualizar(
       this.#archivo(req),
-      { empresaId: req.body.empresaId },
+      {
+        empresaId: req.body.empresaId,
+        // Se acepta también aquí para poder ver el efecto de la decisión ANTES
+        // de aplicarla (D-57).
+        forzarArchivoPara: aListaDeIds(req.body.forzarArchivoPara)
+      },
       this.#contexto(req)
     )
 
@@ -132,6 +138,7 @@ class EmployeeController {
       empresaId: req.body.empresaId,
       filas: resultado.resumen.filas,
       nuevos: resultado.resumen.nuevos,
+      conConflicto: resultado.resumen.conConflicto,
       conError: resultado.resumen.conError
     })
 
@@ -144,7 +151,8 @@ class EmployeeController {
       this.#archivo(req),
       {
         empresaId: req.body.empresaId,
-        confirmarRfcDistinto: this.#esVerdadero(req.body.confirmarRfcDistinto)
+        confirmarRfcDistinto: this.#esVerdadero(req.body.confirmarRfcDistinto),
+        forzarArchivoPara: aListaDeIds(req.body.forzarArchivoPara)
       },
       this.#contexto(req)
     )
