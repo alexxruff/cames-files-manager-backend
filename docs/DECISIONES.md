@@ -2268,11 +2268,19 @@ Ahora hay una sola fuente:
   con el de la categoría no puede fallar cuando el tipo **sale** de la categoría.
   La sustituye `categoryService.usable`.
 
-### Mandar `tipo` en el `PATCH` responde 400
+### Mandar `tipo` en el `PATCH`: depende de si es el mismo
 
-No se ignora en silencio: cae en la lista de campos no editables, con la pista de
-siempre — _«tipo (se deriva de categoriaId: cambia el puesto y el tipo cambia con
-él)»_. En el `POST` simplemente se ignora.
+Se distinguen dos cosas que al principio traté como una sola:
+
+- **El valor que ya tiene** → se ignora y la edición sigue. Es lo que manda un
+  formulario que devuelve el empleado completo, y no hay nada que rechazar:
+  mandar el valor actual no cambia nada. Rechazarlo habría roto **toda** edición
+  hasta que el front se desplegara, y front y backend se despliegan por separado.
+- **Un valor distinto** → `400` con `path: 'categoriaId'`: _«El tipo se deriva del
+  puesto: para dejarlo en "administrativo" manda la categoriaId que
+  corresponda»_. Eso sí es intentar cambiarlo por la puerta equivocada.
+
+En el `POST` simplemente se ignora.
 
 ### El filtro se va, pero sin romper a quien lo mande
 

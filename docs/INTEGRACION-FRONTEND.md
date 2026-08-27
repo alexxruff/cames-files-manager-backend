@@ -641,8 +641,10 @@ administrador; a un administrativo, sólo `rh_admin`.
 Acepta **estos nueve campos y ninguno más**: `nombre`, `numeroEmpleado`, `curp`,
 `rfc`, `nss`, `fechaNacimiento`, `email`, `telefono`, `categoriaId`.
 
-**`tipo` ya no se manda** (D-59): sale de la categoría. Cambiar el puesto es lo
-que cambia el tipo, y mandarlo responde `400` diciéndolo.
+**`tipo` ya no se manda** (D-59): sale de la categoría. Mandar el que la persona
+**ya tiene** no estorba —se ignora, para que un formulario que devuelve el objeto
+completo siga funcionando—; mandar uno **distinto** responde `400` diciendo que se
+mande la `categoriaId` que corresponda.
 
 ```jsonc
 // petición — sólo lo que cambia
