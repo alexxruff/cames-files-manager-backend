@@ -191,7 +191,15 @@ exports.updateEmployeeValidation = [
     const campos = Object.keys(cuerpo || {})
     if (campos.length === 0) throw new Error('No hay nada que actualizar')
 
-    const invalidos = campos.filter((c) => !CAMPOS_EDITABLES.includes(c))
+    /*
+     * `tipo` pasa la lista blanca aunque NO se edite aquí (D-59): el formulario
+     * del front devuelve el empleado completo, así que lo manda con el valor que
+     * ya tiene. Rechazar eso rompería toda edición hasta que el front se
+     * despliegue, y no hay nada que rechazar: mandar el valor actual no cambia
+     * nada. Si el valor DIFIERE del que sale del puesto, el servicio sí responde
+     * 400 — eso sí es intentar cambiarlo por la puerta equivocada.
+     */
+    const invalidos = campos.filter((c) => !CAMPOS_EDITABLES.includes(c) && c !== 'tipo')
     if (invalidos.length > 0) {
       // Se dice a dónde van los campos que no se editan aquí, para no obligar a
       // revisar la documentación.
@@ -201,9 +209,7 @@ exports.updateEmployeeValidation = [
         motivoBaja: 'PATCH /empleados/:id/estado',
         fechaBaja: 'PATCH /empleados/:id/estado',
         adscripcion: 'las adscripciones tienen su propio recurso',
-        adscripciones: 'las adscripciones tienen su propio recurso',
-        // D-59: dejó de capturarse, lo dice el puesto.
-        tipo: 'se deriva de categoriaId: cambia el puesto y el tipo cambia con él'
+        adscripciones: 'las adscripciones tienen su propio recurso'
       }
       const detalle = invalidos
         .map((c) => (pistas[c] ? `${c} (usa ${pistas[c]})` : c))

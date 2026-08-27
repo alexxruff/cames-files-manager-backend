@@ -571,12 +571,12 @@ está en uso y ya.
 | `rh_consulta`       | sólo `mano_de_obra` | obligatoria, sólo sus empresas            |
 | `jefe_area`         | sólo `mano_de_obra` | obligatoria, sus empresas y **sus áreas** |
 
-| Código | Cuándo                                                                                                                                                                                                        |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Código | Cuándo                                                                                                                                                                 |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `400`  | Falta nombre, `categoriaId` o `numeroEmpleado`; falta la adscripción; CURP mal formada; un administrativo sin áreas; contrato temporal con término anterior al ingreso |
-| `403`  | `tipo: 'administrativo'` pedido por `rh_consulta` o `jefe_area`; o un `jefe_area` pidiendo un área que no es suya (el mensaje lista las suyas)                                                                |
-| `404`  | `empresaId` que no es suya, o `categoriaId` inexistente                                                                                                                                                       |
-| `409`  | Duplicado — ver abajo                                                                                                                                                                                         |
+| `403`  | `tipo: 'administrativo'` pedido por `rh_consulta` o `jefe_area`; o un `jefe_area` pidiendo un área que no es suya (el mensaje lista las suyas)                         |
+| `404`  | `empresaId` que no es suya, o `categoriaId` inexistente                                                                                                                |
+| `409`  | Duplicado — ver abajo                                                                                                                                                  |
 
 #### Duplicados
 

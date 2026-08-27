@@ -431,6 +431,19 @@ class EmployeeService {
     }
     const cambiaTipo = tipoFinal !== empleado.tipo
 
+    /*
+     * Si mandaron `tipo`, tiene que ser el que sale del puesto. Mandar el actual
+     * es lo que hace un formulario que devuelve el objeto completo y se ignora;
+     * mandar OTRO es intentar cambiarlo sin cambiar el puesto, y eso sí se
+     * rechaza diciendo por dónde va (D-59).
+     */
+    if (datos.tipo && datos.tipo !== tipoFinal) {
+      throw AppError.validation(
+        `El tipo se deriva del puesto: para dejarlo en "${datos.tipo}" manda la categoriaId que corresponda`,
+        [{ msg: 'El tipo se deriva del puesto', path: 'categoriaId' }]
+      )
+    }
+
     if (cambiaTipo && !canManageEmployeeType(acceso, tipoFinal)) {
       throw AppError.forbidden(
         'Sólo un administrador de RH puede convertir a alguien en personal administrativo'

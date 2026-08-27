@@ -228,7 +228,24 @@ describe('PATCH /api/v1/empleados/:id — editar a la persona', () => {
       expect(res.body.data.empleado.empleado.tipo).toBe('administrativo')
     })
 
-    it('400 si mandan el tipo, diciendo de dónde sale ahora', async () => {
+    /*
+     * El formulario del front devuelve el empleado completo, así que manda
+     * `tipo` con el valor que ya tiene. Eso NO puede romper la edición.
+     */
+    it('acepta el tipo que ya tiene y lo ignora', async () => {
+      const { token, persona } = await escenario()
+
+      const res = await request(app)
+        .patch(`${RUTA}/${persona._id}`)
+        .set(auth(token))
+        .send({ tipo: 'mano_de_obra', telefono: '3312345678' })
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.empleado.empleado.telefono).toBe('3312345678')
+      expect(res.body.data.empleado.empleado.tipo).toBe('mano_de_obra')
+    })
+
+    it('400 si mandan un tipo DISTINTO: eso sí es querer cambiarlo', async () => {
       const { token, persona } = await escenario()
 
       const res = await request(app)
@@ -237,7 +254,21 @@ describe('PATCH /api/v1/empleados/:id — editar a la persona', () => {
         .send({ tipo: 'administrativo' })
 
       expect(res.status).toBe(400)
-      expect(res.body.message).toMatch(/se deriva de categoriaId/i)
+      expect(res.body.errors[0].path).toBe('categoriaId')
+      expect(res.body.message).toMatch(/se deriva del puesto/i)
+    })
+
+    it('y el tipo que viaja junto a una categoría coherente no estorba', async () => {
+      const { token, persona } = await escenario()
+      const deOficina = await crearCategoria('Contador', 'administrativo')
+
+      const res = await request(app)
+        .patch(`${RUTA}/${persona._id}`)
+        .set(auth(token))
+        .send({ categoriaId: deOficina._id.toString(), tipo: 'administrativo' })
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.empleado.empleado.tipo).toBe('administrativo')
     })
 
     it('400 al volverlo administrativo si su adscripción no tiene área', async () => {
