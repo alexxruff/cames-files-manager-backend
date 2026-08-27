@@ -144,7 +144,15 @@ async function connect({ uri = env.MONGODB_URI, dbName = env.MONGODB_DB_NAME } =
       await mongoose.connect(uri, {
         dbName,
         serverSelectionTimeoutMS: 10000,
-        socketTimeoutMS: 45000,
+        /*
+         * 10s, no 45s (D-61). Cuando la máquina se reanuda tras una suspensión,
+         * los sockets a Atlas están muertos pero el driver todavía los cree
+         * vivos: la primera consulta se va contra uno de ellos y espera este
+         * tiempo antes de fallar. El driver la reintenta sola —`retryReads` viene
+         * en `true`— y la segunda sí funciona, pero con 45s el usuario ya vio la
+         * pantalla colgada y su cliente HTTP se rindió antes.
+         */
+        socketTimeoutMS: 10000,
         maxPoolSize: 20,
         minPoolSize: 2,
         // No acumular operaciones si la conexión se cae: mejor fallar rápido.
@@ -191,9 +199,38 @@ function connectionState() {
   }
 }
 
+/**
+ * ¿La base responde **de verdad**? (D-61)
+ *
+ * `connectionState` sólo lee `readyState`, una bandera LOCAL: después de que la
+ * máquina se reanuda de una suspensión sigue diciendo "conectado" aunque todos
+ * los sockets a Atlas estén muertos. Eso hacía que el health check diera verde
+ * mientras cada petición real se colgaba.
+ *
+ * Esto manda un `ping` acotado en el tiempo. Si no contesta, no está listo.
+ */
+async function ping(timeoutMs = 3000) {
+  if (mongoose.connection.readyState !== 1) return false
+  let temporizador
+  try {
+    await Promise.race([
+      mongoose.connection.db.admin().command({ ping: 1 }),
+      new Promise((_, rechazar) => {
+        temporizador = setTimeout(() => rechazar(new Error('ping agotado')), timeoutMs)
+      })
+    ])
+    return true
+  } catch {
+    return false
+  } finally {
+    clearTimeout(temporizador)
+  }
+}
+
 module.exports = {
   connect,
   disconnect,
   connectionState,
+  ping,
   explicarErrorDeConexion
 }

@@ -106,3 +106,34 @@ describe('GET /api/v1 — inventario de la API', () => {
     expect(movida.status).toBe(410)
   })
 })
+
+/**
+ * `/ready` es la sonda que mira el orquestador. Si sólo leyera `readyState` —una
+ * bandera local— seguiría diciendo que todo está bien con la base caída, que es
+ * justo lo que pasaba al reanudarse la máquina (D-61).
+ */
+describe('GET /api/v1/ready', () => {
+  it('comprueba la base de verdad, no una bandera local', async () => {
+    const res = await request(app).get('/api/v1/ready')
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.baseDeDatos).toMatchObject({
+      estado: 'conectado',
+      listo: true,
+      // El que importa: sale de un `ping` real contra la base.
+      responde: true
+    })
+  })
+
+  it('responde 503 cuando la base no contesta', async () => {
+    const database = require('../../src/config/database')
+    const espia = jest.spyOn(database, 'ping').mockResolvedValue(false)
+
+    const res = await request(app).get('/api/v1/ready')
+
+    expect(res.status).toBe(503)
+    expect(res.body.status).toBe('error')
+    expect(res.body.data.baseDeDatos.responde).toBe(false)
+    espia.mockRestore()
+  })
+})

@@ -270,7 +270,22 @@ Dos reglas que no se negocian:
 
 ---
 
-## 7. Al cambiar el esquema
+## 7. La conexión a la base no sobrevive a una suspensión
+
+Un detalle de operación que no se ve en el modelo pero rompe la app entera
+(D-61): el pool de conexiones a Atlas **no sobrevive a que la máquina se
+suspenda**. `suspend` restaura la VM con los sockets vivos en memoria y muertos
+del otro lado; la primera consulta se cuelga y falla.
+
+Por eso `fly.toml` usa `auto_stop_machines = 'stop'` y no `'suspend'`: el proceso
+arranca limpio y reconecta. Y por eso `/ready` hace un `ping` real en vez de leer
+`readyState`, que es una bandera local y seguía diciendo «conectado».
+
+**Si algún día alguien vuelve a poner `suspend` para ahorrar arranque en frío, el
+síntoma será: la plataforma tarda muchísimo tras un rato inactiva y luego cierra
+la sesión.**
+
+## 8. Al cambiar el esquema
 
 1. **Actualiza este documento** en el mismo cambio: la tabla de la sección 1, el
    diagrama si hay relación nueva, y la matriz de impacto.

@@ -2354,3 +2354,69 @@ vacío, así que no deshace una reasignación posterior.
 Deja el estado anterior tal cual **a propósito**: el punto del cambio es que RH
 revise en configuración quién debe dirigir qué, y es probable que varios de los
 que hoy dirigen su propia área no debieran.
+
+## D-61 · Apagar, no suspender: el pool muerto que cerraba la sesión
+
+**Síntoma.** Tras un rato sin usar la plataforma, recargar se quedaba pensando
+mucho tiempo y después obligaba a iniciar sesión otra vez.
+
+**Decisión.** Tres cambios: `auto_stop_machines` pasa de `'suspend'` a `'stop'`,
+`/ready` comprueba la base **de verdad** con un `ping`, y `socketTimeoutMS` baja
+de 45s a 10s.
+
+### La cadena completa
+
+No era un problema de sesiones. El JWT dura 12h y no había expirado.
+
+1. Sin tráfico, Fly **suspendía** la máquina: congela la VM con su memoria
+   intacta, incluido el pool de conexiones a Atlas.
+2. Al volver, la VM se reanudaba con esos sockets **abiertos en su memoria pero
+   muertos del otro lado** — Atlas los había cerrado hacía rato.
+3. La primera consulta se iba contra uno de esos sockets y esperaba
+   `socketTimeoutMS`: **45 segundos**. Eso era «se queda pensando mucho tiempo».
+4. `protect` consulta la base para validar la sesión. Al fallar, el error subía
+   como **500**.
+5. El front, que trata cualquier fallo de la petición de sesión como «no
+   autenticado», mandaba al login. Eso era «me hace iniciar sesión de nuevo».
+
+### `suspend` es la modalidad equivocada para esto
+
+`suspend` sirve para un proceso que puede congelarse y descongelarse sin
+consecuencias. **Una aplicación que mantiene un pool de conexiones a una base
+externa no es ese caso**: lo que se restaura es un pool que ya no existe.
+
+Con `stop` el proceso muere y arranca limpio: `connect()` corre de nuevo y las
+conexiones son reales. Cuesta unos segundos más de arranque en frío —el
+despliegue mostró ~8s contra ~1s— y a cambio funciona. Para un panel interno de
+RH ese intercambio es obvio.
+
+Alternativa si esos segundos molestan: `min_machines_running = 1`, que la deja
+encendida siempre. Se paga aunque nadie la use, y no se eligió por eso.
+
+### `/ready` mentía, y era la sonda del orquestador
+
+`connectionState()` lee `mongoose.connection.readyState`, una bandera **local**.
+Tras reanudar seguía diciendo `conectado` con todos los sockets muertos, así que
+el health check de Fly daba verde mientras cada petición real se colgaba. Una
+sonda de readiness que no comprueba nada es peor que no tenerla: manda tráfico a
+un proceso que no puede atenderlo.
+
+Ahora hace un `ping` real contra la base, acotado a 3s para que la sonda no se
+cuelgue ella misma, y la respuesta trae `responde: true|false`. La ruta llama a
+`database.ping()` a través del módulo y no desestructurado, para no quedarse con
+una referencia congelada al importar — que además es lo que permite probar el
+camino del 503.
+
+### 45s era demasiado para fallar
+
+`retryReads` viene en `true`, así que el driver reintenta la consulta y la
+segunda **sí** funciona: el problema no era que fallara para siempre, era cuánto
+tardaba en rendirse la primera. Con 10s el reintento ocurre dentro de lo que
+cualquier cliente HTTP tolera.
+
+### Lo que le toca al front
+
+**Cerrar sesión sólo con `401`.** Un `500` o un timeout significan «el servidor
+no contestó», no «tu sesión no vale». Con esta corrección el caso deja de
+dispararse, pero cualquier caída momentánea vuelve a sacar a todo el mundo
+mientras el front trate los dos igual.

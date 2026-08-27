@@ -1,5 +1,11 @@
 const express = require('express')
-const { connectionState } = require('../../../config/database')
+/*
+ * El módulo entero, no las funciones desestructuradas: `ping` se llama a través
+ * de él para no quedarse con una referencia congelada al importar — es lo que
+ * permite sustituirlo en las pruebas y comprobar el camino del 503.
+ */
+const database = require('../../../config/database')
+const asyncHandler = require('../../../utils/asyncHandler')
 const { listRoutes } = require('../../../utils/routeInventory')
 const authRoutes = require('../auth/authRoutes')
 const employeeRoutes = require('../employees/employeeRoutes')
@@ -35,16 +41,28 @@ router.get('/health', (req, res) => {
 })
 
 /** Readiness: además hay base de datos. Es lo que debe mirar el balanceador. */
-router.get('/ready', (req, res) => {
-  const db = connectionState()
-  res.status(db.listo ? 200 : 503).json({
-    status: db.listo ? 'success' : 'error',
-    message: db.listo
-      ? 'El servidor está listo'
-      : 'El servidor no tiene conexión a la base de datos',
-    data: { baseDeDatos: db, timestamp: new Date().toISOString() }
+router.get(
+  '/ready',
+  asyncHandler(async (req, res) => {
+    /*
+     * Se COMPRUEBA la base, no se lee una bandera (D-61). `connectionState`
+     * mira `readyState`, que es local: tras reanudarse de una suspensión decía
+     * "conectado" con todos los sockets muertos, y el health check daba verde
+     * mientras cada petición real se colgaba. El `ping` va acotado en el tiempo
+     * para que la sonda no se cuelgue ella misma.
+     */
+    const responde = await database.ping()
+    const db = { ...database.connectionState(), responde }
+
+    res.status(responde ? 200 : 503).json({
+      status: responde ? 'success' : 'error',
+      message: responde
+        ? 'El servidor está listo'
+        : 'El servidor no tiene conexión a la base de datos',
+      data: { baseDeDatos: db, timestamp: new Date().toISOString() }
+    })
   })
-})
+)
 
 /**
  * Rutas especificadas y todavía NO implementadas (spec 9.3 a 9.8). Están

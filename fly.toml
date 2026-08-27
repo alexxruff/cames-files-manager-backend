@@ -30,10 +30,13 @@ primary_region = 'dfw'
 [http_service]
   internal_port = 8080
   force_https = true
-  # Suspender, no apagar: la primera petición tras un rato despierta la máquina
-  # y reconecta a Mongo sola. Es un panel interno, no un servicio con tráfico
-  # constante.
-  auto_stop_machines = 'suspend'
+  # APAGAR, no suspender (D-61). `suspend` congela la VM y la restaura con el
+  # pool de conexiones a Atlas intacto en memoria — pero muerto del otro lado.
+  # La primera consulta tras reanudar se iba contra un socket difunto, tardaba
+  # una eternidad y acababa fallando: el usuario veía la pantalla colgada y
+  # luego la sesión cerrada. Con `stop` el proceso arranca limpio y reconecta.
+  # Cuesta unos segundos más de arranque en frío; a cambio funciona.
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
   processes = ['app']
