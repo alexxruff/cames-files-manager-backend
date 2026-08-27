@@ -11,8 +11,12 @@ vigencias, alertas y reportes de auditoría.
 
 - El **front ya está construido** contra una capa simulada, pero **todavía asume
   el modelo anterior**: su interfaz se ajusta después (ver `modelo-datos.md` §11).
-- Documentos autoritativos, los dos en `docs/`:
-  - **`modelo-datos.md`** — qué se guarda y cómo se relaciona. Manda en modelado.
+- Documentos autoritativos, los tres en `docs/`:
+  - **`ARQUITECTURA-DATOS.md`** — el mapa de lo que HAY: las 13 colecciones, cómo
+    se relacionan y qué se rompe al tocar cada una. **Léelo antes de cambiar
+    cualquier esquema, y actualízalo en el mismo cambio.**
+  - **`modelo-datos.md`** — el diseño original y su porqué. Ha derivado; donde
+    discrepe con el anterior, manda el anterior.
   - **`backend-spec.md`** — cómo se habla con el backend: envelope, códigos,
     errores y catálogo de rutas.
 - `backend-spec.md` en la raíz es la versión **anterior** de la especificación, de
@@ -165,6 +169,10 @@ imposible acabar con dos registros de la misma persona.
       `docs/INTEGRACION-FRONTEND.md` si el cambio afecta a lo que el front ya usa.
 - [ ] `docs/ESTADO.md` actualizado (es el mapa de qué falta).
 - [ ] Desviaciones del spec anotadas en `docs/DECISIONES.md`, con el motivo.
+- [ ] Si tocaste un **esquema** —colección, campo que relacione datos, índice
+      único o invariante—, `docs/ARQUITECTURA-DATOS.md` actualizado en el mismo
+      cambio: la tabla de colecciones, el diagrama y la matriz de impacto. Un mapa
+      desactualizado es peor que no tenerlo.
 
 ## Estado
 

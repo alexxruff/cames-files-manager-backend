@@ -1,5 +1,11 @@
 # Modelo de datos — Plataforma de Expedientes (Urbacames)
 
+> **Este es el diseño ORIGINAL y su porqué.** El modelo ha cambiado desde
+> entonces (D-27 en adelante): las áreas son un catálogo, el número de
+> trabajador es de la persona, el tipo se deriva del puesto, y hay jefaturas de
+> área. Para saber **qué existe hoy y cómo se relaciona**, lee
+> `ARQUITECTURA-DATOS.md`; donde los dos discrepen, manda ése.
+
 > **Documento autoritativo del modelo.** Define **qué se guarda y cómo se
 > relaciona**. Su complemento es [`backend-spec.md`](./backend-spec.md), que
 > define **cómo se habla** con el backend: envelope, códigos, errores y rutas.
