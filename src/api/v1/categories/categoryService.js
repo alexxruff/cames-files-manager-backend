@@ -93,17 +93,18 @@ class CategoryService {
     return { categoria: categoria.toJSON() }
   }
 
-  /** Valida que exista, esté activa y sirva para ese tipo de persona. */
-  async assertUsableParaTipo(categoriaId, tipoEmpleado) {
+  /**
+   * La categoría, exigiendo que exista y esté activa. **De aquí sale el `tipo`
+   * de la persona** (D-59).
+   *
+   * Sustituyó a `assertUsableParaTipo`, que comprobaba que el `tipo` capturado
+   * coincidiera con el de la categoría: desde que el tipo se DERIVA de aquí, esa
+   * comprobación no puede fallar nunca.
+   */
+  async usable(categoriaId) {
     const categoria = await Category.findById(categoriaId)
     if (!categoria || !categoria.activo) {
       throw AppError.notFound('La categoría indicada no existe')
-    }
-    if (categoria.tipo !== tipoEmpleado) {
-      throw AppError.validation(
-        `La categoría "${categoria.nombre}" es de tipo ${categoria.tipo} y no aplica a personal ${tipoEmpleado === 'administrativo' ? 'administrativo' : 'de obra'}`,
-        [{ msg: 'La categoría no corresponde al tipo de empleado', path: 'categoriaId' }]
-      )
     }
     return categoria
   }

@@ -269,23 +269,32 @@ describe('GET /empleados — filtros, orden y paginación', () => {
     expect(sinCoincidencia.body.data.empleados).toEqual([])
   })
 
-  it('filtra por tipo y por soloConAcceso', async () => {
+  it('filtra por soloConAcceso', async () => {
     const empresa = await crearEmpresa()
     const { token } = await crearEmpleadoConSesion({ empresa })
     const obrero = await crearEmpleado({ nombre: 'Obrero Uno', tipo: 'mano_de_obra' })
     await adscribir(empresa, obrero)
 
-    const porTipo = await request(app).get(`${RUTA}?tipo=mano_de_obra`).set(auth(token))
     const conAcceso = await request(app)
       .get(`${RUTA}?soloConAcceso=true`)
       .set(auth(token))
 
-    expect(porTipo.body.data.empleados.map((e) => e.empleado.nombre)).toEqual([
-      'Obrero Uno'
-    ])
     // Sólo el administrador de la sesión tiene acceso.
     expect(conAcceso.body.data.empleados).toHaveLength(1)
     expect(conAcceso.body.data.empleados[0].empleado.acceso).not.toBeNull()
+  })
+
+  it('el filtro por tipo se fue: se ignora en vez de acotar (D-59)', async () => {
+    const empresa = await crearEmpresa()
+    const { token } = await crearEmpleadoConSesion({ empresa })
+    const obrero = await crearEmpleado({ nombre: 'Obrero Uno', tipo: 'mano_de_obra' })
+    await adscribir(empresa, obrero)
+
+    const res = await request(app).get(`${RUTA}?tipo=administrativo`).set(auth(token))
+
+    // Ni 400 ni lista vacía: el parámetro dejó de existir y no acota nada.
+    expect(res.status).toBe(200)
+    expect(res.body.data.empleados.map((e) => e.empleado.nombre)).toContain('Obrero Uno')
   })
 
   it('oculta a los dados de baja por defecto; activo=false trae sólo esos, sin mezclar (D-51)', async () => {
@@ -340,7 +349,6 @@ describe('GET /empleados — filtros, orden y paginación', () => {
       `${RUTA}?pagina=0`,
       `${RUTA}?porPagina=500`,
       `${RUTA}?orden=por_fecha`,
-      `${RUTA}?tipo=inventado`,
       `${RUTA}?area=taller`,
       `${RUTA}?soloConAcceso=quizas`,
       `${RUTA}?categoriaId=no-es-id`,

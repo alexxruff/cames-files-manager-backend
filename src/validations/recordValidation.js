@@ -1,5 +1,5 @@
 const { body, param, query } = require('express-validator')
-const { DOCUMENT_TYPES, EMPLOYEE_TYPES, RECORD_STATUSES } = require('../constants')
+const { DOCUMENT_TYPES, RECORD_STATUSES } = require('../constants')
 const { isCalendarDate } = require('../utils/dates')
 
 exports.recordIdValidation = [
@@ -21,7 +21,11 @@ exports.listRecordsValidation = [
     .optional()
     .matches(/^[a-z0-9_]+$/)
     .withMessage('Selecciona un área válida'),
-  query('tipo').optional().isIn(EMPLOYEE_TYPES).withMessage('Selecciona un tipo válido'),
+  /*
+   * El filtro por `tipo` se fue en D-59: el desplegable de la tabla lo
+   * reemplazan las áreas, y el tipo dejó de capturarse —lo dice el puesto—.
+   * Sigue en la respuesta por si se quiere mostrar.
+   */
   query('estatus')
     .optional()
     .isIn(RECORD_STATUSES)

@@ -11,7 +11,8 @@ const Affiliation = require('../api/v1/affiliations/affiliationModel')
  *
  * Deja en la petición:
  * - `req.empresasVisibles` — array de ids, o `null` = todas (admin de plataforma).
- * - `req.areasPorEmpresa`  — `{ empresaId: [areas] }`, para el jefe de área.
+ * - `req.areasPorEmpresa`  — `{ empresaId: [areas] }`, para el jefe de área. Son
+ *   las áreas que **DIRIGE**, no aquellas donde trabaja (D-60).
  * - `req.esAdminPlataforma`.
  *
  * Reglas que no se negocian:
@@ -38,12 +39,18 @@ async function applyScope(req, res, next) {
     const adscripciones = await Affiliation.find({
       empleadoId: req.user._id,
       activo: true
-    }).select('empresaId areas')
+    }).select('empresaId dirigeAreas')
 
     req.esAdminPlataforma = false
     req.empresasVisibles = adscripciones.map((a) => String(a.empresaId))
+    /*
+     * `dirigeAreas`, NO `areas` (D-60). Antes el alcance salía de dónde estaba
+     * adscrita la persona: ponerla en Contabilidad porque ahí trabaja le daba,
+     * de paso, visión sobre todo Contabilidad. Dirigir un área es una asignación
+     * explícita y esto es lo único que la lee.
+     */
     req.areasPorEmpresa = Object.fromEntries(
-      adscripciones.map((a) => [String(a.empresaId), a.areas || []])
+      adscripciones.map((a) => [String(a.empresaId), a.dirigeAreas || []])
     )
 
     return next()

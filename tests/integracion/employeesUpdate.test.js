@@ -207,8 +207,16 @@ describe('PATCH /api/v1/empleados/:id — editar a la persona', () => {
       expect(res.body.data.empleado.categoriaNombre).toBe('Albañil oficial')
     })
 
-    it('400 si la categoría no corresponde al tipo de la persona', async () => {
+    /*
+     * Desde D-59 el tipo NO se manda: cambiar de puesto es lo que lo cambia. Ya
+     * no hay «400 si la categoría no corresponde» ni «400 si cambia el tipo y su
+     * categoría deja de corresponder» — no quedan dos fuentes que puedan
+     * discrepar. Lo que sí sigue vigente son los permisos y la invariante del
+     * área, que ahora se disparan por la categoría.
+     */
+    it('cambiar el puesto cambia el tipo con él (D-59)', async () => {
       const { token, persona } = await escenario()
+      expect(persona.tipo).toBe('mano_de_obra')
       const deOficina = await crearCategoria('Contador', 'administrativo')
 
       const res = await request(app)
@@ -216,24 +224,11 @@ describe('PATCH /api/v1/empleados/:id — editar a la persona', () => {
         .set(auth(token))
         .send({ categoriaId: deOficina._id.toString() })
 
-      expect(res.status).toBe(400)
-      expect(res.body.errors[0].path).toBe('categoriaId')
-    })
-
-    it('cambia el tipo junto con una categoría coherente', async () => {
-      const { token, persona } = await escenario()
-      const deOficina = await crearCategoria('Contador', 'administrativo')
-
-      const res = await request(app)
-        .patch(`${RUTA}/${persona._id}`)
-        .set(auth(token))
-        .send({ tipo: 'administrativo', categoriaId: deOficina._id.toString() })
-
       expect(res.status).toBe(200)
       expect(res.body.data.empleado.empleado.tipo).toBe('administrativo')
     })
 
-    it('400 si cambia el tipo y su categoría deja de corresponder', async () => {
+    it('400 si mandan el tipo, diciendo de dónde sale ahora', async () => {
       const { token, persona } = await escenario()
 
       const res = await request(app)
@@ -242,7 +237,7 @@ describe('PATCH /api/v1/empleados/:id — editar a la persona', () => {
         .send({ tipo: 'administrativo' })
 
       expect(res.status).toBe(400)
-      expect(res.body.message).toMatch(/categoría/i)
+      expect(res.body.message).toMatch(/se deriva de categoriaId/i)
     })
 
     it('400 al volverlo administrativo si su adscripción no tiene área', async () => {
@@ -254,7 +249,7 @@ describe('PATCH /api/v1/empleados/:id — editar a la persona', () => {
       const res = await request(app)
         .patch(`${RUTA}/${persona._id}`)
         .set(auth(token))
-        .send({ tipo: 'administrativo', categoriaId: deOficina._id.toString() })
+        .send({ categoriaId: deOficina._id.toString() })
 
       expect(res.status).toBe(400)
       expect(res.body.message).toMatch(/al menos un área/i)
@@ -291,7 +286,6 @@ describe('PATCH /api/v1/empleados/:id — editar a la persona', () => {
       const casos = [
         [{ curp: 'NO-ES-CURP' }, 'curp'],
         [{ nombre: 'ab' }, 'nombre'],
-        [{ tipo: 'obrero' }, 'tipo'],
         [{ fechaNacimiento: '01/01/1990' }, 'fechaNacimiento'],
         [{ email: 'no-es-correo' }, 'email']
       ]
@@ -359,7 +353,8 @@ describe('PATCH /api/v1/empleados/:id — editar a la persona', () => {
       const res = await request(app)
         .patch(`${RUTA}/${persona._id}`)
         .set(auth(token))
-        .send({ tipo: 'administrativo', categoriaId: deOficina._id.toString() })
+        // Se pide con el PUESTO: es lo que cambia el tipo desde D-59.
+        .send({ categoriaId: deOficina._id.toString() })
 
       expect(res.status).toBe(403)
       expect(res.body.message).toMatch(/convertir/i)

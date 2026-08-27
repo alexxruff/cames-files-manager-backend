@@ -287,6 +287,7 @@ export interface Empleado {
   email: string | null // contacto, distinto del de acceso
   telefono: string | null
   categoriaId: string
+  /** DERIVADO del puesto (D-59): se lee, no se manda. */
   tipo: 'administrativo' | 'mano_de_obra'
   /** `null` = no entra a la plataforma. Es la mayoría. */
   acceso: AccesoEmpleado | null
@@ -301,7 +302,10 @@ export interface AdscripcionDeEmpleado {
   _id: string
   empresaId: string
   empresaNombre: string | null
-  areas: Area[]
+  /** Dónde TRABAJA, en esa empresa. */
+  areas: ClaveArea[]
+  /** Qué áreas DIRIGE ahí (D-60). Vacío es lo normal. */
+  dirigeAreas: ClaveArea[]
   tipoContrato: TipoContrato
   fechaIngreso: string // 'YYYY-MM-DD'
   fechaTerminoContrato: string | null
@@ -404,7 +408,7 @@ Query, todos opcionales:
 | `busqueda`             | nombre o **número de empleado** (D-51), parcial, ignora acentos       | —            |
 | `empresaId`            | acota **dentro** de lo visible; nunca lo amplía                       | —            |
 | `area`                 | área de la adscripción                                                | —            |
-| `tipo`                 | `administrativo` \| `mano_de_obra`                                    | —            |
+| ~~`tipo`~~             | **Se fue en D-59**: lo reemplazan las áreas. Si se manda, se ignora   | —            |
 | `categoriaId`          | id de la categoría (D-51)                                             | —            |
 | `soloConAcceso`        | `true` \| `false`                                                     | `false`      |
 | `activo`               | `true` \| `false` \| `todos` (D-51)                                   | `true`       |
@@ -523,8 +527,7 @@ agregación: `empleados` (adscripciones activas), `clientes` (cartera activa) y
 // petición
 {
   "nombre": "Roberto Aguilar Sosa",
-  "tipo": "mano_de_obra",              // o "administrativo"
-  "categoriaId": "…",                  // del tipo que corresponda
+  "categoriaId": "…",                  // de aquí sale el `tipo` de la persona (D-59)
   "numeroEmpleado": "0248",            // OBLIGATORIO, con o sin empresa (D-54)
   "curp": "AUSR900101HJCGSB03",        // opcional
   "rfc": null, "nss": null, "fechaNacimiento": null, "email": null, "telefono": null,
@@ -570,7 +573,7 @@ está en uso y ya.
 
 | Código | Cuándo                                                                                                                                                                                                        |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `400`  | Falta nombre, `categoriaId` o `numeroEmpleado`; falta la adscripción; CURP mal formada; un administrativo sin áreas; contrato temporal con término anterior al ingreso; la categoría no corresponde al `tipo` |
+| `400`  | Falta nombre, `categoriaId` o `numeroEmpleado`; falta la adscripción; CURP mal formada; un administrativo sin áreas; contrato temporal con término anterior al ingreso |
 | `403`  | `tipo: 'administrativo'` pedido por `rh_consulta` o `jefe_area`; o un `jefe_area` pidiendo un área que no es suya (el mensaje lista las suyas)                                                                |
 | `404`  | `empresaId` que no es suya, o `categoriaId` inexistente                                                                                                                                                       |
 | `409`  | Duplicado — ver abajo                                                                                                                                                                                         |
@@ -635,8 +638,11 @@ está en uso y ya.
 `rh_consulta` o un `jefe_area` corrige a su personal de obra sin pedírselo a un
 administrador; a un administrativo, sólo `rh_admin`.
 
-Acepta **estos diez campos y ninguno más**: `nombre`, `numeroEmpleado`, `curp`,
-`rfc`, `nss`, `fechaNacimiento`, `email`, `telefono`, `categoriaId`, `tipo`.
+Acepta **estos nueve campos y ninguno más**: `nombre`, `numeroEmpleado`, `curp`,
+`rfc`, `nss`, `fechaNacimiento`, `email`, `telefono`, `categoriaId`.
+
+**`tipo` ya no se manda** (D-59): sale de la categoría. Cambiar el puesto es lo
+que cambia el tipo, y mandarlo responde `400` diciéndolo.
 
 ```jsonc
 // petición — sólo lo que cambia
@@ -677,8 +683,9 @@ Detalles que importan para la UI:
   a la persona en un estado que el alta no permite crear — para corregirlo se
   manda el nuevo.
 - **Vaciar un opcional**: mándenlo como `null` (nunca `""`).
-- **Cambiar el `tipo`** exige mandar también una `categoriaId` del tipo nuevo, o
-  responde `400`.
+- **Para cambiar el `tipo`, se manda la `categoriaId` nueva** (D-59): mover a
+  alguien de «Peón» a «Auxiliar contable» lo vuelve administrativo. Exige el
+  mismo permiso que crear uno, y si su adscripción no tiene área responde `400`.
 
 ### `PATCH /empleados/:id/estado` — baja y reactivación
 

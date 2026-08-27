@@ -324,7 +324,7 @@ Parámetros de `GET /empleados`:
 | `empresaId` | Filtra dentro del alcance; nunca lo amplía |
 | `area` | Áreas de la adscripción, no del empleado |
 | `proyectoId` | Con asignación activa a ese proyecto |
-| `tipo` | `administrativo` \| `mano_de_obra` |
+| ~~`tipo`~~ | **Se fue en D-59**: el filtro lo reemplazan las áreas y el tipo sale del puesto |
 | `soloConAcceso` | Los que entran a la plataforma |
 | `activo` | `true` (defecto, sólo activos) \| `false` (sólo bajas) \| `todos` (D-51) |
 | `orden` | `nombre_asc` (defecto) \| `nombre_desc` \| `numero_asc` \| `numero_desc` (D-51). `numero_*` no requiere `empresaId` (D-53): ordena por `empleado.numeroEmpleado` —de la persona, uno por renglón desde D-54— y los que no tienen número van al final en los dos sentidos |

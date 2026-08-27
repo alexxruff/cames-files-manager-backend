@@ -33,7 +33,6 @@ class EmployeeController {
         busqueda: req.query.busqueda,
         empresaId: req.query.empresaId,
         area: req.query.area,
-        tipo: req.query.tipo,
         categoriaId: req.query.categoriaId,
         soloConAcceso: req.query.soloConAcceso === 'true',
         activo: req.query.activo,
@@ -139,7 +138,11 @@ class EmployeeController {
       filas: resultado.resumen.filas,
       nuevos: resultado.resumen.nuevos,
       conConflicto: resultado.resumen.conConflicto,
-      conError: resultado.resumen.conError
+      conError: resultado.resumen.conError,
+      // Qué catálogo tocaría: es lo que se revisa antes de aplicar (D-58).
+      categoriasNuevas: resultado.categoriasNuevas.length,
+      areasNuevas: resultado.areasNuevas.map((a) => a.clave),
+      areasReactivadas: resultado.areasReactivadas.map((a) => a.clave)
     })
 
     return ok(res, resultado)
@@ -161,7 +164,14 @@ class EmployeeController {
     req.log.info('Importación aplicada', {
       empresaId: req.body.empresaId,
       ...resumen,
-      categoriasNuevas: resultado.categoriasNuevas.length
+      categoriasNuevas: resultado.categoriasNuevas.length,
+      /*
+       * Las claves, no la cuenta: cuando alguien pregunta "¿se crearon las
+       * áreas?" —y es lo primero que se pregunta— un número no responde. Son
+       * pocas y caben en la línea.
+       */
+      areasNuevas: resultado.areasNuevas.map((a) => a.clave),
+      areasReactivadas: resultado.areasReactivadas.map((a) => a.clave)
     })
 
     return created(

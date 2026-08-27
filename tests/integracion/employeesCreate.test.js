@@ -21,7 +21,7 @@ const siguienteNumero = () => `NE-${++contadorNumero}`
 /** Alta de personal: persona + adscripción en una transacción. */
 const cuerpo = ({ empresaId, categoriaId, ...extra }) => ({
   nombre: 'Roberto Aguilar Sosa',
-  tipo: 'mano_de_obra',
+  // `tipo` NO va: sale de la categoría (D-59).
   categoriaId,
   numeroEmpleado: siguienteNumero(),
   adscripcion: {
@@ -154,8 +154,7 @@ describe('POST /api/v1/empleados — el alta', () => {
             cuerpo({
               empresaId: empresa._id.toString(),
               categoriaId: categoria._id.toString(),
-              nombre: `Administrativo de ${datos.nivelAcceso}`,
-              tipo: 'administrativo'
+              nombre: `Administrativo de ${datos.nivelAcceso}`
             })
           )
 
@@ -183,7 +182,6 @@ describe('POST /api/v1/empleados — el alta', () => {
           cuerpo({
             empresaId: empresa._id.toString(),
             categoriaId: categoria._id.toString(),
-            tipo: 'administrativo',
             adscripcion: {
               empresaId: empresa._id.toString(),
               areas: ['finanzas'],
@@ -448,7 +446,12 @@ describe('POST /api/v1/empleados — el alta', () => {
       expect(res.body.message).toMatch(/categoría/i)
     })
 
-    it('400 si su tipo no corresponde al de la persona', async () => {
+    /*
+     * El "400 si su tipo no corresponde al de la persona" se fue con D-59: ya no
+     * hay dos fuentes que puedan discrepar. Lo que queda es que el tipo de la
+     * categoría ES el de la persona.
+     */
+    it('el tipo de la persona sale del puesto que se le da (D-59)', async () => {
       const { token, empresa } = await escenario({ nivelAcceso: 'rh_admin' })
       const deOficina = await crearCategoria('Contador', 'administrativo')
 
@@ -459,12 +462,17 @@ describe('POST /api/v1/empleados — el alta', () => {
           cuerpo({
             empresaId: empresa._id.toString(),
             categoriaId: deOficina._id.toString(),
-            tipo: 'mano_de_obra'
+            adscripcion: {
+              empresaId: empresa._id.toString(),
+              areas: ['finanzas'],
+              tipoContrato: 'indeterminado',
+              fechaIngreso: '2026-09-01'
+            }
           })
         )
 
-      expect(res.status).toBe(400)
-      expect(res.body.errors[0].path).toBe('categoriaId')
+      expect(res.status).toBe(201)
+      expect(res.body.data.empleado.empleado.tipo).toBe('administrativo')
     })
   })
 
@@ -616,7 +624,6 @@ describe('POST /api/v1/empleados — el alta', () => {
 
       const casos = [
         [{ nombre: 'ab' }, 'nombre'],
-        [{ tipo: 'obrero' }, 'tipo'],
         [{ categoriaId: 'no-es-id' }, 'categoriaId'],
         [{ curp: 'NO-ES-CURP' }, 'curp'],
         [{ fechaNacimiento: '01/01/1990' }, 'fechaNacimiento']

@@ -40,6 +40,15 @@ const CAPABILITIES = Object.freeze({
   MANAGE_TEMPLATES: 'manageTemplates',
   GENERATE_REPORTS: 'generateReports',
   MANAGE_ACCESS: 'manageAccess',
+  /**
+   * Decir **quién dirige qué área** en cada empresa (D-60).
+   *
+   * Va aparte de `MANAGE_AFFILIATIONS` aunque se guarde en la adscripción: no es
+   * un dato de la relación laboral, es **quién ve a quién**. Está al lado de
+   * `MANAGE_ACCESS` porque es de la misma naturaleza —reparte visibilidad— y por
+   * eso es exclusivo de `rh_admin`.
+   */
+  MANAGE_AREA_LEADERSHIP: 'manageAreaLeadership',
   /** Crear empresas y categorías: afecta a todo el grupo. Exige `alcanceGlobal`. */
   MANAGE_COMPANIES: 'manageCompanies',
   MANAGE_CATEGORIES: 'manageCategories',
@@ -73,6 +82,7 @@ const PERMISSION_MATRIX = Object.freeze({
     manageTemplates: true,
     generateReports: true,
     manageAccess: true,
+    manageAreaLeadership: true,
     manageCompanies: 'global',
     manageCategories: 'global',
     manageAreas: 'global',
@@ -99,6 +109,7 @@ const PERMISSION_MATRIX = Object.freeze({
     manageTemplates: false,
     generateReports: true,
     manageAccess: false,
+    manageAreaLeadership: false,
     manageCompanies: false,
     manageCategories: false,
     manageAreas: false,
@@ -122,6 +133,7 @@ const PERMISSION_MATRIX = Object.freeze({
     manageTemplates: false,
     generateReports: false,
     manageAccess: false,
+    manageAreaLeadership: false,
     manageCompanies: false,
     manageCategories: false,
     manageAreas: false,

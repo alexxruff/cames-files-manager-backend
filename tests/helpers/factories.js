@@ -87,6 +87,8 @@ async function adscribir(empresa, empleado, datos = {}) {
     empresaId: empresa._id,
     empleadoId: empleado._id,
     areas: datos.areas || [],
+    // Las áreas que DIRIGE, distintas de aquellas donde trabaja (D-60).
+    dirigeAreas: datos.dirigeAreas || [],
     tipoContrato: datos.tipoContrato || 'indeterminado',
     fechaIngreso: datos.fechaIngreso || '2026-01-15',
     fechaTerminoContrato: datos.fechaTerminoContrato ?? null,
@@ -124,9 +126,19 @@ async function crearEmpleadoConSesion(datos = {}) {
     }
   })
 
+  /*
+   * `dirigeAreas` por omisión = las áreas donde trabaja, y SÓLO para `jefe_area`
+   * (D-60). Es exactamente lo que hace la migración con los jefes que ya
+   * existían, así que las pruebas que no van de jefaturas siguen probando lo
+   * mismo que antes. Para probar la separación —trabajar en un área sin
+   * dirigirla— se manda `dirigeAreas` explícito, aunque sea `[]`.
+   */
+  const dirigeAreas =
+    datos.dirigeAreas ?? (datos.nivelAcceso === 'jefe_area' ? datos.areas || [] : [])
+
   const adscripcion = datos.sinAdscripcion
     ? null
-    : await adscribir(empresa, empleado, { areas: datos.areas })
+    : await adscribir(empresa, empleado, { areas: datos.areas, dirigeAreas })
 
   const respuesta = await request(app)
     .post('/api/v1/auth/login')

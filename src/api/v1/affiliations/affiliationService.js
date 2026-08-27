@@ -25,7 +25,7 @@ class AffiliationService {
   /** Las adscripciones de una empresa, con la persona resuelta. */
   async list(
     empresaId,
-    { activo = 'true', area, tipo, categoriaId, orden } = {},
+    { activo = 'true', area, categoriaId, orden } = {},
     contexto = {}
   ) {
     await this.#assertEmpresaVisible(empresaId, contexto)
@@ -47,15 +47,15 @@ class AffiliationService {
     }
 
     /*
-     * `tipo` y `categoriaId` son de la PERSONA, no de la adscripción: se
-     * resuelven primero contra `employees` y se acotan por `empleadoId`.
+     * `categoriaId` es de la PERSONA, no de la adscripción: se resuelve primero
+     * contra `employees` y acota por `empleadoId`.
+     *
+     * El filtro por `tipo` se fue en D-59, junto con el desplegable de la tabla.
      */
-    if (tipo || categoriaId) {
-      const filtroEmpleado = {}
-      if (tipo) filtroEmpleado.tipo = tipo
-      if (categoriaId)
-        filtroEmpleado.categoriaId = new mongoose.Types.ObjectId(categoriaId)
-      const ids = await Employee.find(filtroEmpleado).select('_id')
+    if (categoriaId) {
+      const ids = await Employee.find({
+        categoriaId: new mongoose.Types.ObjectId(categoriaId)
+      }).select('_id')
       filtro.empleadoId = { $in: ids.map((e) => e._id) }
     }
 
@@ -241,6 +241,78 @@ class AffiliationService {
   /** Que las áreas existan y estén activas en el catálogo (D-58). */
   async #assertAreasDelCatalogo(areas) {
     await areaService.assertUsables(areas, 'areas')
+  }
+
+  /**
+   * `PATCH /adscripciones/:id/jefaturas` — quién dirige qué área (D-60).
+   *
+   * Va en su propia ruta y con su propia capacidad, aunque el dato se guarde en
+   * la adscripción: no es parte de la relación laboral, es **quién ve a quién**.
+   * Mezclarlo con `PATCH /adscripciones/:id` habría hecho que corregir una fecha
+   * de ingreso y repartir visibilidad exigieran el mismo permiso.
+   *
+   * Las áreas que dirige **no tienen que ser** donde trabaja: un director puede
+   * dirigir Contabilidad sin estar adscrito a ella. Lo único que hace falta es
+   * que tenga adscripción a esta empresa, y eso ya lo garantiza el `:id`.
+   */
+  async setJefaturas(id, dirigeAreas, contexto = {}) {
+    const adscripcion = await this.#buscarVisible(id, contexto)
+
+    // Que existan y estén activas: dirigir un área dada de baja no significa
+    // nada, y sería una forma silenciosa de no ver a nadie.
+    await areaService.assertUsables(dirigeAreas, 'dirigeAreas')
+
+    // Sin duplicados: dirigir dos veces la misma área no es dirigirla más.
+    adscripcion.dirigeAreas = [...new Set(dirigeAreas)]
+    await adscripcion.save()
+
+    return { adscripcion: adscripcion.toJSON() }
+  }
+
+  /**
+   * `GET /empresas/:id/jefaturas` — el catálogo de áreas de la empresa con quién
+   * dirige cada una (D-60).
+   *
+   * Es la vista de la pantalla de configuración: se entra por el ÁREA, no por la
+   * persona. Se arma leyendo las adscripciones, así que no hay un segundo lugar
+   * donde el dato pueda quedar desincronizado.
+   */
+  async jefaturas(empresaId, contexto = {}) {
+    await this.#assertEmpresaVisible(empresaId, contexto)
+
+    const conJefatura = await Affiliation.find({
+      empresaId: new mongoose.Types.ObjectId(empresaId),
+      activo: true,
+      'dirigeAreas.0': { $exists: true }
+    }).populate({ path: 'empleadoId', select: 'nombre numeroEmpleado activo' })
+
+    const porArea = new Map()
+    for (const adscripcion of conJefatura) {
+      if (!adscripcion.empleadoId) continue
+      for (const clave of adscripcion.dirigeAreas) {
+        if (!porArea.has(clave)) porArea.set(clave, [])
+        porArea.get(clave).push({
+          adscripcionId: adscripcion._id.toString(),
+          empleadoId: adscripcion.empleadoId._id.toString(),
+          nombre: adscripcion.empleadoId.nombre,
+          numeroEmpleado: adscripcion.empleadoId.numeroEmpleado ?? null
+        })
+      }
+    }
+
+    /*
+     * Se listan TODAS las áreas activas, no sólo las que tienen jefe: la
+     * pantalla necesita ver cuáles están sin dirigir, que es la mitad de para
+     * qué sirve.
+     */
+    const { areas } = await areaService.list({ activa: 'true' })
+
+    return {
+      jefaturas: areas.map((area) => ({
+        area: { clave: area.clave, nombre: area.nombre, temporal: area.temporal },
+        jefes: porArea.get(area.clave) || []
+      }))
+    }
   }
 
   /** Un administrativo necesita al menos un área (modelo-datos §5b.1). */

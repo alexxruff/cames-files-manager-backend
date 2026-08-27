@@ -2222,3 +2222,127 @@ todavía hay gente asignada y es justo a quien hay que encontrar para reasignar.
 apunte a un área inexistente, que a partir de aquí impediría editarla— y reporta
 cuánta gente tiene cada área fuera de las base. **No reasigna a nadie.** Después,
 `npm run db:indices`: la colección estrena dos índices únicos.
+
+## D-59 · `tipo` se deriva del puesto: ni se captura ni se filtra
+
+**Decisión.** `tipo` (`administrativo` / `mano_de_obra`) deja de mandarse en
+`POST /empleados` y `PATCH /empleados/:id`, y desaparece como filtro (`?tipo=`)
+de `/empleados`, `/expedientes` y `/empresas/:id/adscripciones`. **Sale de la
+categoría**, que ya lo trae. Sigue en el modelo y en la respuesta.
+
+### El malentendido que lo destapó
+
+Al pedir el catálogo de áreas (D-58), el cliente aclaró que las áreas venían a
+**reemplazar el filtro de `tipo`** de la tabla — no a sumarse a él. La tabla
+quedó con «Todas las áreas» y «Mano de obra» al lado, que es justo la
+duplicación que se quería quitar.
+
+### Por qué NO se elimina el campo
+
+Se planteó quitarlo del todo y se descartó, porque `tipo` no es una etiqueta:
+es **lo que decide quién puede gestionar a quién**. `rh_consulta` y `jefe_area`
+sólo dan de alta y editan `mano_de_obra`; a un administrativo sólo lo toca
+`rh_admin` (modelo-datos §8.2). Las áreas no cubren eso: dicen _dónde_ trabaja
+alguien, no qué permiso hace falta para gestionarlo. Borrar el campo habría
+obligado a redefinir la matriz de permisos entera.
+
+También filtra el desplegable de puestos (`GET /categorias?tipo=`), que sigue
+siendo útil: «Auxiliar contable» no se ofrece en un alta de obra.
+
+### La redundancia que sí había
+
+El alta pedía `tipo` **y** `categoriaId`, y cada categoría **ya trae su `tipo`**.
+Eran dos fuentes para el mismo dato, con una comprobación
+(`assertUsableParaTipo`) para que no discreparan — y el importador ya resolvía el
+empate a favor del catálogo (D-46).
+
+Ahora hay una sola fuente:
+
+- **Alta**: se resuelve la categoría primero y de ahí sale el tipo. Va antes del
+  chequeo de permiso, porque el permiso depende del tipo.
+- **Edición**: **cambiar de puesto es lo que cambia el tipo**. Mover a alguien de
+  «Peón» a «Auxiliar contable» lo convierte en administrativo, y por eso exige el
+  mismo permiso que crear uno y la misma invariante (un administrativo necesita
+  área en cada adscripción).
+- `assertUsableParaTipo` desapareció: comprobar que el tipo capturado coincida
+  con el de la categoría no puede fallar cuando el tipo **sale** de la categoría.
+  La sustituye `categoryService.usable`.
+
+### Mandar `tipo` en el `PATCH` responde 400
+
+No se ignora en silencio: cae en la lista de campos no editables, con la pista de
+siempre — _«tipo (se deriva de categoriaId: cambia el puesto y el tipo cambia con
+él)»_. En el `POST` simplemente se ignora.
+
+### El filtro se va, pero sin romper a quien lo mande
+
+`?tipo=` deja de existir en los tres listados de personas. No responde `400`: el
+parámetro se ignora y devuelve todo, para que un front que todavía lo mande no se
+quede con una tabla vacía sin explicación.
+
+**Cuidado con `GET /alertas?tipo=`**: ahí `tipo` es el tipo de ALERTA, no el de
+la persona. No se tocó.
+
+## D-60 · Trabajar en un área no es dirigirla: la jefatura se asigna
+
+**Decisión.** El alcance de un `jefe_area` deja de derivarse de las áreas de su
+propia adscripción y pasa a un campo explícito, `adscripciones.dirigeAreas`, que
+se asigna desde configuración. `req.areasPorEmpresa` lo lee de ahí.
+
+### El problema
+
+`applyScope` armaba el alcance con las `areas` de la adscripción del usuario. O
+sea: poner a alguien en Contabilidad **porque ahí trabaja** le daba, de paso,
+visión sobre todo Contabilidad. Dos cosas distintas —dónde trabajas y qué
+diriges— guardadas en el mismo campo.
+
+Se destapó discutiendo el catálogo de áreas: el cliente lo dijo con otras
+palabras — «una cosa es el área de cada empleado y otra muy diferente son los
+administradores de la plataforma». El resto del modelo ya separaba bien los dos
+ejes (los datos de RH por un lado, `empleados.acceso` por otro); éste era el
+único punto donde se contaminaban.
+
+### `dirigeAreas` no es un subconjunto de `areas`
+
+A propósito. Un director puede dirigir Contabilidad sin estar adscrito a ella, y
+alguien puede trabajar en un área sin dirigirla — que es el caso normal y el que
+estaba mal. Lo único que se exige es tener adscripción a la empresa, porque es
+donde vive el dato.
+
+**Es por empresa**, como todo lo demás de la relación laboral: dirigir
+Contabilidad en Urbanizadora no da alcance sobre la Contabilidad de Maquinaria.
+
+Varios jefes por área y varias áreas por jefe: las dos cosas se permiten.
+
+### Ruta y permiso aparte de la adscripción
+
+`PATCH /adscripciones/:id/jefaturas`, con capacidad propia
+(`MANAGE_AREA_LEADERSHIP`, sólo `rh_admin`) en vez de `MANAGE_AFFILIATIONS`.
+Aunque el dato viva en la adscripción, **no es la relación laboral: es quién ve a
+quién**. Con la misma capacidad, corregir una fecha de ingreso y repartir
+visibilidad habrían costado lo mismo.
+
+Se manda la **lista completa**, no un agrega/quita: `[]` le quita la jefatura. Es
+lo que permite a la pantalla guardar lo que muestra sin llevar la cuenta de qué
+cambió.
+
+`GET /empresas/:id/jefaturas` es la vista de configuración: entra por el ÁREA y
+trae **todas** las activas, también las que nadie dirige — que es la mitad de
+para qué sirve. Se arma leyendo las adscripciones, así que no hay un segundo
+lugar donde el dato pueda desincronizarse.
+
+### Migrar es obligatorio, y va antes del despliegue
+
+`npm run migrate:jefaturas` (con `--dry-run`). Copia `areas` → `dirigeAreas` en
+las adscripciones activas de quien tiene acceso `jefe_area`: deja el alcance
+**exactamente como estaba**.
+
+Sin ella, al desplegar **todos los jefes de área dejan de ver a nadie** —
+`areasVisibles` devuelve `[]` y el listado responde vacío. No toca a `rh_admin`
+ni a `rh_consulta`: no usan `areasPorEmpresa`, y darles jefaturas que nadie pidió
+sería inventar permisos. Es idempotente y sólo escribe donde `dirigeAreas` está
+vacío, así que no deshace una reasignación posterior.
+
+Deja el estado anterior tal cual **a propósito**: el punto del cambio es que RH
+revise en configuración quién debe dirigir qué, y es probable que varios de los
+que hoy dirigen su propia área no debieran.

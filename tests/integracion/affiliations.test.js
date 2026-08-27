@@ -154,7 +154,7 @@ describe('Adscripciones', () => {
       expect(ids).not.toContain(deOtraArea._id.toString())
     })
 
-    it('filtra por tipo y por categoriaId', async () => {
+    it('filtra por categoriaId', async () => {
       const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
       const categoriaObra = await crearCategoria('Albañil', 'mano_de_obra')
       const categoriaOficina = await crearCategoria('Contador', 'administrativo')
@@ -169,13 +169,7 @@ describe('Adscripciones', () => {
       await adscribir(sesion.empresa, obrero, { areas: ['operaciones_urbanizadora'] })
       await adscribir(sesion.empresa, administrativo, { areas: ['finanzas'] })
 
-      const porTipo = await request(app)
-        .get(`/api/v1/empresas/${sesion.empresa._id}/adscripciones?tipo=mano_de_obra`)
-        .set(auth(sesion.token))
-      const idsPorTipo = porTipo.body.data.adscripciones.map((a) => a.empleadoId)
-      expect(idsPorTipo).toContain(obrero._id.toString())
-      expect(idsPorTipo).not.toContain(administrativo._id.toString())
-
+      // El filtro por `tipo` se fue en D-59; queda el de categoría.
       const porCategoria = await request(app)
         .get(
           `/api/v1/empresas/${sesion.empresa._id}/adscripciones?categoriaId=${categoriaOficina._id}`
@@ -205,13 +199,15 @@ describe('Adscripciones', () => {
         await adscribir(sesion.empresa, persona, { areas: ['operaciones_urbanizadora'] })
       }
 
-      const porDefecto = await request(app)
-        .get(`/api/v1/empresas/${sesion.empresa._id}/adscripciones?tipo=mano_de_obra`)
-        .set(auth(sesion.token))
+      /*
+       * Se acota por categoría —ya no por `tipo`, que se fue en D-59— para dejar
+       * fuera al empleado de la sesión, que no tiene número y descuadraría el
+       * orden esperado.
+       */
+      const suyas = `/api/v1/empresas/${sesion.empresa._id}/adscripciones?categoriaId=${categoria._id}`
+      const porDefecto = await request(app).get(suyas).set(auth(sesion.token))
       const desc = await request(app)
-        .get(
-          `/api/v1/empresas/${sesion.empresa._id}/adscripciones?tipo=mano_de_obra&orden=numero_desc`
-        )
+        .get(`${suyas}&orden=numero_desc`)
         .set(auth(sesion.token))
 
       const numerosAsc = porDefecto.body.data.adscripciones.map(
@@ -223,10 +219,9 @@ describe('Adscripciones', () => {
       )
     })
 
-    it('valida tipo, categoriaId y orden con mensajes en español', async () => {
+    it('valida categoriaId y orden con mensajes en español', async () => {
       const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
       const malos = [
-        `/api/v1/empresas/${sesion.empresa._id}/adscripciones?tipo=inventado`,
         `/api/v1/empresas/${sesion.empresa._id}/adscripciones?categoriaId=no-es-id`,
         `/api/v1/empresas/${sesion.empresa._id}/adscripciones?orden=por_fecha`,
         `/api/v1/empresas/${sesion.empresa._id}/adscripciones?activo=quizas`

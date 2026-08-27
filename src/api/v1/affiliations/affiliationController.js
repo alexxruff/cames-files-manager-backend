@@ -18,7 +18,6 @@ class AffiliationController {
       {
         activo: req.query.activo,
         area: req.query.area,
-        tipo: req.query.tipo,
         categoriaId: req.query.categoriaId,
         orden: req.query.orden
       },
@@ -53,6 +52,27 @@ class AffiliationController {
       this.#contexto(req)
     )
     return ok(res, datos, 'Adscripción actualizada')
+  }
+
+  /** PATCH /adscripciones/:id/jefaturas — qué áreas dirige (D-60) */
+  setJefaturas = async (req, res) => {
+    const datos = await affiliationService.setJefaturas(
+      req.params.id,
+      req.body.dirigeAreas,
+      this.#contexto(req)
+    )
+
+    req.log.info('Jefaturas de área actualizadas', {
+      adscripcionId: req.params.id,
+      dirigeAreas: datos.adscripcion.dirigeAreas
+    })
+    return ok(res, datos, 'Jefaturas actualizadas')
+  }
+
+  /** GET /empresas/:id/jefaturas — quién dirige cada área (D-60) */
+  jefaturas = async (req, res) => {
+    const datos = await affiliationService.jefaturas(req.params.id, this.#contexto(req))
+    return ok(res, datos)
   }
 
   /** PATCH /adscripciones/:id/estado */

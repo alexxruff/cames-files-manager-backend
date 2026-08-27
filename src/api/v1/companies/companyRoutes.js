@@ -86,4 +86,20 @@ router
     asyncHandler(affiliationController.add)
   )
 
+/*
+ * Quién dirige cada área de esta empresa (D-60). Es la vista de la pantalla de
+ * configuración: se entra por el ÁREA, no por la persona, y trae también las que
+ * están sin dirigir, que es la mitad de para qué sirve.
+ *
+ * Sólo lectura: asignar es `PATCH /adscripciones/:id/jefaturas`, que exige la
+ * capacidad de repartir visibilidad.
+ */
+router.get(
+  '/:id/jefaturas',
+  requireCapability(CAPABILITIES.MANAGE_AREA_LEADERSHIP),
+  companyIdValidation,
+  validateRequest,
+  asyncHandler(affiliationController.jefaturas)
+)
+
 module.exports = router

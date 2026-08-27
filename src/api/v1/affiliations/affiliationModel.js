@@ -77,7 +77,23 @@ const affiliationSchema = new mongoose.Schema(
       required: [true, 'El empleado es requerido']
     },
 
-    /** Áreas DENTRO de esta empresa. Un administrativo necesita al menos una. */
+    /**
+     * Áreas que esta persona **DIRIGE** en esta empresa (D-60).
+     *
+     * Trabajar en un área y dirigirla son cosas distintas, y hasta ahora el
+     * sistema las confundía: el alcance de un `jefe_area` salía de `areas`, así
+     * que ponerlo en Contabilidad porque ahí trabaja le daba, de paso, visión
+     * sobre todo Contabilidad. Ahora se asigna explícitamente.
+     *
+     * **No tiene que ser un subconjunto de `areas`**: un director puede dirigir
+     * Contabilidad sin estar adscrito a ella. Lo único que hace falta es tener
+     * adscripción a la empresa — si no, no habría dónde guardarlo.
+     *
+     * Vacío es lo normal: casi nadie dirige nada.
+     */
+    dirigeAreas: { type: [{ type: String, trim: true }], default: [] },
+
+    /** Áreas DONDE TRABAJA, dentro de esta empresa. Un administrativo necesita al menos una. */
     areas: {
       /*
        * Sin `enum` desde D-58: las áreas son un catálogo (`areas`) y no una lista
@@ -208,6 +224,7 @@ const affiliationSchema = new mongoose.Schema(
           empresaId: idAString(ret.empresaId),
           empleadoId: idAString(ret.empleadoId),
           areas: ret.areas || [],
+          dirigeAreas: ret.dirigeAreas || [],
           departamento: ret.departamento ?? null,
           tipoContrato: ret.tipoContrato,
           fechaIngreso: ret.fechaIngreso,

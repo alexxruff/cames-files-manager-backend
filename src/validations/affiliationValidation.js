@@ -1,5 +1,5 @@
 const { body, param, query } = require('express-validator')
-const { CONTRACT_TYPES, EMPLOYEE_TYPES } = require('../constants')
+const { CONTRACT_TYPES } = require('../constants')
 const { isCalendarDate } = require('../utils/dates')
 
 /** Campos de la adscripción que se pueden mandar en el alta y en el `PATCH`. */
@@ -47,7 +47,11 @@ exports.listAffiliationsValidation = [
     .optional()
     .matches(/^[a-z0-9_]+$/)
     .withMessage('Selecciona un área válida'),
-  query('tipo').optional().isIn(EMPLOYEE_TYPES).withMessage('Selecciona un tipo válido'),
+  /*
+   * El filtro por `tipo` se fue en D-59: el desplegable de la tabla lo
+   * reemplazan las áreas, y el tipo dejó de capturarse —lo dice el puesto—.
+   * Sigue en la respuesta por si se quiere mostrar.
+   */
   query('categoriaId')
     .optional()
     .isMongoId()
@@ -101,6 +105,28 @@ exports.updateAffiliationValidation = [
   fechaCalendario('fechaIngreso', 'La fecha de ingreso'),
   fechaCalendario('fechaTerminoContrato', 'La fecha de término'),
   reglasAreas
+]
+
+/**
+ * `PATCH /adscripciones/:id/jefaturas` — las áreas que dirige (D-60).
+ *
+ * Se manda la lista COMPLETA, no un "agrega" ni un "quita": mandar `[]` es
+ * quitarle la jefatura. Es lo que hace que la pantalla de configuración pueda
+ * guardar lo que muestra sin llevar la cuenta de qué cambió.
+ */
+exports.affiliationJefaturasValidation = [
+  param('id').isMongoId().withMessage('La adscripción indicada no es válida'),
+  body('dirigeAreas')
+    .isArray()
+    .withMessage('dirigeAreas debe ser una lista de áreas')
+    .bail()
+    .custom((areas) => {
+      const invalidas = (areas || []).filter((a) => !/^[a-z0-9_]+$/.test(String(a)))
+      if (invalidas.length > 0) {
+        throw new Error(`Áreas no válidas: ${invalidas.join(', ')}`)
+      }
+      return true
+    })
 ]
 
 exports.affiliationEstadoValidation = [

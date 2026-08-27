@@ -1,5 +1,5 @@
 const { body, param, query } = require('express-validator')
-const { ACCESS_LEVELS, CONTRACT_TYPES, EMPLOYEE_TYPES } = require('../constants')
+const { ACCESS_LEVELS, CONTRACT_TYPES } = require('../constants')
 const { isCalendarDate } = require('../utils/dates')
 
 const PATRON_PASSWORD = /^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&*]).*$/
@@ -24,7 +24,11 @@ exports.listEmployeesValidation = [
     .optional()
     .matches(/^[a-z0-9_]+$/)
     .withMessage('Selecciona un área válida'),
-  query('tipo').optional().isIn(EMPLOYEE_TYPES).withMessage('Selecciona un tipo válido'),
+  /*
+   * El filtro por `tipo` se fue en D-59: el desplegable de la tabla lo
+   * reemplazan las áreas, y el tipo dejó de capturarse —lo dice el puesto—.
+   * Sigue en la respuesta por si se quiere mostrar.
+   */
   query('categoriaId')
     .optional()
     .isMongoId()
@@ -70,10 +74,11 @@ exports.createEmployeeValidation = [
     .isLength({ min: 3, max: 120 })
     .withMessage('El nombre debe tener entre 3 y 120 caracteres'),
 
-  body('tipo')
-    .isIn(EMPLOYEE_TYPES)
-    .withMessage('El tipo debe ser administrativo o mano_de_obra'),
-
+  /*
+   * `tipo` NO se manda (D-59): sale de la categoría, que ya lo trae. Mandarlo
+   * caía en "estos campos no se pueden actualizar aquí" al editar, y aquí
+   * simplemente se ignora.
+   */
   body('categoriaId').isMongoId().withMessage('Selecciona una categoría válida'),
 
   /**
@@ -177,8 +182,7 @@ const CAMPOS_EDITABLES = [
   'fechaNacimiento',
   'email',
   'telefono',
-  'categoriaId',
-  'tipo'
+  'categoriaId'
 ]
 
 exports.updateEmployeeValidation = [
@@ -197,7 +201,9 @@ exports.updateEmployeeValidation = [
         motivoBaja: 'PATCH /empleados/:id/estado',
         fechaBaja: 'PATCH /empleados/:id/estado',
         adscripcion: 'las adscripciones tienen su propio recurso',
-        adscripciones: 'las adscripciones tienen su propio recurso'
+        adscripciones: 'las adscripciones tienen su propio recurso',
+        // D-59: dejó de capturarse, lo dice el puesto.
+        tipo: 'se deriva de categoriaId: cambia el puesto y el tipo cambia con él'
       }
       const detalle = invalidos
         .map((c) => (pistas[c] ? `${c} (usa ${pistas[c]})` : c))
@@ -224,10 +230,6 @@ exports.updateEmployeeValidation = [
     .bail()
     .isLength({ max: 30 })
     .withMessage('El número de trabajador no puede exceder 30 caracteres'),
-  body('tipo')
-    .optional()
-    .isIn(EMPLOYEE_TYPES)
-    .withMessage('El tipo debe ser administrativo o mano_de_obra'),
   body('categoriaId')
     .optional()
     .isMongoId()

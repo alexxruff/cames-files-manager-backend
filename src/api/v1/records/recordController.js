@@ -25,7 +25,6 @@ class RecordController {
         busqueda: req.query.busqueda,
         empresaId: req.query.empresaId,
         area: req.query.area,
-        tipo: req.query.tipo,
         estatus: req.query.estatus,
         activo: req.query.activo,
         orden: req.query.orden,

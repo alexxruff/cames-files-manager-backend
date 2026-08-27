@@ -8,7 +8,8 @@ const { requirePasswordDefinitiva } = require('../../../middlewares/passwordMidd
 const { CAPABILITIES } = require('../../../utils/permissions')
 const {
   updateAffiliationValidation,
-  affiliationEstadoValidation
+  affiliationEstadoValidation,
+  affiliationJefaturasValidation
 } = require('../../../validations/affiliationValidation')
 
 /**
@@ -34,6 +35,18 @@ router.patch(
   updateAffiliationValidation,
   validateRequest,
   asyncHandler(affiliationController.update)
+)
+
+/*
+ * La jefatura NO lleva `gestionarAdscripcion`: no es un dato de la relación
+ * laboral sino quién ve a quién, y por eso tiene su propia capacidad (D-60).
+ */
+router.patch(
+  '/:id/jefaturas',
+  requireCapability(CAPABILITIES.MANAGE_AREA_LEADERSHIP),
+  affiliationJefaturasValidation,
+  validateRequest,
+  asyncHandler(affiliationController.setJefaturas)
 )
 
 router.patch(

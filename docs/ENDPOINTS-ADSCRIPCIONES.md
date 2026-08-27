@@ -76,7 +76,7 @@ va **al final en los dos sentidos**.
 }
 ```
 
-El jefe de área sólo ve las adscripciones de **sus propias áreas** en esa
+El jefe de área sólo ve las adscripciones de **las áreas que dirige** en esa
 empresa; si además filtra por `area`, se queda dentro de las suyas.
 
 ---
@@ -199,3 +199,77 @@ sólo quitar llenando el dato.
 (salario, SBC, banco, cuenta) y **ninguna respuesta los devuelve**: son datos
 personales sensibles y falta decidir quién puede verlos. Si los necesitas, dilo y
 se define el permiso; no los busques en la respuesta porque no están.
+
+
+## Jefaturas de área — quién dirige qué (D-60)
+
+Trabajar en un área y dirigirla son cosas distintas. Hasta D-60 el alcance de un
+`jefe_area` salía de las áreas de su propia adscripción: ponerlo en Contabilidad
+porque ahí trabaja le daba, de paso, visión sobre todo Contabilidad. Ahora se
+asigna.
+
+### El campo
+
+Cada adscripción trae **`dirigeAreas: string[]`** además de `areas`:
+
+- `areas` — dónde **trabaja** esa persona, en esa empresa.
+- `dirigeAreas` — qué áreas **dirige** ahí. Vacío es lo normal.
+
+**No tiene que ser un subconjunto de `areas`**: un director puede dirigir
+Contabilidad sin estar adscrito a ella. Y es **por empresa**: dirigir
+Contabilidad en Urbanizadora no da alcance sobre la de Maquinaria.
+
+Un área puede tener varios jefes, y un jefe varias áreas.
+
+### `PATCH /adscripciones/:id/jefaturas` — asignar
+
+Sólo `rh_admin`. Va en su propia ruta y con su propia capacidad aunque el dato
+viva en la adscripción: no es la relación laboral, es **quién ve a quién**.
+
+```jsonc
+// petición — la lista COMPLETA, no un agrega/quita
+{ "dirigeAreas": ["contabilidad", "tesoreria"] }
+
+// data
+{ "adscripcion": { "_id": "…", "areas": ["direccion"], "dirigeAreas": ["contabilidad", "tesoreria"], … } }
+```
+
+Mandar `[]` **le quita la jefatura**. Los repetidos se colapsan.
+
+| Código | Cuándo                                                            |
+| ------ | ----------------------------------------------------------------- |
+| `400`  | Un área que no existe, o que está dada de baja (dice cuál)        |
+| `403`  | No es `rh_admin`                                                  |
+| `404`  | La adscripción no existe o está fuera de alcance                  |
+
+### `GET /empresas/:id/jefaturas` — la pantalla de configuración
+
+Sólo `rh_admin`. Entra por el **área**, no por la persona, y trae **todas las
+áreas activas** — también las que nadie dirige, que es la mitad de para qué
+sirve.
+
+```jsonc
+// data
+{
+  "jefaturas": [
+    {
+      "area": { "clave": "contabilidad", "nombre": "Contabilidad", "temporal": false },
+      "jefes": [
+        {
+          "adscripcionId": "…", // ← con este se llama al PATCH de arriba
+          "empleadoId": "…",
+          "nombre": "Quien Dirige",
+          "numeroEmpleado": "0042"
+        }
+      ]
+    },
+    {
+      "area": { "clave": "tesoreria", "nombre": "Tesorería", "temporal": false },
+      "jefes": [] // sin dirigir
+    }
+  ]
+}
+```
+
+Se arma leyendo las adscripciones, así que no hay un segundo lugar donde el dato
+pueda quedar desincronizado.

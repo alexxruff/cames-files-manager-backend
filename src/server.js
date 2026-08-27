@@ -19,6 +19,7 @@ const { advertirSiNoHayBucket } = require('./services/storageService')
  */
 
 let server
+let apagando = false
 
 async function iniciar() {
   await connect()
@@ -64,6 +65,19 @@ async function iniciar() {
 }
 
 async function apagar(motivo, codigoSalida = 0) {
+  /*
+   * Una sola vez. Los orquestadores mandan SIGINT y, si el proceso sigue vivo,
+   * SIGTERM unos segundos después: sin este candado el segundo arrancaba un
+   * apagado nuevo —con su propio temporizador— encima del que ya estaba en
+   * curso. Se vio en Fly: "Apagando el servidor SIGINT" y diez segundos después
+   * el mismo mensaje con SIGTERM.
+   */
+  if (apagando) {
+    logger.info('Apagado ya en curso; se ignora la señal', { motivo })
+    return
+  }
+  apagando = true
+
   logger.info('Apagando el servidor', { motivo })
 
   const forzar = setTimeout(() => {
@@ -74,7 +88,17 @@ async function apagar(motivo, codigoSalida = 0) {
 
   try {
     if (server) {
-      await new Promise((resolve) => server.close(resolve))
+      /*
+       * `server.close()` deja de aceptar conexiones NUEVAS y espera a que las
+       * abiertas terminen — pero una conexión keep-alive ociosa no termina sola,
+       * así que sin esto el apagado se quedaba esperándola hasta el temporizador
+       * y SIEMPRE salía por la fuerza con código 1. `closeIdleConnections` cierra
+       * justo esas, las que no están sirviendo ninguna petición; las que sí,
+       * siguen hasta responder.
+       */
+      const cerrado = new Promise((resolve) => server.close(resolve))
+      server.closeIdleConnections()
+      await cerrado
     }
     await disconnect()
   } catch (error) {

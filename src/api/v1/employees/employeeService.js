@@ -48,8 +48,7 @@ const CAMPOS_EDITABLES = Object.freeze([
   'fechaNacimiento',
   'email',
   'telefono',
-  'categoriaId',
-  'tipo'
+  'categoriaId'
 ])
 
 class EmployeeService {
@@ -62,7 +61,6 @@ class EmployeeService {
       busqueda,
       empresaId,
       area,
-      tipo,
       categoriaId,
       soloConAcceso = false,
       activo = 'true',
@@ -104,7 +102,6 @@ class EmployeeService {
      */
     if (activo === 'true') match.activo = true
     else if (activo === 'false') match.activo = false
-    if (tipo) match.tipo = tipo
     if (categoriaId) match.categoriaId = new mongoose.Types.ObjectId(categoriaId)
     if (soloConAcceso) match.acceso = { $ne: null }
 
@@ -168,6 +165,7 @@ class EmployeeService {
                 empresaId: 1,
                 empresaNombre: '$empresa.nombre',
                 areas: 1,
+                dirigeAreas: 1,
                 tipoContrato: 1,
                 fechaIngreso: 1,
                 fechaTerminoContrato: 1,
@@ -287,16 +285,26 @@ class EmployeeService {
   async create(datos, contexto = {}) {
     const { user } = contexto
     const acceso = user?.acceso
-    const tipo = datos.tipo
 
-    // 1. ¿Puede crear a alguien de este tipo?
+    /*
+     * 1. El puesto, que es de donde sale el TIPO de la persona (D-59).
+     *
+     * Va primero porque el permiso depende del tipo: quién puede dar de alta a
+     * quién se decide por `administrativo` / `mano_de_obra`, y eso ya lo dice la
+     * categoría. Antes se capturaban los dos y había que comprobar que
+     * coincidieran; ahora sólo hay una fuente.
+     */
+    const categoria = await categoryService.usable(datos.categoriaId)
+    const tipo = categoria.tipo
+
+    // 2. ¿Puede crear a alguien de este tipo?
     if (!canManageEmployeeType(acceso, tipo)) {
       throw AppError.forbidden(
         'Sólo un administrador de RH puede dar de alta personal administrativo'
       )
     }
 
-    // 2. ¿Puede omitir la adscripción?
+    // 3. ¿Puede omitir la adscripción?
     //
     // DESVIACIÓN DELIBERADA de la propuesta del front, que la hacía opcional
     // también para `rh_admin`: quien crea sin adscribir produce una persona que
@@ -311,9 +319,6 @@ class EmployeeService {
     }
 
     if (adscripcion) await this.#validarAdscripcion(adscripcion, tipo, contexto)
-
-    // 3. La categoría tiene que existir y servir para este tipo de persona.
-    await categoryService.assertUsableParaTipo(datos.categoriaId, tipo)
 
     // 4. El número de trabajador es único en todo el grupo (D-54).
     await this.#assertNumeroLibre(datos.numeroEmpleado, null, contexto)
@@ -414,21 +419,21 @@ class EmployeeService {
       )
     }
 
-    const tipoFinal = datos.tipo || empleado.tipo
-    const cambiaTipo = Boolean(datos.tipo && datos.tipo !== empleado.tipo)
+    /*
+     * El tipo ya no se manda: **cambiar de puesto es lo que cambia el tipo**
+     * (D-59). Mover a alguien de «Peón» a «Auxiliar contable» lo convierte en
+     * administrativo, y por eso exige el mismo permiso que crear uno.
+     */
+    let tipoFinal = empleado.tipo
+    if (datos.categoriaId) {
+      const categoria = await categoryService.usable(datos.categoriaId)
+      tipoFinal = categoria.tipo
+    }
+    const cambiaTipo = tipoFinal !== empleado.tipo
 
-    // Y para moverlo a otro tipo hace falta poder crear de ese tipo.
     if (cambiaTipo && !canManageEmployeeType(acceso, tipoFinal)) {
       throw AppError.forbidden(
         'Sólo un administrador de RH puede convertir a alguien en personal administrativo'
-      )
-    }
-
-    // La categoría tiene que corresponder al tipo con el que va a quedar.
-    if (datos.categoriaId || cambiaTipo) {
-      await categoryService.assertUsableParaTipo(
-        datos.categoriaId || empleado.categoriaId,
-        tipoFinal
       )
     }
 
@@ -484,6 +489,9 @@ class EmployeeService {
       // Un opcional vacío es "sin valor", no cadena vacía.
       empleado[campo] = datos[campo] === '' ? null : datos[campo]
     }
+
+    // Derivado, no capturado: va con la categoría (D-59).
+    if (cambiaTipo) empleado.tipo = tipoFinal
 
     await empleado.save()
     return this.getById(empleado._id, contexto)
@@ -785,6 +793,7 @@ class EmployeeService {
         empresaId: a.empresaId.toString(),
         empresaNombre: a.empresaNombre ?? null,
         areas: a.areas || [],
+        dirigeAreas: a.dirigeAreas || [],
         tipoContrato: a.tipoContrato,
         fechaIngreso: a.fechaIngreso,
         fechaTerminoContrato: a.fechaTerminoContrato ?? null,
