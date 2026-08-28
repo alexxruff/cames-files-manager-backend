@@ -239,3 +239,150 @@ describe('GET /api/v1/empresas', () => {
     expect((await request(app).get(RUTA)).status).toBe(401)
   })
 })
+
+/**
+ * Editar y dar de baja una empresa (D-64). Faltaban: sólo se podía crear y
+ * consultar, así que un RFC mal capturado no había forma de arreglarlo.
+ */
+describe('PATCH /api/v1/empresas/:id', () => {
+  const admin = () =>
+    crearEmpleadoConSesion({ nivelAcceso: 'rh_admin', alcanceGlobal: true })
+
+  it('corrige nombre y RFC', async () => {
+    const { token } = await admin()
+    const empresa = await crearEmpresa({ nombre: 'Con Nombre Malo' })
+
+    const res = await request(app)
+      .patch(`${RUTA}/${empresa._id}`)
+      .set(auth(token))
+      .send({ nombre: 'Maquinaria Cames', rfc: 'MCA180611HF1' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.empresa).toMatchObject({
+      nombre: 'Maquinaria Cames',
+      rfc: 'MCA180611HF1'
+    })
+  })
+
+  it('guarda uno o varios registros patronales, en mayúsculas y sin repetidos', async () => {
+    const { token } = await admin()
+    const empresa = await crearEmpresa()
+
+    const res = await request(app)
+      .patch(`${RUTA}/${empresa._id}`)
+      .set(auth(token))
+      .send({
+        registrosPatronales: ['r13-77767-10-5', 'R13-77767-10-5', 'y54-12345-10-9']
+      })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.empresa.registrosPatronales).toEqual([
+      'R13-77767-10-5',
+      'Y54-12345-10-9'
+    ])
+  })
+
+  it('se reemplaza la lista completa: mandar [] los deja sin ninguno', async () => {
+    const { token } = await admin()
+    const empresa = await crearEmpresa()
+    await request(app)
+      .patch(`${RUTA}/${empresa._id}`)
+      .set(auth(token))
+      .send({ registrosPatronales: ['R13-77767-10-5'] })
+
+    const res = await request(app)
+      .patch(`${RUTA}/${empresa._id}`)
+      .set(auth(token))
+      .send({ registrosPatronales: [] })
+
+    expect(res.body.data.empresa.registrosPatronales).toEqual([])
+  })
+
+  it('409 si el nombre o el RFC ya son de otra empresa', async () => {
+    const { token } = await admin()
+    await crearEmpresa({ nombre: 'Ya Existe', rfc: 'MCA180611HF1' })
+    const empresa = await crearEmpresa({ nombre: 'La Que Se Edita' })
+
+    const porNombre = await request(app)
+      .patch(`${RUTA}/${empresa._id}`)
+      .set(auth(token))
+      .send({ nombre: 'Ya Existe' })
+    expect(porNombre.status).toBe(409)
+
+    const porRfc = await request(app)
+      .patch(`${RUTA}/${empresa._id}`)
+      .set(auth(token))
+      .send({ rfc: 'MCA180611HF1' })
+    expect(porRfc.status).toBe(409)
+  })
+
+  it('400 con campos que no se editan aquí, diciendo a dónde van', async () => {
+    const { token } = await admin()
+    const empresa = await crearEmpresa()
+
+    const res = await request(app)
+      .patch(`${RUTA}/${empresa._id}`)
+      .set(auth(token))
+      .send({ activo: false })
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain('/estado')
+  })
+
+  it('403 sin alcance global; 404 si no existe', async () => {
+    const empresa = await crearEmpresa()
+    const { token } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+
+    const sinPermiso = await request(app)
+      .patch(`${RUTA}/${empresa._id}`)
+      .set(auth(token))
+      .send({ nombre: 'Otro Nombre' })
+    expect(sinPermiso.status).toBe(403)
+
+    const { token: global } = await admin()
+    const noExiste = await request(app)
+      .patch(`${RUTA}/${new mongoose.Types.ObjectId()}`)
+      .set(auth(global))
+      .send({ nombre: 'Otro Nombre' })
+    expect(noExiste.status).toBe(404)
+  })
+})
+
+describe('PATCH /api/v1/empresas/:id/estado', () => {
+  const admin = () =>
+    crearEmpleadoConSesion({ nivelAcceso: 'rh_admin', alcanceGlobal: true })
+
+  it('da de baja una empresa vacía y la reactiva', async () => {
+    const { token } = await admin()
+    const empresa = await crearEmpresa()
+
+    const baja = await request(app)
+      .patch(`${RUTA}/${empresa._id}/estado`)
+      .set(auth(token))
+      .send({ activo: false })
+
+    expect(baja.status).toBe(200)
+    expect(baja.body.data.empresa.activo).toBe(false)
+
+    const alta = await request(app)
+      .patch(`${RUTA}/${empresa._id}/estado`)
+      .set(auth(token))
+      .send({ activo: true })
+    expect(alta.body.data.empresa.activo).toBe(true)
+  })
+
+  it('400 si todavía tiene gente adscrita, diciendo cuánta', async () => {
+    const { token } = await admin()
+    const empresa = await crearEmpresa()
+    const persona = await crearEmpleado({ nombre: 'Sigue Adscrita' })
+    await adscribir(empresa, persona)
+
+    const res = await request(app)
+      .patch(`${RUTA}/${empresa._id}/estado`)
+      .set(auth(token))
+      .send({ activo: false })
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain('1 persona adscrita')
+  })
+})

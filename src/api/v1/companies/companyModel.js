@@ -29,6 +29,23 @@ const companySchema = new mongoose.Schema(
       match: [/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/, 'El RFC no tiene un formato válido']
     },
 
+    /**
+     * Registros patronales ante el IMSS. **Uno o varios** (D-64).
+     *
+     * Varios porque una empresa puede tener registro por entidad o por clase de
+     * riesgo, y el archivo de nómina ya trae uno **por persona**
+     * (`adscripciones.condiciones.registroPatronal`): con un solo campo no habría
+     * dónde guardar los demás.
+     *
+     * Se guardan en mayúsculas y sin repetidos. No se exige ninguno: las empresas
+     * que ya existen no lo tienen, y obligarlo dejaría inválido lo que ya está
+     * guardado.
+     */
+    registrosPatronales: {
+      type: [{ type: String, trim: true, uppercase: true }],
+      default: []
+    },
+
     // Preparados para el día que cada empresa quiera verse distinta.
     branding: {
       nombreComercial: { type: String, default: null },
@@ -60,6 +77,7 @@ const companySchema = new mongoose.Schema(
           _id: ret._id.toString(),
           nombre: ret.nombre,
           rfc: ret.rfc ?? null,
+          registrosPatronales: ret.registrosPatronales || [],
           branding: {
             nombreComercial: ret.branding?.nombreComercial ?? null,
             logoUrl: ret.branding?.logoUrl ?? null,
@@ -83,6 +101,24 @@ const companySchema = new mongoose.Schema(
  * Unicidad sobre el nombre NORMALIZADO, no sobre el original: si no, "Urbacames
  * Edificación" y "urbacames edificacion" convivirían y nadie sabría cuál usar.
  */
+/*
+ * Sin repetidos dentro de la misma empresa. Va en el modelo y no en el servicio
+ * para que valga por cualquier camino —alta, edición o un script— y no sólo por
+ * la ruta que se acuerde de limpiarlos.
+ */
+companySchema.pre('validate', function limpiarRegistros(next) {
+  if (Array.isArray(this.registrosPatronales)) {
+    this.registrosPatronales = [
+      ...new Set(
+        this.registrosPatronales
+          .map((r) => String(r).trim().toUpperCase())
+          .filter(Boolean)
+      )
+    ]
+  }
+  next()
+})
+
 companySchema.index({ nombreNormalizado: 1 }, { unique: true })
 companySchema.index({ activo: 1 })
 /*

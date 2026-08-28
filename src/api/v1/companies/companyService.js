@@ -92,10 +92,115 @@ class CompanyService {
     const empresa = await Company.create({
       nombre: datos.nombre,
       rfc: datos.rfc || null,
+      registrosPatronales: datos.registrosPatronales || [],
       activo: datos.activo ?? true
     })
 
     return { empresa: empresa.toJSON(), conteos: this.#conteosVacios() }
+  }
+
+  /**
+   * `PATCH /empresas/:id` — corregir los datos de una empresa (D-64).
+   *
+   * Faltaba: una empresa sólo se podía crear y consultar, así que un RFC mal
+   * capturado no había manera de arreglarlo. Los demás catálogos —clientes,
+   * categorías, áreas— sí lo tenían.
+   *
+   * **Los registros patronales se reemplazan, no se acumulan.** Se manda la lista
+   * completa: agregar uno es mandar los que ya estaban más el nuevo, y quitar uno
+   * es mandar la lista sin él. Es lo que permite a la pantalla guardar lo que
+   * muestra sin llevar la cuenta de qué cambió, igual que las jefaturas (D-60).
+   */
+  async update(id, datos) {
+    const empresa = await this.#buscar(id)
+
+    if (datos.nombre && normalize(datos.nombre) !== empresa.nombreNormalizado) {
+      const nombreNormalizado = normalize(datos.nombre)
+      if (await Company.exists({ nombreNormalizado, _id: { $ne: empresa._id } })) {
+        throw AppError.conflict('Ya existe una empresa con ese nombre', {
+          code: 'EMPRESA_DUPLICADA',
+          errors: [{ msg: 'Ya existe una empresa con ese nombre', path: 'nombre' }]
+        })
+      }
+    }
+
+    if (datos.rfc) {
+      const rfc = String(datos.rfc).toUpperCase().trim()
+      const otra = await Company.findOne({ rfc, _id: { $ne: empresa._id } })
+      if (otra) {
+        throw AppError.conflict('Ya existe una empresa con ese RFC', {
+          code: 'RFC_DUPLICADO',
+          errors: [{ msg: 'Ya existe una empresa con ese RFC', path: 'rfc' }],
+          data: { empresaId: otra._id.toString(), nombre: otra.nombre }
+        })
+      }
+    }
+
+    for (const campo of ['nombre', 'rfc', 'registrosPatronales']) {
+      if (datos[campo] === undefined) continue
+      // Un opcional vacío es "sin valor", no cadena vacía (regla #5 del contrato).
+      empresa[campo] = datos[campo] === '' ? null : datos[campo]
+    }
+    if (datos.branding) Object.assign(empresa.branding, datos.branding)
+    if (datos.configuracion) Object.assign(empresa.configuracion, datos.configuracion)
+
+    await empresa.save()
+
+    const [conteos] = await this.#conteosPorEmpresa([empresa._id])
+    return { empresa: empresa.toJSON(), conteos: conteos || this.#conteosVacios() }
+  }
+
+  /**
+   * `PATCH /empresas/:id/estado` — dar de baja o reactivar (D-64).
+   *
+   * **No se da de baja una empresa con gente adscrita o proyectos abiertos.** Es
+   * el mismo candado que las categorías y las áreas, y por la misma razón: una
+   * empresa inactiva deja de ser visible y de aceptar importaciones, así que su
+   * gente quedaría en un limbo que nadie ve. Primero se cierra lo que cuelga.
+   */
+  async setEstado(id, activo) {
+    const empresa = await this.#buscar(id)
+
+    if (!activo) {
+      const [adscritos, proyectosAbiertos] = await Promise.all([
+        Affiliation.countDocuments({ empresaId: empresa._id, activo: true }),
+        Project.countDocuments({ empresaId: empresa._id, estado: { $ne: 'finalizado' } })
+      ])
+
+      const bloqueos = []
+      if (adscritos > 0) {
+        bloqueos.push(
+          `${adscritos} ${adscritos === 1 ? 'persona adscrita' : 'personas adscritas'}`
+        )
+      }
+      if (proyectosAbiertos > 0) {
+        bloqueos.push(
+          `${proyectosAbiertos} ${proyectosAbiertos === 1 ? 'proyecto abierto' : 'proyectos abiertos'}`
+        )
+      }
+      if (bloqueos.length > 0) {
+        throw new AppError(
+          400,
+          `No se puede dar de baja: la empresa todavía tiene ${bloqueos.join(' y ')}. Ciérralos primero.`
+        )
+      }
+    }
+
+    empresa.activo = activo
+    await empresa.save()
+
+    const [conteos] = await this.#conteosPorEmpresa([empresa._id])
+    return { empresa: empresa.toJSON(), conteos: conteos || this.#conteosVacios() }
+  }
+
+  /** 404 con el mismo mensaje siempre: exista o no, es lo mismo para quien pide. */
+  async #buscar(id) {
+    if (!mongoose.isValidObjectId(id)) {
+      throw new AppError(400, 'La empresa indicada no es válida')
+    }
+    const empresa = await Company.findById(id)
+    if (!empresa) throw AppError.notFound('La empresa no existe')
+    return empresa
   }
 
   /**

@@ -2508,3 +2508,62 @@ Idempotente: sólo escribe donde `condiciones` está vacío.
 
 Sin la migración, los datos ya importados no se ven — el importador escribe en el
 sitio nuevo, pero lo de agosto está bajo `nomina`.
+
+## D-64 · Las empresas se pueden editar y dar de baja, y llevan sus registros patronales
+
+**Decisión.** `Company` gana `registrosPatronales: string[]` —uno o varios— y el
+recurso estrena `PATCH /empresas/:id` y `PATCH /empresas/:id/estado`.
+
+### El hueco
+
+Una empresa sólo se podía **crear y consultar**. No había ruta que la editara ni
+que la diera de baja, aunque el modelo ya tenía `activo`. Si alguien capturaba
+mal el RFC, no había forma de arreglarlo desde la API.
+
+Los demás catálogos sí lo tenían —clientes con `PATCH /clientes/:id` y su
+`/estado`, categorías y áreas con el suyo—. Empresas quedó a medias
+probablemente por ser lo primero que se hizo.
+
+### Varios registros patronales, no uno
+
+Una empresa puede tener registro patronal por entidad o por clase de riesgo. Y
+hay una razón concreta en estos datos: **el archivo de nómina ya trae uno por
+persona** (`adscripciones.condiciones.registroPatronal`, D-63). Con un solo campo
+en la empresa no habría dónde guardar los demás, y la relación entre el registro
+de la persona y el de su empresa quedaría sin poder comprobarse nunca.
+
+Se guardan en mayúsculas y **sin repetidos**, y eso se fuerza en un
+`pre('validate')` del modelo y no en el servicio: así vale por cualquier camino
+—alta, edición o un script— y no sólo por la ruta que se acuerde de limpiarlos.
+
+**No se exige ninguno.** Las empresas que ya existen no lo tienen, y hacerlo
+obligatorio dejaría inválido lo que ya está guardado.
+
+### Se reemplaza la lista, no se acumula
+
+`PATCH` con `registrosPatronales` manda la **lista completa**: agregar uno es
+mandar los que ya estaban más el nuevo, y `[]` los deja sin ninguno. Misma regla
+que las jefaturas (D-60), y por lo mismo: permite a la pantalla guardar lo que
+muestra sin llevar la cuenta de qué cambió.
+
+### La baja se bloquea si la empresa tiene algo dentro
+
+No se da de baja una empresa con **gente adscrita** o **proyectos abiertos**: `400`
+diciendo cuántos de cada uno. Mismo candado que las categorías y las áreas, y por
+la misma razón — una empresa inactiva deja de ser visible y de aceptar
+importaciones, así que su gente quedaría en un limbo que nadie ve.
+
+`activo` no se toca desde `PATCH /empresas/:id`: cae en la lista de campos no
+editables con la pista de que use `/estado`. Cambiar un nombre y esconder a
+sesenta personas no deberían costar lo mismo.
+
+### Ambas exigen administrador de plataforma
+
+`MANAGE_COMPANIES`, igual que crear. Una empresa afecta a todo el grupo.
+
+### Pendiente relacionado
+
+Queda abierto si un registro patronal debe ser **único entre empresas**. Un
+registro del IMSS pertenece a un solo patrón, así que en teoría sí — pero no se
+puso índice único sin confirmarlo, porque bloquearía casos legítimos que este
+equipo conoce mejor que yo.

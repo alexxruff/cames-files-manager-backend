@@ -9,7 +9,9 @@ const { CAPABILITIES } = require('../../../utils/permissions')
 const {
   listCompaniesValidation,
   companyIdValidation,
-  createCompanyValidation
+  createCompanyValidation,
+  updateCompanyValidation,
+  companyEstadoValidation
 } = require('../../../validations/companyValidation')
 const portfolioController = require('../portfolios/portfolioController')
 const {
@@ -38,6 +40,27 @@ router
     validateRequest,
     asyncHandler(companyController.create)
   )
+
+/*
+ * Editar y dar de baja: exclusivo del administrador de plataforma, igual que
+ * crear (D-64). Una empresa afecta a todo el grupo, y darla de baja esconde a su
+ * gente de los listados.
+ */
+router.patch(
+  '/:id',
+  requireCapability(CAPABILITIES.MANAGE_COMPANIES),
+  updateCompanyValidation,
+  validateRequest,
+  asyncHandler(companyController.update)
+)
+
+router.patch(
+  '/:id/estado',
+  requireCapability(CAPABILITIES.MANAGE_COMPANIES),
+  companyEstadoValidation,
+  validateRequest,
+  asyncHandler(companyController.setEstado)
+)
 
 router.get(
   '/:id',
