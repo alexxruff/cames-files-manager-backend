@@ -885,3 +885,36 @@ describe('Plantillas del checklist', () => {
     }
   })
 })
+
+/**
+ * El expediente devuelve el renglón del empleado, y ese renglón tiene que decir
+ * lo mismo que `/empresas/:id/adscripciones` (D-62). Faltaban cuatro campos que
+ * el archivo de nómina llena y que no se veían por ningún lado.
+ */
+describe('el expediente devuelve la adscripción completa (D-62)', () => {
+  it('trae departamento, datosPendientes y el rastro de la baja', async () => {
+    const { token, empresa } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+    const persona = await crearEmpleado({ nombre: 'Con Datos De Nomina' })
+    await adscribir(empresa, persona, {
+      areas: ['operaciones_urbanizadora'],
+      departamento: 'Axis Zapopan',
+      datosPendientes: ['fechaTerminoContrato'],
+      tipoContrato: 'obra_determinada'
+    })
+
+    const res = await request(app)
+      .get(`/api/v1/empleados/${persona._id}/expediente`)
+      .set(auth(token))
+
+    expect(res.status).toBe(200)
+    const suya = res.body.data.empleado.adscripciones[0]
+    expect(suya).toMatchObject({
+      departamento: 'Axis Zapopan',
+      datosPendientes: ['fechaTerminoContrato'],
+      motivoBaja: null,
+      fechaBaja: null
+    })
+    // La nómina sigue sin salir: es la decisión pendiente (D-46).
+    expect(suya.nomina).toBeUndefined()
+  })
+})

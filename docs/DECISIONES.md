@@ -2420,3 +2420,43 @@ cualquier cliente HTTP tolera.
 no contestó», no «tu sesión no vale». Con esta corrección el caso deja de
 dispararse, pero cualquier caída momentánea vuelve a sacar a todo el mundo
 mientras el front trate los dos igual.
+
+## D-62 · El renglón del empleado devuelve la adscripción completa
+
+**Decisión.** `adscripciones[]` en `GET /empleados`, `GET /empleados/:id` y el
+expediente devuelve además `departamento`, `datosPendientes`, `motivoBaja` y
+`fechaBaja`. Es aditivo: no cambia nada de lo que ya salía.
+
+### Qué se estaba perdiendo
+
+El renglón se arma a mano en `#formatearRenglon`, no con el `toJSON` de la
+adscripción, y llevaba nueve de los trece campos del contrato. Los cuatro que
+faltaban no eran menores:
+
+- **`departamento`** — el archivo de nómina lo llena en **las 145 filas**. Es el
+  texto original («Axis Zapopan», «Operaciones») y no se veía por ningún lado
+  salvo en `/empresas/:id/adscripciones`.
+- **`datosPendientes`** — es cómo RH sabe qué le falta capturar a esa persona.
+  Sin él, el pendiente existe en la base y nadie lo ve.
+- **`motivoBaja` y `fechaBaja`** — por qué y cuándo dejó **esa empresa**, que es
+  distinto de la baja del sistema que ya venía en `empleado`.
+
+Salió al validar, contra el archivo real, si la importación guardaba todas las
+columnas. Guardaba las 30; el problema era el otro extremo — parte de lo
+guardado no se devolvía.
+
+### `nomina` sigue fuera
+
+Las trece columnas de nómina (salario, SBC, banco, sucursal, cuenta) se guardan
+en `affiliations.nomina` con `select: false` y **no se exponen**. No es un
+descuido: falta decidir quién puede verlas (D-46, LFPDPPP). El cliente lo
+resolverá junto con los permisos por sección.
+
+### Lo que viene después, y por qué conviene no adelantarlo
+
+El cliente pidió que el acceso deje de ser tres niveles fijos y pase a **roles
+configurables**: todos con un acceso base, y desde configuración se define qué
+secciones ve cada rol — incluidos los que se creen después. Eso reemplaza a
+`nivelAcceso` y a la matriz de capacidades del código, así que **la visibilidad
+de la nómina se resuelve ahí**, no con un permiso suelto ahora. Anotado para
+diseñarlo entero.

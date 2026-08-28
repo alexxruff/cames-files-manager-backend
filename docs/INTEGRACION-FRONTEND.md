@@ -306,10 +306,17 @@ export interface AdscripcionDeEmpleado {
   areas: ClaveArea[]
   /** Qué áreas DIRIGE ahí (D-60). Vacío es lo normal. */
   dirigeAreas: ClaveArea[]
+  /** El departamento TAL CUAL lo dice la nómina. No es lo mismo que `areas`. */
+  departamento: string | null
   tipoContrato: TipoContrato
   fechaIngreso: string // 'YYYY-MM-DD'
   fechaTerminoContrato: string | null
+  /** Lo que el importador dejó sin capturar: 'fechaTerminoContrato' | 'areas'. */
+  datosPendientes: string[]
   activo: boolean
+  /** Por qué y cuándo dejó ESA empresa. Null si sigue activa. */
+  motivoBaja: string | null
+  fechaBaja: string | null // 'YYYY-MM-DD'
 }
 
 /*

@@ -166,10 +166,14 @@ class EmployeeService {
                 empresaNombre: '$empresa.nombre',
                 areas: 1,
                 dirigeAreas: 1,
+                departamento: 1,
                 tipoContrato: 1,
                 fechaIngreso: 1,
                 fechaTerminoContrato: 1,
-                activo: 1
+                datosPendientes: 1,
+                activo: 1,
+                motivoBaja: 1,
+                fechaBaja: 1
               }
             }
           ],
@@ -807,10 +811,23 @@ class EmployeeService {
         empresaNombre: a.empresaNombre ?? null,
         areas: a.areas || [],
         dirigeAreas: a.dirigeAreas || [],
+        /*
+         * El resto de lo que trae la adscripción, para que el renglón diga lo
+         * mismo que `/empresas/:id/adscripciones` (D-62). `departamento` lo
+         * llena el archivo de nómina en todas las filas y no se veía por ningún
+         * lado; `datosPendientes` es cómo RH sabe qué le falta capturar.
+         *
+         * `nomina` NO: sigue sin exponerse hasta que se decida quién puede ver
+         * salario y cuenta bancaria (D-46).
+         */
+        departamento: a.departamento ?? null,
         tipoContrato: a.tipoContrato,
         fechaIngreso: a.fechaIngreso,
         fechaTerminoContrato: a.fechaTerminoContrato ?? null,
-        activo: a.activo
+        datosPendientes: a.datosPendientes || [],
+        activo: a.activo,
+        motivoBaja: a.motivoBaja ?? null,
+        fechaBaja: a.fechaBaja ?? null
       })),
       // Pendiente hasta que el listado cruce proyectos; la forma es la definitiva.
       asignaciones: [],
