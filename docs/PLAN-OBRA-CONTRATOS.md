@@ -283,37 +283,37 @@ inválidos, y cualquier `save()` sobre ellos —aplazar, finalizar, editar— fa
 
 ---
 
-## G. Decisiones que necesito de ti
+## G. Decisiones tomadas
 
-**G1. ¿Fase y contrato son la misma cosa?** Propongo una sola entidad
-`contrato` con un `nombre` opcional que funcione de etiqueta de fase. Si en tu
-operación puede existir una fase sin contrato, o un contrato que abarque varias
-fases, son dos entidades y cambia el modelo.
+Confirmadas con el cliente el 28 de agosto de 2026.
 
-**G2. Coherencia del registro patronal del empleado.** Maquinaria CAMES tiene
-127 personas en `R13` y 13 en `H67`. Si un proyecto se crea con `H67`, al asignar
-a alguien de `R13`: ¿es error que se bloquea, aviso que se permite, o da igual?
-De esto depende si la validación existe y de qué tipo.
+**G1. Fase y contrato son la misma entidad.** ✅ Una sola colección
+`contracts`, con `nombre` opcional como etiqueta de fase. No se modela «fase»
+por separado.
 
-**G3. Qué se puede cambiar después de crear el proyecto.** Mi propuesta:
+**G2. La coherencia del registro patronal del empleado es un AVISO, no un
+bloqueo.** ✅ Si se asigna a un proyecto de `H67` a alguien cuya adscripción dice
+`R13`, la asignación **se permite** y la respuesta lo advierte. Razón: Maquinaria
+CAMES ya tiene gente repartida en cuatro registros y bloquear impediría trabajo
+legítimo; avisar deja el dato a la vista sin frenar a nadie.
 
-| Campo             | Regla propuesta                                                            |
-| ----------------- | -------------------------------------------------------------------------- |
-| Nombre, fechas    | libre (ya lo es)                                                           |
-| Registro patronal | libre **mientras no haya contratos**; después bloqueado                    |
-| Registro de obra  | **bloqueado en cuanto exista un contrato con SIROC** — el SIROC nace de él |
-| Cliente           | bloqueado si hay contratos: cambiarlo invalida el registro de obra         |
-| Empresa           | **nunca**: rompe cartera, adscripciones y asignaciones                     |
+**G3. Qué se puede cambiar después de crear el proyecto.** ✅ Como se propuso:
 
-**G4. ¿El SIROC debe ser único globalmente?** Un SIROC identifica una obra ante
-el IMSS, así que en teoría no se repite. Poner el índice único ahora evita
-duplicados; si en su operación se repite legítimamente, mejor no ponerlo.
+| Campo             | Regla                                                   |
+| ----------------- | ------------------------------------------------------- |
+| Nombre, fechas    | libre                                                   |
+| Registro patronal | libre **mientras no haya contratos**; después bloqueado |
+| Registro de obra  | **bloqueado en cuanto exista un contrato con SIROC**    |
+| Cliente           | bloqueado si hay contratos                              |
+| Empresa           | **nunca**                                               |
 
-**G5. ¿Registro patronal único entre empresas?** Quedó abierto en D-64. Con
-subdocumentos se puede forzar dentro de la empresa fácil; entre empresas requiere
-comprobación explícita.
+**G4. SIROC único.** ⏳ Pendiente de confirmar. Propuesta: **único globalmente**,
+porque un SIROC identifica una obra ante el IMSS y un duplicado casi siempre es
+error de captura. Relajarlo después es borrar un índice.
 
----
+**G5. Registro patronal.** ✅ **Único dentro de la empresa** (forzado en el
+modelo), varios por empresa sin tope. **Entre empresas no se bloquea**: no hay
+evidencia de que sea imposible y un índice equivocado frenaría trabajo real.
 
 ## H. Plan por fases
 
