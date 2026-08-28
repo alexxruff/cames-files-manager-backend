@@ -92,6 +92,8 @@ async function adscribir(empresa, empleado, datos = {}) {
     // Lo que llena el archivo de nómina y ahora también sale en el renglón (D-62).
     departamento: datos.departamento ?? null,
     datosPendientes: datos.datosPendientes || [],
+    // Condiciones laborales del archivo; sí se serializan (D-63).
+    condiciones: datos.condiciones || {},
     tipoContrato: datos.tipoContrato || 'indeterminado',
     fechaIngreso: datos.fechaIngreso || '2026-01-15',
     fechaTerminoContrato: datos.fechaTerminoContrato ?? null,

@@ -23,20 +23,35 @@ const { idAString } = require('../../../utils/ids')
  * está abierta en `ESTADO.md`. Cuando se tome, se expone con su capacidad propia
  * y su registro en la bitácora, como los documentos sensibles.
  */
+/**
+ * Condiciones de la relación laboral que trae el archivo de nómina (D-63).
+ *
+ * Salieron de `nomina`, donde estaban por venir de la misma hoja de cálculo —y
+ * eso era el error: **el origen no es el criterio, la sensibilidad sí**. Nada de
+ * esto es un importe ni un dato bancario; son el régimen del IMSS, el turno, el
+ * registro patronal y cómo se cotiza. Se muestran como cualquier otro campo de
+ * la adscripción.
+ */
+const conditionsSchema = new mongoose.Schema(
+  {
+    tipoRegimen: { type: String, trim: true, default: null },
+    turno: { type: String, trim: true, default: null },
+    registroPatronal: { type: String, trim: true, default: null },
+    baseCotizacion: { type: String, trim: true, default: null },
+    zonaSalario: { type: String, trim: true, default: null },
+    tipoPrestacion: { type: String, trim: true, default: null },
+    periodicidadPago: { type: String, trim: true, default: null },
+    teletrabajador: { type: Boolean, default: false }
+  },
+  { _id: false }
+)
+
 const payrollSchema = new mongoose.Schema(
   {
     salarioDiario: { type: Number, min: 0, default: null },
     sbcParteFija: { type: Number, min: 0, default: null },
     sbcParteVariable: { type: Number, min: 0, default: null },
     sbcTopeUMA: { type: Number, min: 0, default: null },
-    baseCotizacion: { type: String, trim: true, default: null },
-    zonaSalario: { type: String, trim: true, default: null },
-    tipoPrestacion: { type: String, trim: true, default: null },
-    periodicidadPago: { type: String, trim: true, default: null },
-    turno: { type: String, trim: true, default: null },
-    tipoRegimen: { type: String, trim: true, default: null },
-    registroPatronal: { type: String, trim: true, default: null },
-    teletrabajador: { type: Boolean, default: false },
     banco: { type: String, trim: true, default: null },
     sucursal: { type: String, trim: true, default: null },
     cuenta: { type: String, trim: true, default: null }
@@ -138,7 +153,15 @@ const affiliationSchema = new mongoose.Schema(
      */
     departamento: { type: String, trim: true, default: null },
 
-    /** Datos de nómina. NO se serializan: ver el comentario de `payrollSchema`. */
+    /** Condiciones laborales del archivo. SÍ se serializan: no son sensibles (D-63). */
+    condiciones: { type: conditionsSchema, default: () => ({}) },
+
+    /**
+     * Importes y datos bancarios. NO se serializan: ver `payrollSchema`.
+     *
+     * Desde D-63 aquí quedan **sólo los siete campos sensibles**; el resto de lo
+     * que trae el archivo vive en `condiciones` y se muestra.
+     */
     nomina: { type: payrollSchema, default: () => ({}), select: false },
 
     /**
@@ -230,6 +253,7 @@ const affiliationSchema = new mongoose.Schema(
           fechaIngreso: ret.fechaIngreso,
           fechaTerminoContrato: ret.fechaTerminoContrato ?? null,
           datosPendientes: ret.datosPendientes || [],
+          condiciones: ret.condiciones || {},
           // `nomina` NO se serializa: datos sensibles, ver payrollSchema.
           activo: ret.activo,
           motivoBaja: ret.motivoBaja ?? null,

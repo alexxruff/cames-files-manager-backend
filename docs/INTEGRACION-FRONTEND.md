@@ -308,6 +308,17 @@ export interface AdscripcionDeEmpleado {
   dirigeAreas: ClaveArea[]
   /** El departamento TAL CUAL lo dice la nómina. No es lo mismo que `areas`. */
   departamento: string | null
+  /** Condiciones laborales del archivo de nómina (D-63). No son sensibles. */
+  condiciones: {
+    tipoRegimen: string | null
+    turno: string | null
+    registroPatronal: string | null
+    baseCotizacion: string | null
+    zonaSalario: string | null
+    tipoPrestacion: string | null
+    periodicidadPago: string | null
+    teletrabajador: boolean
+  }
   tipoContrato: TipoContrato
   fechaIngreso: string // 'YYYY-MM-DD'
   fechaTerminoContrato: string | null

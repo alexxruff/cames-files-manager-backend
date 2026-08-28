@@ -200,7 +200,6 @@ sólo quitar llenando el dato.
 personales sensibles y falta decidir quién puede verlos. Si los necesitas, dilo y
 se define el permiso; no los busques en la respuesta porque no están.
 
-
 ## Jefaturas de área — quién dirige qué (D-60)
 
 Trabajar en un área y dirigirla son cosas distintas. Hasta D-60 el alcance de un
@@ -236,11 +235,11 @@ viva en la adscripción: no es la relación laboral, es **quién ve a quién**.
 
 Mandar `[]` **le quita la jefatura**. Los repetidos se colapsan.
 
-| Código | Cuándo                                                            |
-| ------ | ----------------------------------------------------------------- |
-| `400`  | Un área que no existe, o que está dada de baja (dice cuál)        |
-| `403`  | No es `rh_admin`                                                  |
-| `404`  | La adscripción no existe o está fuera de alcance                  |
+| Código | Cuándo                                                     |
+| ------ | ---------------------------------------------------------- |
+| `400`  | Un área que no existe, o que está dada de baja (dice cuál) |
+| `403`  | No es `rh_admin`                                           |
+| `404`  | La adscripción no existe o está fuera de alcance           |
 
 ### `GET /empresas/:id/jefaturas` — la pantalla de configuración
 

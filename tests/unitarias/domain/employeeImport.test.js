@@ -377,7 +377,7 @@ describe('Importación de colaboradores · mapeo puro', () => {
     })
   })
 
-  it('trae toda la nómina de la fila a la adscripción', () => {
+  it('reparte las columnas por SENSIBILIDAD, no por origen (D-63)', () => {
     const fila = filaValida({
       [COL.SALARIO_DIARIO]: 1146.95,
       [COL.SBC_PARTE_FIJA]: 1209.8,
@@ -390,17 +390,27 @@ describe('Importación de colaboradores · mapeo puro', () => {
       [COL.CUENTA]: '072320010550241376'
     })
 
-    expect(fila.adscripcion.nomina).toMatchObject({
+    // Importes y datos bancarios: no se muestran hasta decidir permisos.
+    expect(fila.adscripcion.nomina).toEqual({
       salarioDiario: 1146.95,
       sbcParteFija: 1209.8,
       sbcParteVariable: 0,
       sbcTopeUMA: 1209.8,
+      banco: null,
+      sucursal: null,
+      cuenta: '072320010550241376'
+    })
+
+    // Condiciones laborales: se muestran como cualquier otro campo.
+    expect(fila.adscripcion.condiciones).toMatchObject({
       baseCotizacion: 'Fijo',
       registroPatronal: 'R13-77767-10-5',
       periodicidadPago: 'Semanal Cames',
-      teletrabajador: false,
-      cuenta: '072320010550241376'
+      teletrabajador: false
     })
+    // Y ningún importe se coló al grupo que sí se muestra.
+    expect(Object.keys(fila.adscripcion.condiciones)).not.toContain('salarioDiario')
+    expect(Object.keys(fila.adscripcion.condiciones)).not.toContain('cuenta')
     // De la persona desde D-54, aunque la columna venga en la misma fila.
     expect(fila.persona.numeroEmpleado).toBe('0001')
   })

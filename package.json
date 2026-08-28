@@ -31,7 +31,8 @@
     "db:status": "docker compose exec mongo mongosh --port 27018 --quiet --eval 'rs.status().members.map(m => m.name + \" \" + m.stateStr)'",
     "migrate:numeros": "node scripts/migrateEmployeeNumbers.js",
     "migrate:areas": "node scripts/migrateAreas.js",
-    "migrate:jefaturas": "node scripts/migrateAreaLeadership.js"
+    "migrate:jefaturas": "node scripts/migrateAreaLeadership.js",
+    "migrate:condiciones": "node scripts/migrateLaborConditions.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1116.0",

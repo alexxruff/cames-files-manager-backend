@@ -2460,3 +2460,51 @@ secciones ve cada rol — incluidos los que se creen después. Eso reemplaza a
 `nivelAcceso` y a la matriz de capacidades del código, así que **la visibilidad
 de la nómina se resuelve ahí**, no con un permiso suelto ahora. Anotado para
 diseñarlo entero.
+
+## D-63 · `nomina` se parte: el origen no es el criterio, la sensibilidad sí
+
+**Decisión.** Las 13 columnas del archivo que no son identidad ni contrato se
+reparten en dos: **`condiciones`** (8 campos, se serializan) y **`nomina`**
+(7 campos, siguen sin exponerse).
+
+| `condiciones` — se muestran | `nomina` — no se exponen |
+| --------------------------- | ------------------------ |
+| `tipoRegimen`               | `salarioDiario`          |
+| `turno`                     | `sbcParteFija`           |
+| `registroPatronal`          | `sbcParteVariable`       |
+| `baseCotizacion`            | `sbcTopeUMA`             |
+| `zonaSalario`               | `banco`                  |
+| `tipoPrestacion`            | `sucursal`               |
+| `periodicidadPago`          | `cuenta`                 |
+| `teletrabajador`            |                          |
+
+### El error que corrige
+
+Todas venían de la misma hoja de cálculo, así que acabaron en el mismo
+subdocumento — y como ese subdocumento guarda salarios y cuentas bancarias, es
+`select: false` y no se serializa. Resultado: ocho campos que **no tienen nada de
+sensible** quedaron invisibles por vecindad.
+
+El régimen del IMSS, el turno, el registro patronal o si alguien cotiza sobre
+base fija no son datos que haya que restringir bajo LFPDPPP. Son condiciones de
+la relación laboral, como el tipo de contrato o la fecha de ingreso, que se
+muestran desde siempre.
+
+**Agrupar por dónde viene el dato en vez de por qué protección necesita** fue el
+error. La división nueva es por sensibilidad, que es el criterio que importa.
+
+### Lo que queda pendiente sigue igual
+
+Los siete de `nomina` son importes y datos bancarios y **siguen sin exponerse**
+hasta que se decida quién puede verlos. Eso se resuelve con los roles
+configurables que pidió el cliente, no con un permiso suelto (ver D-62).
+
+### Migrar
+
+`npm run migrate:condiciones` (con `--dry-run`). **Copia**, no mueve: el original
+se conserva bajo `nomina` hasta correrlo con `--limpiar`. Lee con el driver crudo
+porque los ocho campos ya no están en `payrollSchema` y Mongoose los ignoraría.
+Idempotente: sólo escribe donde `condiciones` está vacío.
+
+Sin la migración, los datos ya importados no se ven — el importador escribe en el
+sitio nuevo, pero lo de agosto está bajo `nomina`.

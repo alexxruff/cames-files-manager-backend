@@ -917,4 +917,35 @@ describe('el expediente devuelve la adscripción completa (D-62)', () => {
     // La nómina sigue sin salir: es la decisión pendiente (D-46).
     expect(suya.nomina).toBeUndefined()
   })
+
+  it('trae las condiciones laborales, que NO son datos sensibles (D-63)', async () => {
+    const { token, empresa } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+    const persona = await crearEmpleado({ nombre: 'Con Condiciones' })
+    await adscribir(empresa, persona, {
+      areas: ['operaciones_urbanizadora'],
+      condiciones: {
+        tipoRegimen: '02 Sueldos',
+        turno: 'Turno diurno',
+        registroPatronal: 'R13-77767-10-5',
+        baseCotizacion: 'Fijo',
+        teletrabajador: false
+      }
+    })
+
+    const res = await request(app)
+      .get(`/api/v1/empleados/${persona._id}/expediente`)
+      .set(auth(token))
+
+    const suya = res.body.data.empleado.adscripciones[0]
+    expect(suya.condiciones).toMatchObject({
+      tipoRegimen: '02 Sueldos',
+      turno: 'Turno diurno',
+      registroPatronal: 'R13-77767-10-5',
+      baseCotizacion: 'Fijo',
+      teletrabajador: false
+    })
+    // Y ningún importe se coló ahí.
+    expect(suya.condiciones.salarioDiario).toBeUndefined()
+    expect(suya.condiciones.cuenta).toBeUndefined()
+  })
 })

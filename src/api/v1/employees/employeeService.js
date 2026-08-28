@@ -167,6 +167,7 @@ class EmployeeService {
                 areas: 1,
                 dirigeAreas: 1,
                 departamento: 1,
+                condiciones: 1,
                 tipoContrato: 1,
                 fechaIngreso: 1,
                 fechaTerminoContrato: 1,
@@ -821,6 +822,9 @@ class EmployeeService {
          * salario y cuenta bancaria (D-46).
          */
         departamento: a.departamento ?? null,
+        // Condiciones laborales del archivo; no confundir con `nomina`, que
+        // sigue sin exponerse (D-63).
+        condiciones: a.condiciones || {},
         tipoContrato: a.tipoContrato,
         fechaIngreso: a.fechaIngreso,
         fechaTerminoContrato: a.fechaTerminoContrato ?? null,

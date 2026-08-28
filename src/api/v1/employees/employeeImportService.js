@@ -989,14 +989,19 @@ class EmployeeImportService {
       cambios.push('areas')
     }
 
-    const nomina = adscripcion.nomina || {}
-    const cambiaNomina = Object.entries(fila.adscripcion.nomina).some(
-      ([campo, valor]) =>
-        valor !== null &&
-        valor !== undefined &&
-        String(nomina[campo] ?? '') !== String(valor)
-    )
-    if (cambiaNomina) cambios.push('nomina')
+    const difiere = (guardado, delArchivo) =>
+      Object.entries(delArchivo || {}).some(
+        ([campo, valor]) =>
+          valor !== null &&
+          valor !== undefined &&
+          String((guardado || {})[campo] ?? '') !== String(valor)
+      )
+
+    // Los dos grupos por separado: uno se muestra y el otro no (D-63).
+    if (difiere(adscripcion.condiciones, fila.adscripcion.condiciones)) {
+      cambios.push('condiciones')
+    }
+    if (difiere(adscripcion.nomina, fila.adscripcion.nomina)) cambios.push('nomina')
 
     return cambios
   }
@@ -1193,6 +1198,9 @@ class EmployeeImportService {
       adscripcion.areas = fila.adscripcion.areas
     }
 
+    for (const [campo, valor] of Object.entries(fila.adscripcion.condiciones)) {
+      if (valor !== null && valor !== undefined) adscripcion.condiciones[campo] = valor
+    }
     for (const [campo, valor] of Object.entries(fila.adscripcion.nomina)) {
       if (valor !== null && valor !== undefined) adscripcion.nomina[campo] = valor
     }

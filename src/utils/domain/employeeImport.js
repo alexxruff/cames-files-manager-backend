@@ -455,19 +455,27 @@ function mapearFila({ numero, celdas }) {
       fechaTerminoContrato: null,
       datosPendientes,
       activo,
+      /*
+       * Las mismas columnas de siempre, repartidas por SENSIBILIDAD y no por
+       * origen (D-63): lo que se puede mostrar va en `condiciones` y lo que
+       * necesita una decisión de permisos se queda en `nomina`.
+       */
+      condiciones: {
+        tipoRegimen: aTexto(leer(celdas, COL.TIPO_REGIMEN)),
+        turno: aTexto(leer(celdas, COL.TURNO)),
+        registroPatronal: aTexto(leer(celdas, COL.REGISTRO_PATRONAL)),
+        baseCotizacion: aTexto(leer(celdas, COL.BASE_COTIZACION)),
+        zonaSalario: aTexto(leer(celdas, COL.ZONA_SALARIO)),
+        tipoPrestacion: aTexto(leer(celdas, COL.TIPO_PRESTACION)),
+        periodicidadPago: aTexto(leer(celdas, COL.PERIODICIDAD_PAGO)),
+        teletrabajador: aBooleano(leer(celdas, COL.TELETRABAJADOR))
+      },
+
       nomina: {
         salarioDiario: aNumero(leer(celdas, COL.SALARIO_DIARIO)),
         sbcParteFija: aNumero(leer(celdas, COL.SBC_PARTE_FIJA)),
         sbcParteVariable: aNumero(leer(celdas, COL.SBC_PARTE_VARIABLE)),
         sbcTopeUMA: aNumero(leer(celdas, COL.SBC_TOPE_UMA)),
-        baseCotizacion: aTexto(leer(celdas, COL.BASE_COTIZACION)),
-        zonaSalario: aTexto(leer(celdas, COL.ZONA_SALARIO)),
-        tipoPrestacion: aTexto(leer(celdas, COL.TIPO_PRESTACION)),
-        periodicidadPago: aTexto(leer(celdas, COL.PERIODICIDAD_PAGO)),
-        turno: aTexto(leer(celdas, COL.TURNO)),
-        tipoRegimen: aTexto(leer(celdas, COL.TIPO_REGIMEN)),
-        registroPatronal: aTexto(leer(celdas, COL.REGISTRO_PATRONAL)),
-        teletrabajador: aBooleano(leer(celdas, COL.TELETRABAJADOR)),
         banco: aTexto(leer(celdas, COL.BANCO)),
         sucursal: aTexto(leer(celdas, COL.SUCURSAL)),
         cuenta: soloDigitos(aTexto(leer(celdas, COL.CUENTA)))
