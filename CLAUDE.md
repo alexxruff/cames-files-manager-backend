@@ -22,6 +22,9 @@ vigencias, alertas y reportes de auditoría.
 - `backend-spec.md` en la raíz es la versión **anterior** de la especificación, de
   cuando el eje era el cliente. Se conserva como referencia histórica; **no la
   sigas**.
+- `docs/RUMBO.md` dice **hacia dónde va** la plataforma (roles armables,
+  checklists operativos). Es contexto, **no una especificación**: nada de ahí
+  está decidido y no se implementa desde ese archivo.
 - El proyecto hermano `~/Documents/projects/talentlink-backend` es el **origen de
   las convenciones**, no un repo del que se copie sin revisar: lo que se mejoró
   respecto a él está en `docs/DECISIONES.md`.
