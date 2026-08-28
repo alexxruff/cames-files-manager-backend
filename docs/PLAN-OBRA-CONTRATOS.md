@@ -307,9 +307,11 @@ legítimo; avisar deja el dato a la vista sin frenar a nadie.
 | Cliente           | bloqueado si hay contratos                              |
 | Empresa           | **nunca**                                               |
 
-**G4. SIROC único.** ⏳ Pendiente de confirmar. Propuesta: **único globalmente**,
-porque un SIROC identifica una obra ante el IMSS y un duplicado casi siempre es
-error de captura. Relajarlo después es borrar un índice.
+**G4. El SIROC es único, sin excepción.** ✅ Índice único global sobre
+`contracts.siroc.numero` (parcial: sólo cuando hay número, porque el SIROC se
+registra después del contrato). Intentar repetirlo responde `409` con el
+contrato y el proyecto que ya lo tienen, para que quien captura vea de inmediato
+dónde está el choque en vez de un error de base de datos.
 
 **G5. Registro patronal.** ✅ **Único dentro de la empresa** (forzado en el
 modelo), varios por empresa sin tope. **Entre empresas no se bloquea**: no hay
