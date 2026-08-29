@@ -4,7 +4,14 @@ const { isCalendarDate } = require('../utils/dates')
 const ESTADOS = ['en_curso', 'finalizado']
 
 /** Campos que `PATCH /proyectos/:id` acepta. `fechaFinEstimada` NO: va por /aplazar. */
-const CAMPOS_EDITABLES = ['nombre', 'clienteId', 'fechaInicio', 'categorias']
+const CAMPOS_EDITABLES = [
+  'nombre',
+  'clienteId',
+  'fechaInicio',
+  'categorias',
+  'registroPatronalId',
+  'registroObraId'
+]
 
 const fechaObligatoria = (campo, etiqueta) =>
   body(campo).custom((valor) => {
@@ -64,7 +71,20 @@ exports.createProjectValidation = [
     .withMessage('El nombre debe tener entre 3 y 160 caracteres'),
   fechaObligatoria('fechaInicio', 'La fecha de inicio'),
   fechaObligatoria('fechaFinEstimada', 'La fecha de fin estimada'),
-  reglaCategorias
+  reglaCategorias,
+  /*
+   * Opcionales por ahora (D-67). Que EXISTAN y pertenezcan a la empresa y al
+   * cliente correctos se comprueba en el servicio, que es donde se puede
+   * consultar la base y dar un mensaje útil.
+   */
+  body('registroPatronalId')
+    .optional({ values: 'falsy' })
+    .isMongoId()
+    .withMessage('El registro patronal indicado no es válido'),
+  body('registroObraId')
+    .optional({ values: 'falsy' })
+    .isMongoId()
+    .withMessage('El registro de obra indicado no es válido')
 ]
 
 exports.updateProjectValidation = [
@@ -97,6 +117,18 @@ exports.updateProjectValidation = [
     .isLength({ min: 3, max: 160 })
     .withMessage('El nombre debe tener entre 3 y 160 caracteres'),
   body('clienteId').optional().isMongoId().withMessage('Selecciona un cliente válido'),
+  /*
+   * Aceptan `null` para quitarlos: mientras sean opcionales (D-67) puede hacer
+   * falta dejar un proyecto sin ellos. Desde la fase 4 dejarán de admitirlo.
+   */
+  body('registroPatronalId')
+    .optional({ values: 'undefined' })
+    .custom((v) => v === null || /^[0-9a-fA-F]{24}$/.test(String(v)))
+    .withMessage('El registro patronal indicado no es válido'),
+  body('registroObraId')
+    .optional({ values: 'undefined' })
+    .custom((v) => v === null || /^[0-9a-fA-F]{24}$/.test(String(v)))
+    .withMessage('El registro de obra indicado no es válido'),
   body('fechaInicio')
     .optional()
     .custom((valor) => {

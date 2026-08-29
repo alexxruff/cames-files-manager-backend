@@ -1,6 +1,7 @@
 const mongoose = require('mongoose')
 const Project = require('./projectModel')
 const Client = require('../clients/clientModel')
+const Company = require('../companies/companyModel')
 const Category = require('../categories/categoryModel')
 const Assignment = require('../assignments/assignmentModel')
 const portfolioService = require('../portfolios/portfolioService')
@@ -63,8 +64,8 @@ class ProjectService {
         .sort({ estado: 1, fechaFinEstimada: 1 })
         .skip((pagina - 1) * porPagina)
         .limit(porPagina)
-        .populate({ path: 'clienteId', select: 'nombre' })
-        .populate({ path: 'empresaId', select: 'nombre' })
+        .populate({ path: 'clienteId', select: 'nombre registrosObra' })
+        .populate({ path: 'empresaId', select: 'nombre registrosPatronales' })
     ])
 
     return {
@@ -91,9 +92,25 @@ class ProjectService {
     await this.#assertCategoriasValidas(datos.categorias)
     await this.#assertNombreLibre(datos.empresaId, datos.nombre)
 
+    /*
+     * Opcionales por ahora (D-67): los proyectos que ya existen no los tienen.
+     * Si vienen, se validan; en la fase 4 pasan a ser obligatorios.
+     */
+    if (datos.registroPatronalId) {
+      await this.#assertRegistroPatronalDeLaEmpresa(
+        datos.empresaId,
+        datos.registroPatronalId
+      )
+    }
+    if (datos.registroObraId) {
+      await this.#assertRegistroObraDelCliente(datos.clienteId, datos.registroObraId)
+    }
+
     const proyecto = await Project.create({
       empresaId: datos.empresaId,
       clienteId: datos.clienteId,
+      registroPatronalId: datos.registroPatronalId || null,
+      registroObraId: datos.registroObraId || null,
       nombre: datos.nombre,
       fechaInicio: datos.fechaInicio,
       fechaFinEstimada: datos.fechaFinEstimada,
@@ -110,6 +127,30 @@ class ProjectService {
     if (datos.clienteId && String(datos.clienteId) !== String(proyecto.clienteId)) {
       await this.#assertClienteEnCartera(proyecto.empresaId, datos.clienteId)
       proyecto.clienteId = datos.clienteId
+      /*
+       * Cambiar de cliente invalida el registro de obra, que era del cliente
+       * anterior. Se limpia salvo que en la misma petición venga uno nuevo, que
+       * se valida abajo contra el cliente que va a quedar.
+       */
+      if (datos.registroObraId === undefined) proyecto.registroObraId = null
+    }
+
+    if (datos.registroPatronalId !== undefined) {
+      if (datos.registroPatronalId) {
+        await this.#assertRegistroPatronalDeLaEmpresa(
+          proyecto.empresaId,
+          datos.registroPatronalId
+        )
+      }
+      proyecto.registroPatronalId = datos.registroPatronalId || null
+    }
+
+    if (datos.registroObraId !== undefined) {
+      if (datos.registroObraId) {
+        // Contra el cliente que va a QUEDAR, no contra el que tenía.
+        await this.#assertRegistroObraDelCliente(proyecto.clienteId, datos.registroObraId)
+      }
+      proyecto.registroObraId = datos.registroObraId || null
     }
     if (datos.categorias) {
       await this.#assertCategoriasValidas(datos.categorias)
@@ -258,6 +299,61 @@ class ProjectService {
     }
   }
 
+  /**
+   * El registro patronal tiene que ser **de la empresa del proyecto** y estar
+   * activo (D-67, reglas 5 y 6 del plan).
+   *
+   * Se comprueba en el backend y no se confía en que el front mande uno de la
+   * lista correcta: es una regla de integridad, no una ayuda de interfaz.
+   *
+   * @returns el subdocumento, para poder nombrarlo en los mensajes
+   */
+  async #assertRegistroPatronalDeLaEmpresa(empresaId, registroPatronalId) {
+    const empresa = await Company.findById(empresaId).select('nombre registrosPatronales')
+    if (!empresa) throw AppError.notFound('La empresa no existe')
+
+    const registro = empresa.registrosPatronales.id(registroPatronalId)
+    if (!registro) {
+      throw AppError.validation(`Ese registro patronal no es de ${empresa.nombre}`, [
+        { msg: 'El registro patronal no es de esta empresa', path: 'registroPatronalId' }
+      ])
+    }
+    if (!registro.activo) {
+      throw AppError.validation(
+        `El registro patronal ${registro.numero} está dado de baja`,
+        [{ msg: 'Ese registro patronal está dado de baja', path: 'registroPatronalId' }]
+      )
+    }
+    return registro
+  }
+
+  /**
+   * El registro de obra tiene que ser **del cliente del proyecto** y estar activo
+   * (D-67, reglas 7 y 8 del plan).
+   *
+   * Ojo con la diferencia: el patronal se valida contra la EMPRESA y éste contra
+   * el CLIENTE. Son ramas distintas del modelo y confundirlas es justo lo que
+   * este trabajo evita.
+   */
+  async #assertRegistroObraDelCliente(clienteId, registroObraId) {
+    const cliente = await Client.findById(clienteId).select('nombre registrosObra')
+    if (!cliente) throw AppError.notFound('El cliente no existe')
+
+    const registro = cliente.registrosObra.id(registroObraId)
+    if (!registro) {
+      throw AppError.validation(`Ese registro de obra no es de ${cliente.nombre}`, [
+        { msg: 'El registro de obra no es de este cliente', path: 'registroObraId' }
+      ])
+    }
+    if (!registro.activo) {
+      throw AppError.validation(
+        `El registro de obra ${registro.numero} está dado de baja`,
+        [{ msg: 'Ese registro de obra está dado de baja', path: 'registroObraId' }]
+      )
+    }
+    return registro
+  }
+
   async #assertCategoriasValidas(categorias) {
     const ids = [...new Set((categorias || []).map(String))]
     if (ids.length === 0) {
@@ -320,8 +416,8 @@ class ProjectService {
     const consulta = Project.findById(id)
     if (poblar) {
       consulta
-        .populate({ path: 'clienteId', select: 'nombre' })
-        .populate({ path: 'empresaId', select: 'nombre' })
+        .populate({ path: 'clienteId', select: 'nombre registrosObra' })
+        .populate({ path: 'empresaId', select: 'nombre registrosPatronales' })
     }
     const proyecto = await consulta
     if (!proyecto) throw AppError.notFound('El proyecto no existe')
@@ -338,6 +434,19 @@ class ProjectService {
   }
 
   /** Agrega los nombres de empresa y cliente, y los días que faltan para cerrar. */
+  /** El subdocumento resuelto a la forma del contrato, o `null`. */
+  #registroDe(registros, id) {
+    if (!id || !Array.isArray(registros)) return null
+    const encontrado = registros.find((r) => String(r._id) === String(id))
+    if (!encontrado) return null
+    return {
+      _id: encontrado._id.toString(),
+      numero: encontrado.numero,
+      descripcion: encontrado.descripcion ?? null,
+      activo: encontrado.activo
+    }
+  }
+
   #formatear(proyecto) {
     const json = proyecto.toJSON()
     const cliente = proyecto.clienteId
@@ -345,6 +454,19 @@ class ProjectService {
 
     return {
       ...json,
+      /*
+       * Resueltos, no sólo el id (D-67): el número es lo que la pantalla muestra
+       * y lo que la gente reconoce. No se guarda duplicado en el proyecto —eso
+       * crearía dos verdades—, se resuelve al leer, igual que `empresaNombre`.
+       *
+       * Vienen en `null` si el proyecto todavía no los tiene, o si la consulta
+       * no pobló empresa y cliente.
+       */
+      registroPatronal: this.#registroDe(
+        empresa?.registrosPatronales,
+        proyecto.registroPatronalId
+      ),
+      registroObra: this.#registroDe(cliente?.registrosObra, proyecto.registroObraId),
       empresaId: (empresa?._id || empresa)?.toString() ?? null,
       clienteId: (cliente?._id || cliente)?.toString() ?? null,
       empresaNombre: empresa?.nombre ?? null,

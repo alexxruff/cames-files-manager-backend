@@ -252,12 +252,26 @@ class CompanyService {
    * Dar de baja o reactivar un registro patronal.
    *
    * Dar de baja **no lo borra**: deja de ofrecerse para obras nuevas y se puede
-   * reactivar. No hay nada que bloquear todavía porque aún nadie lo referencia;
-   * cuando el proyecto lo haga (fase 3), aquí entra el candado de «no se da de
-   * baja uno que un proyecto en curso esté usando».
+   * reactivar. Pero **no se da de baja uno que un proyecto EN CURSO esté
+   * usando** (D-67): el proyecto quedaría apuntando a un registro que ningún
+   * desplegable ofrece. Los proyectos finalizados no estorban — su registro es
+   * historia y debe poder cerrarse.
    */
   async setEstadoRegistroPatronal(empresaId, registroId, activo) {
     const { empresa, registro } = await this.#buscarRegistro(empresaId, registroId)
+
+    if (!activo) {
+      const enUso = await Project.countDocuments({
+        registroPatronalId: registro._id,
+        estado: 'en_curso'
+      })
+      if (enUso > 0) {
+        throw new AppError(
+          400,
+          `No se puede dar de baja: ${enUso} ${enUso === 1 ? 'proyecto en curso lo usa' : 'proyectos en curso lo usan'}. Ciérralos o cámbiales el registro primero.`
+        )
+      }
+    }
 
     registro.activo = activo
     await empresa.save()

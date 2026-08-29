@@ -3,6 +3,8 @@ const mongoose = require('mongoose')
 const app = require('../../src/app')
 const Project = require('../../src/api/v1/projects/projectModel')
 const Assignment = require('../../src/api/v1/assignments/assignmentModel')
+const Company = require('../../src/api/v1/companies/companyModel')
+const Client = require('../../src/api/v1/clients/clientModel')
 const {
   crearEmpresa,
   crearCliente,
@@ -664,5 +666,230 @@ describe('Ciclo de vida del proyecto', () => {
       const res = await peticion.set(auth(consulta.token))
       expect(res.status).toBe(403)
     }
+  })
+})
+
+/**
+ * El proyecto referencia un registro patronal de su EMPRESA y un registro de
+ * obra de su CLIENTE (D-67). Opcionales en esta fase; obligatorios en la
+ * siguiente.
+ *
+ * La regla que no se puede dejar al front: cada uno tiene que pertenecer a su
+ * dueño. Son ramas distintas del modelo —el patronal es de la empresa, el de
+ * obra es del cliente— y confundirlas es justo lo que estas pruebas impiden.
+ */
+describe('registro patronal y registro de obra del proyecto (D-67)', () => {
+  /** Empresa con un registro patronal, cliente en cartera con uno de obra. */
+  const escenario = async () => {
+    const sesion = await crearEmpleadoConSesion({
+      nivelAcceso: 'rh_admin',
+      alcanceGlobal: true
+    })
+    const cliente = await crearCliente({ nombre: 'Constructora Del Valle' })
+    await agregarACartera(sesion.empresa, cliente)
+    const categoria = await crearCategoria('Albañil', 'mano_de_obra')
+
+    const empresa = await Company.findById(sesion.empresa._id)
+    empresa.registrosPatronales.push({ numero: 'R13-77767-10-5', descripcion: 'Zapopan' })
+    await empresa.save()
+
+    const clienteDoc = await Client.findById(cliente._id)
+    clienteDoc.registrosObra.push({
+      numero: 'OB-2026-0145',
+      descripcion: 'Torre Andares'
+    })
+    await clienteDoc.save()
+
+    return {
+      ...sesion,
+      cliente,
+      categoria,
+      registroPatronalId: empresa.registrosPatronales[0]._id.toString(),
+      registroObraId: clienteDoc.registrosObra[0]._id.toString()
+    }
+  }
+
+  const cuerpo = (e, extra = {}) => ({
+    empresaId: e.empresa._id.toString(),
+    clienteId: e.cliente._id.toString(),
+    nombre: 'Torre Andares',
+    fechaInicio: '2026-09-01',
+    fechaFinEstimada: '2027-06-30',
+    categorias: [e.categoria._id.toString()],
+    ...extra
+  })
+
+  it('se crean con ambos, y la respuesta los devuelve RESUELTOS', async () => {
+    const e = await escenario()
+
+    const res = await request(app)
+      .post(RUTA)
+      .set(auth(e.token))
+      .send(
+        cuerpo(e, {
+          registroPatronalId: e.registroPatronalId,
+          registroObraId: e.registroObraId
+        })
+      )
+
+    expect(res.status).toBe(201)
+    const p = res.body.data.proyecto
+    expect(p.registroPatronalId).toBe(e.registroPatronalId)
+    expect(p.registroObraId).toBe(e.registroObraId)
+    // Resueltos: el número es lo que la pantalla muestra.
+    expect(p.registroPatronal).toMatchObject({
+      numero: 'R13-77767-10-5',
+      descripcion: 'Zapopan'
+    })
+    expect(p.registroObra).toMatchObject({
+      numero: 'OB-2026-0145',
+      descripcion: 'Torre Andares'
+    })
+  })
+
+  it('siguen siendo opcionales: sin ellos el alta funciona', async () => {
+    const e = await escenario()
+
+    const res = await request(app).post(RUTA).set(auth(e.token)).send(cuerpo(e))
+
+    expect(res.status).toBe(201)
+    expect(res.body.data.proyecto.registroPatronalId).toBeNull()
+    expect(res.body.data.proyecto.registroPatronal).toBeNull()
+  })
+
+  it('400 si el registro patronal es de OTRA empresa', async () => {
+    const e = await escenario()
+    const otra = await crearEmpresa({ nombre: 'Otra Del Grupo' })
+    otra.registrosPatronales.push({ numero: 'Z61-14090-10-9' })
+    await otra.save()
+
+    const res = await request(app)
+      .post(RUTA)
+      .set(auth(e.token))
+      .send(cuerpo(e, { registroPatronalId: otra.registrosPatronales[0]._id.toString() }))
+
+    expect(res.status).toBe(400)
+    expect(res.body.errors[0].path).toBe('registroPatronalId')
+  })
+
+  it('400 si el registro de obra es de OTRO cliente', async () => {
+    const e = await escenario()
+    const otroCliente = await crearCliente({ nombre: 'Otro Cliente' })
+    otroCliente.registrosObra.push({ numero: 'OB-9999' })
+    await otroCliente.save()
+
+    const res = await request(app)
+      .post(RUTA)
+      .set(auth(e.token))
+      .send(cuerpo(e, { registroObraId: otroCliente.registrosObra[0]._id.toString() }))
+
+    expect(res.status).toBe(400)
+    expect(res.body.errors[0].path).toBe('registroObraId')
+  })
+
+  it('400 si el registro está dado de baja', async () => {
+    const e = await escenario()
+    const empresa = await Company.findById(e.empresa._id)
+    empresa.registrosPatronales[0].activo = false
+    await empresa.save()
+
+    const res = await request(app)
+      .post(RUTA)
+      .set(auth(e.token))
+      .send(cuerpo(e, { registroPatronalId: e.registroPatronalId }))
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain('dado de baja')
+  })
+
+  it('se pueden asignar después, con PATCH', async () => {
+    const e = await escenario()
+    const alta = await request(app).post(RUTA).set(auth(e.token)).send(cuerpo(e))
+    const proyectoId = alta.body.data.proyecto._id
+
+    const res = await request(app)
+      .patch(`${RUTA}/${proyectoId}`)
+      .set(auth(e.token))
+      .send({
+        registroPatronalId: e.registroPatronalId,
+        registroObraId: e.registroObraId
+      })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.proyecto.registroPatronal.numero).toBe('R13-77767-10-5')
+    expect(res.body.data.proyecto.registroObra.numero).toBe('OB-2026-0145')
+  })
+
+  it('cambiar de cliente limpia el registro de obra: era del anterior', async () => {
+    const e = await escenario()
+    const alta = await request(app)
+      .post(RUTA)
+      .set(auth(e.token))
+      .send(cuerpo(e, { registroObraId: e.registroObraId }))
+    const proyectoId = alta.body.data.proyecto._id
+
+    const nuevoCliente = await crearCliente({ nombre: 'Cliente Nuevo' })
+    await agregarACartera(e.empresa, nuevoCliente)
+
+    const res = await request(app)
+      .patch(`${RUTA}/${proyectoId}`)
+      .set(auth(e.token))
+      .send({ clienteId: nuevoCliente._id.toString() })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.proyecto.registroObraId).toBeNull()
+  })
+
+  it('no se da de baja un registro que un proyecto EN CURSO usa', async () => {
+    const e = await escenario()
+    await request(app)
+      .post(RUTA)
+      .set(auth(e.token))
+      .send(
+        cuerpo(e, {
+          registroPatronalId: e.registroPatronalId,
+          registroObraId: e.registroObraId
+        })
+      )
+
+    const patronal = await request(app)
+      .patch(
+        `/api/v1/empresas/${e.empresa._id}/registros-patronales/${e.registroPatronalId}/estado`
+      )
+      .set(auth(e.token))
+      .send({ activo: false })
+    expect(patronal.status).toBe(400)
+    expect(patronal.body.message).toContain('1 proyecto en curso lo usa')
+
+    const obra = await request(app)
+      .patch(
+        `/api/v1/clientes/${e.cliente._id}/registros-obra/${e.registroObraId}/estado`
+      )
+      .set(auth(e.token))
+      .send({ activo: false })
+    expect(obra.status).toBe(400)
+  })
+
+  it('pero sí se da de baja si el proyecto ya se finalizó', async () => {
+    const e = await escenario()
+    const alta = await request(app)
+      .post(RUTA)
+      .set(auth(e.token))
+      .send(cuerpo(e, { registroPatronalId: e.registroPatronalId }))
+
+    const fin = await request(app)
+      .post(`${RUTA}/${alta.body.data.proyecto._id}/finalizar`)
+      .set(auth(e.token))
+      .send({ fechaFinReal: '2026-10-01' })
+    expect(fin.status).toBe(200)
+
+    const res = await request(app)
+      .patch(
+        `/api/v1/empresas/${e.empresa._id}/registros-patronales/${e.registroPatronalId}/estado`
+      )
+      .set(auth(e.token))
+      .send({ activo: false })
+
+    expect(res.status).toBe(200)
   })
 })

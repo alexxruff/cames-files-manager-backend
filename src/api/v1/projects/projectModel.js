@@ -46,6 +46,31 @@ const projectSchema = new mongoose.Schema(
       required: [true, 'El cliente es requerido']
     },
 
+    /**
+     * El registro patronal de la EMPRESA con el que opera este proyecto (D-67).
+     *
+     * Apunta al `_id` de un subdocumento de `companies.registrosPatronales`. Por
+     * eso ese subdocumento tiene identidad propia (D-65): así corregir el número
+     * no rompe esta referencia.
+     *
+     * **Opcional por ahora**: los proyectos que ya existen no lo tienen y
+     * exigirlo los dejaría inválidos. Se vuelve obligatorio en la fase 4, cuando
+     * estén poblados.
+     */
+    registroPatronalId: { type: mongoose.Schema.Types.ObjectId, default: null },
+
+    /**
+     * El registro de obra del CLIENTE. Uno solo por proyecto (D-67).
+     *
+     * Apunta a `clients.registrosObra._id` (D-66). **Es el origen funcional de
+     * los SIROC**: cada contrato del proyecto tendrá el suyo, y todos cuelgan de
+     * esta obra. No confundir con el registro patronal, que es de la empresa y
+     * no tiene nada que ver con el SIROC.
+     *
+     * Opcional por ahora, por lo mismo que el anterior.
+     */
+    registroObraId: { type: mongoose.Schema.Types.ObjectId, default: null },
+
     nombre: {
       type: String,
       required: [true, 'El nombre del proyecto es requerido'],
@@ -90,6 +115,8 @@ const projectSchema = new mongoose.Schema(
           _id: ret._id.toString(),
           empresaId: idAString(ret.empresaId),
           clienteId: idAString(ret.clienteId),
+          registroPatronalId: idAString(ret.registroPatronalId),
+          registroObraId: idAString(ret.registroObraId),
           nombre: ret.nombre,
           fechaInicio: ret.fechaInicio,
           fechaFinEstimada: ret.fechaFinEstimada,
@@ -113,6 +140,9 @@ const projectSchema = new mongoose.Schema(
 
 // ─── Índices (modelo-datos §7) ────────────────────────────────────────────────
 projectSchema.index({ empresaId: 1, estado: 1 })
+// Para responder «¿qué proyectos usan este registro?» antes de darlo de baja.
+projectSchema.index({ registroPatronalId: 1 })
+projectSchema.index({ registroObraId: 1 })
 projectSchema.index({ clienteId: 1 })
 projectSchema.index({ empresaId: 1, fechaFinEstimada: 1 }) // job de cierres próximos
 // Nombre único DENTRO de la empresa: dos empresas del grupo pueden tener cada

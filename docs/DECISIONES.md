@@ -2681,3 +2681,55 @@ veces; la comprobación de alcance se extrajo a `#assertEnAlcance` y ahora es un
 
 No hay datos: el concepto no existía. Los 5 clientes actuales quedan con
 `registrosObra: []`.
+
+## D-67 · El proyecto referencia su registro patronal y su registro de obra
+
+**Decisión.** `projects` gana `registroPatronalId` y `registroObraId`, **opcionales
+por ahora**, con las validaciones de pertenencia. Es la Fase 3 del plan
+(`PLAN-OBRA-CONTRATOS.md`).
+
+### Las dos reglas que no se pueden dejar al front
+
+- El **registro patronal** debe ser de la **EMPRESA** del proyecto, y estar activo.
+- El **registro de obra** debe ser del **CLIENTE** del proyecto, y estar activo.
+
+Son ramas distintas del modelo y confundirlas es justo lo que este trabajo evita.
+Se comprueban en el servicio, que es donde se puede consultar la base y nombrar
+el dueño en el mensaje: _«Ese registro patronal no es de Maquinaria CAMES»_.
+
+### Opcionales a propósito
+
+Los tres proyectos que ya existen no los tienen, y exigirlos los dejaría
+inválidos: cualquier `save()` sobre ellos —aplazar, finalizar, editar— fallaría.
+Se vuelven obligatorios en la Fase 4, después de poblarlos. Es el orden seguro de
+siempre: opcional → poblar → obligatorio.
+
+### Se devuelven resueltos, no sólo el id
+
+La respuesta trae `registroPatronal` y `registroObra` completos (número,
+descripción, activo) además del id. **No se guarda el número en el proyecto**:
+eso crearía dos verdades. Se resuelve al leer, igual que `empresaNombre`, y para
+eso el `populate` ahora trae también los subdocumentos.
+
+### Cambiar de cliente limpia el registro de obra
+
+El que había era del cliente anterior. Se pone en `null` salvo que en la misma
+petición venga uno nuevo, que se valida contra el cliente **que va a quedar**, no
+contra el que tenía.
+
+### El candado que quedó pendiente en las fases 1 y 2
+
+Ahora que alguien los referencia, ya hay qué comprobar: **no se da de baja un
+registro que un proyecto EN CURSO esté usando** (`400` diciendo cuántos). Los
+proyectos **finalizados no estorban**: su registro es historia y debe poder
+cerrarse. Aplica a los dos, en `companyService` y en `clientService`.
+
+### Índices
+
+`projects.registroPatronalId` y `projects.registroObraId`, que es lo que hace
+barata la pregunta «¿qué proyectos usan este registro?» antes de darlo de baja.
+
+### Sin migración
+
+Los campos nacen en `null`. Poblar los tres proyectos existentes es la Fase 4, y
+no hay dato del cual derivarlos: hay que elegirlos.

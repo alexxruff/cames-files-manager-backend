@@ -1,6 +1,7 @@
 const mongoose = require('mongoose')
 const Client = require('./clientModel')
 const Portfolio = require('../portfolios/portfolioModel')
+const Project = require('../projects/projectModel')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { normalize, escapeRegex } = require('../../../utils/text')
 const { CAPABILITIES, can, isPlatformAdmin } = require('../../../utils/permissions')
@@ -185,7 +186,6 @@ class ClientService {
     return { cliente: cliente.toJSON() }
   }
 
-  /** Sólo estos campos; el resto se ignora en vez de escribirse por accidente. */
   // ─── Registros de obra (D-66) ─────────────────────────────────────────────
 
   /**
@@ -238,9 +238,10 @@ class ClientService {
   /**
    * Dar de baja o reactivar.
    *
-   * No lo borra: un proyecto puede seguir apuntando a uno que ya no se usa para
-   * obras nuevas. El candado de «no se da de baja uno que un proyecto en curso
-   * esté usando» entra en la fase 3, cuando el proyecto empiece a referenciarlos.
+   * No lo borra: un proyecto finalizado puede seguir apuntando a uno que ya no
+   * se usa para obras nuevas. Pero **no se da de baja uno que un proyecto EN
+   * CURSO esté usando** (D-67), que además es el que da los SIROC de sus
+   * contratos.
    */
   async setEstadoRegistroObra(clienteId, registroId, activo, contexto = {}) {
     const { cliente, registro } = await this.#buscarRegistroObra(
@@ -248,6 +249,19 @@ class ClientService {
       registroId,
       contexto
     )
+
+    if (!activo) {
+      const enUso = await Project.countDocuments({
+        registroObraId: registro._id,
+        estado: 'en_curso'
+      })
+      if (enUso > 0) {
+        throw new AppError(
+          400,
+          `No se puede dar de baja: ${enUso} ${enUso === 1 ? 'proyecto en curso lo usa' : 'proyectos en curso lo usan'}. Ciérralos o cámbiales el registro primero.`
+        )
+      }
+    }
 
     registro.activo = activo
     await cliente.save()
@@ -285,6 +299,7 @@ class ClientService {
     return { cliente, registro }
   }
 
+  /** Sólo estos campos; el resto se ignora en vez de escribirse por accidente. */
   #soloCamposPermitidos(datos, { parcial = false } = {}) {
     const campos = [
       'nombre',

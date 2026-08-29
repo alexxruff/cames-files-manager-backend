@@ -2,7 +2,7 @@
 
 > **Plan de trabajo, no especificación cerrada.** Se implementa **una fase a la
 > vez**. Al terminar cada una, el sistema queda funcional y consistente.
-> Estado: **Fases 1 y 2 implementadas** (D-65, D-66). Siguiente: Fase 3.
+> Estado: **Fases 1, 2 y 3 implementadas** (D-65, D-66, D-67). Siguiente: Fase 4.
 
 ---
 
@@ -334,7 +334,7 @@ Maquinaria CAMES queda con sus cuatro, sin captura manual.
 Simétrica a la 1, sobre `clients`. Sin migración: no hay datos.
 **Resultado:** los clientes pueden registrar sus obras.
 
-### FASE 3 — El proyecto los referencia (opcionales)
+### FASE 3 — El proyecto los referencia (opcionales) ✅ HECHA (D-67)
 
 Agrega `registroPatronalId` y `registroObraId` como **opcionales**, con las
 validaciones de pertenencia (5–8 de tu lista). El alta ya los acepta y los valida
