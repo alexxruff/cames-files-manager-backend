@@ -2,7 +2,7 @@
 
 > **Plan de trabajo, no especificación cerrada.** Se implementa **una fase a la
 > vez**. Al terminar cada una, el sistema queda funcional y consistente.
-> Estado: **Fases 1, 2 y 3 implementadas** (D-65, D-66, D-67). Siguiente: Fase 4.
+> Estado: **Fases 1 a 4 implementadas** (D-65 a D-69). Siguiente: Fase 5 (contratos y SIROC).
 
 ---
 
@@ -355,7 +355,7 @@ si vienen. `GET` los devuelve resueltos.
 **Resultado:** se pueden crear proyectos con el modelo nuevo sin invalidar los 3
 que ya existen.
 
-### FASE 4 — Obligatorios y reglas de edición
+### FASE 4 — Obligatorios y reglas de edición ✅ HECHA (D-69)
 
 Poblar los 3 proyectos existentes (**M4**, a mano), volver los campos
 obligatorios y aplicar las reglas de qué se puede cambiar. _Depende de: G3._

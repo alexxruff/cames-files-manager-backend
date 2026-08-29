@@ -53,11 +53,25 @@ const projectSchema = new mongoose.Schema(
      * eso ese subdocumento tiene identidad propia (D-65): así corregir el número
      * no rompe esta referencia.
      *
-     * **Opcional por ahora**: los proyectos que ya existen no lo tienen y
-     * exigirlo los dejaría inválidos. Se vuelve obligatorio en la fase 4, cuando
-     * estén poblados.
+     * **Obligatorio en los proyectos NUEVOS** (D-69), no en los que ya existen.
+     *
+     * `required` como función y no como `true`: así ningún proyecto puede nacer
+     * sin él —por la ruta, por un script o por donde sea— y a la vez los que ya
+     * están guardados sin él se pueden seguir aplazando, finalizando y editando.
+     * Marcarlo obligatorio a secas los habría dejado inválidos, que es la misma
+     * trampa de D-68: un cambio de forma deja dos estados y los dos tienen que
+     * funcionar.
      */
-    registroPatronalId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    registroPatronalId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+      required: [
+        function () {
+          return this.isNew
+        },
+        'El registro patronal es requerido'
+      ]
+    },
 
     /**
      * El registro de obra del CLIENTE. Uno solo por proyecto (D-67).
@@ -67,9 +81,18 @@ const projectSchema = new mongoose.Schema(
      * esta obra. No confundir con el registro patronal, que es de la empresa y
      * no tiene nada que ver con el SIROC.
      *
-     * Opcional por ahora, por lo mismo que el anterior.
+     * Obligatorio en los proyectos nuevos, por lo mismo que el anterior (D-69).
      */
-    registroObraId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    registroObraId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+      required: [
+        function () {
+          return this.isNew
+        },
+        'El registro de obra es requerido'
+      ]
+    },
 
     nombre: {
       type: String,

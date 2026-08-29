@@ -92,25 +92,18 @@ class ProjectService {
     await this.#assertCategoriasValidas(datos.categorias)
     await this.#assertNombreLibre(datos.empresaId, datos.nombre)
 
-    /*
-     * Opcionales por ahora (D-67): los proyectos que ya existen no los tienen.
-     * Si vienen, se validan; en la fase 4 pasan a ser obligatorios.
-     */
-    if (datos.registroPatronalId) {
-      await this.#assertRegistroPatronalDeLaEmpresa(
-        datos.empresaId,
-        datos.registroPatronalId
-      )
-    }
-    if (datos.registroObraId) {
-      await this.#assertRegistroObraDelCliente(datos.clienteId, datos.registroObraId)
-    }
+    // Obligatorios desde D-69, y cada uno tiene que ser de su dueño.
+    await this.#assertRegistroPatronalDeLaEmpresa(
+      datos.empresaId,
+      datos.registroPatronalId
+    )
+    await this.#assertRegistroObraDelCliente(datos.clienteId, datos.registroObraId)
 
     const proyecto = await Project.create({
       empresaId: datos.empresaId,
       clienteId: datos.clienteId,
-      registroPatronalId: datos.registroPatronalId || null,
-      registroObraId: datos.registroObraId || null,
+      registroPatronalId: datos.registroPatronalId,
+      registroObraId: datos.registroObraId,
       nombre: datos.nombre,
       fechaInicio: datos.fechaInicio,
       fechaFinEstimada: datos.fechaFinEstimada,
@@ -128,29 +121,37 @@ class ProjectService {
       await this.#assertClienteEnCartera(proyecto.empresaId, datos.clienteId)
       proyecto.clienteId = datos.clienteId
       /*
-       * Cambiar de cliente invalida el registro de obra, que era del cliente
-       * anterior. Se limpia salvo que en la misma petición venga uno nuevo, que
-       * se valida abajo contra el cliente que va a quedar.
+       * Cambiar de cliente invalida el registro de obra, que era del anterior. Y
+       * como ya no puede quedar vacío (D-69), **hay que mandar el nuevo en la
+       * misma petición**: dejarlo a medias produciría un proyecto con un
+       * registro de obra que no es de su cliente, justo lo que las reglas de
+       * integridad prohíben.
        */
-      if (datos.registroObraId === undefined) proyecto.registroObraId = null
+      if (datos.registroObraId === undefined) {
+        throw AppError.validation(
+          'Al cambiar de cliente hay que indicar también su registro de obra',
+          [
+            {
+              msg: 'Indica el registro de obra del cliente nuevo',
+              path: 'registroObraId'
+            }
+          ]
+        )
+      }
     }
 
     if (datos.registroPatronalId !== undefined) {
-      if (datos.registroPatronalId) {
-        await this.#assertRegistroPatronalDeLaEmpresa(
-          proyecto.empresaId,
-          datos.registroPatronalId
-        )
-      }
-      proyecto.registroPatronalId = datos.registroPatronalId || null
+      await this.#assertRegistroPatronalDeLaEmpresa(
+        proyecto.empresaId,
+        datos.registroPatronalId
+      )
+      proyecto.registroPatronalId = datos.registroPatronalId
     }
 
     if (datos.registroObraId !== undefined) {
-      if (datos.registroObraId) {
-        // Contra el cliente que va a QUEDAR, no contra el que tenía.
-        await this.#assertRegistroObraDelCliente(proyecto.clienteId, datos.registroObraId)
-      }
-      proyecto.registroObraId = datos.registroObraId || null
+      // Contra el cliente que va a QUEDAR, no contra el que tenía.
+      await this.#assertRegistroObraDelCliente(proyecto.clienteId, datos.registroObraId)
+      proyecto.registroObraId = datos.registroObraId
     }
     if (datos.categorias) {
       await this.#assertCategoriasValidas(datos.categorias)

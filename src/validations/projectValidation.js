@@ -73,16 +73,20 @@ exports.createProjectValidation = [
   fechaObligatoria('fechaFinEstimada', 'La fecha de fin estimada'),
   reglaCategorias,
   /*
-   * Opcionales por ahora (D-67). Que EXISTAN y pertenezcan a la empresa y al
-   * cliente correctos se comprueba en el servicio, que es donde se puede
-   * consultar la base y dar un mensaje útil.
+   * Obligatorios desde D-69. Que EXISTAN y pertenezcan a la empresa y al cliente
+   * correctos se comprueba en el servicio, que es donde se puede consultar la
+   * base y dar un mensaje útil.
    */
   body('registroPatronalId')
-    .optional({ values: 'falsy' })
+    .exists({ values: 'falsy' })
+    .withMessage('El registro patronal es requerido')
+    .bail()
     .isMongoId()
     .withMessage('El registro patronal indicado no es válido'),
   body('registroObraId')
-    .optional({ values: 'falsy' })
+    .exists({ values: 'falsy' })
+    .withMessage('El registro de obra es requerido')
+    .bail()
     .isMongoId()
     .withMessage('El registro de obra indicado no es válido')
 ]
@@ -118,16 +122,17 @@ exports.updateProjectValidation = [
     .withMessage('El nombre debe tener entre 3 y 160 caracteres'),
   body('clienteId').optional().isMongoId().withMessage('Selecciona un cliente válido'),
   /*
-   * Aceptan `null` para quitarlos: mientras sean opcionales (D-67) puede hacer
-   * falta dejar un proyecto sin ellos. Desde la fase 4 dejarán de admitirlo.
+   * Se pueden CAMBIAR por otro, pero **no vaciar** (D-69): un proyecto sin
+   * registro patronal o sin registro de obra ya no es un estado válido, y
+   * permitir `null` aquí sería la puerta de atrás para volver a crearlo.
    */
   body('registroPatronalId')
-    .optional({ values: 'undefined' })
-    .custom((v) => v === null || /^[0-9a-fA-F]{24}$/.test(String(v)))
+    .optional()
+    .isMongoId()
     .withMessage('El registro patronal indicado no es válido'),
   body('registroObraId')
-    .optional({ values: 'undefined' })
-    .custom((v) => v === null || /^[0-9a-fA-F]{24}$/.test(String(v)))
+    .optional()
+    .isMongoId()
     .withMessage('El registro de obra indicado no es válido'),
   body('fechaInicio')
     .optional()

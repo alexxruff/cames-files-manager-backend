@@ -191,15 +191,29 @@ async function agregarACartera(empresa, cliente, datos = {}) {
  * Proyecto listo para usar: crea el cliente y su cartera si no se pasan, porque
  * el servicio exige que el cliente esté en la cartera activa de la empresa.
  */
+/**
+ * Proyecto con todo lo que exige el modelo, incluidos su registro patronal y su
+ * registro de obra (D-69).
+ *
+ * Los crea si no se le pasan: son obligatorios en los proyectos nuevos, y hacer
+ * que cada prueba los prepare a mano habría convertido en ruido lo que casi
+ * nunca es el objeto de la prueba. Se devuelven, para las que sí lo son.
+ */
 async function crearProyecto(empresa, datos = {}) {
   const cliente = datos.cliente || (await crearCliente())
   if (!datos.sinCartera) await agregarACartera(empresa, cliente)
 
   const categoria = datos.categoria || (await crearCategoria(undefined, 'mano_de_obra'))
 
+  const registroPatronal =
+    datos.registroPatronalId || (await crearRegistroPatronal(empresa))._id
+  const registroObra = datos.registroObraId || (await crearRegistroObra(cliente))._id
+
   const proyecto = await Project.create({
     empresaId: empresa._id,
     clienteId: cliente._id,
+    registroPatronalId: registroPatronal,
+    registroObraId: registroObra,
     nombre: datos.nombre || `Proyecto ${siguiente()}`,
     fechaInicio: datos.fechaInicio || '2026-09-01',
     fechaFinEstimada: datos.fechaFinEstimada || '2027-03-01',
@@ -208,7 +222,23 @@ async function crearProyecto(empresa, datos = {}) {
     fechaFinReal: datos.fechaFinReal ?? null
   })
 
-  return { proyecto, cliente, categoria }
+  return { proyecto, cliente, categoria, registroPatronal, registroObra }
+}
+
+/** Agrega un registro patronal a la empresa y devuelve el subdocumento (D-65). */
+async function crearRegistroPatronal(empresa, numero) {
+  const doc = await Company.findById(empresa._id)
+  doc.registrosPatronales.push({ numero: numero || `RP-${siguiente()}` })
+  await doc.save()
+  return doc.registrosPatronales[doc.registrosPatronales.length - 1]
+}
+
+/** Agrega un registro de obra al cliente y devuelve el subdocumento (D-66). */
+async function crearRegistroObra(cliente, numero) {
+  const doc = await Client.findById(cliente._id)
+  doc.registrosObra.push({ numero: numero || `OB-${siguiente()}` })
+  await doc.save()
+  return doc.registrosObra[doc.registrosObra.length - 1]
 }
 
 /** Asigna a alguien a un proyecto, saltándose las validaciones del servicio. */
@@ -235,6 +265,8 @@ module.exports = {
   crearCliente,
   agregarACartera,
   crearProyecto,
+  crearRegistroPatronal,
+  crearRegistroObra,
   asignar,
   auth
 }

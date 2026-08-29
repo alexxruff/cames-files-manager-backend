@@ -2775,3 +2775,59 @@ Un cambio de forma en un campo persistido deja el sistema en dos estados
 lectura no se defendía del estado viejo. Vale para las fases que quedan: cuando
 la 4 vuelva obligatorios los registros del proyecto, los tres proyectos sin ellos
 son ese mismo estado intermedio.
+
+## D-69 · El registro patronal y el de obra pasan a ser obligatorios
+
+**Decisión.** `POST /proyectos` exige `registroPatronalId` y `registroObraId`, y
+`PATCH` puede cambiarlos pero **no vaciarlos**. Es la Fase 4 del plan.
+
+### Obligatorio en los NUEVOS, no en los que ya existen
+
+En el modelo, `required` es una **función de `this.isNew`** en vez de `true`.
+Así ningún proyecto puede nacer sin ellos —por la ruta, por un script o por donde
+sea— y a la vez los que ya están guardados se pueden seguir aplazando,
+finalizando y editando.
+
+Marcarlos obligatorios a secas habría dejado inválidos los proyectos anteriores,
+y cualquier `save()` sobre ellos habría fallado. Es exactamente la trampa de
+D-68: **un cambio de forma deja el sistema en dos estados y los dos tienen que
+funcionar.** Es la segunda vez en dos días, así que vale como patrón: cuando un
+campo se vuelve obligatorio sobre datos existentes, `required: () => this.isNew`.
+
+### `PATCH` los cambia, no los vacía
+
+Un proyecto sin registro patronal o sin registro de obra dejó de ser un estado
+válido; admitir `null` en la edición sería la puerta de atrás para volver a
+crearlo.
+
+### Cambiar de cliente ahora exige su registro de obra
+
+En D-67 se limpiaba el registro de obra al cambiar de cliente, porque el que
+había era del anterior. Con los campos obligatorios eso ya no vale: el proyecto
+quedaría en un estado prohibido. Ahora hay que **mandar los dos en la misma
+petición**, y si no viene el registro, `400` con `path: 'registroObraId'`.
+
+### Los proyectos anteriores: una herramienta, no una decisión automática
+
+`npm run proyectos:incompletos` **reporta y no escribe nada**. Por cada proyecto
+incompleto dice su empresa, su cliente, cuántas asignaciones tiene, qué le falta
+y qué candidatos hay. Después se elige:
+
+- `--rellenar` — le pone el **primer registro activo** de su empresa y su cliente.
+  Es una elección arbitraria: sólo tiene sentido con datos de prueba. Con
+  proyectos reales hay que asignarlos a mano, porque de eso depende a qué obra
+  pertenece cada uno.
+- `--borrar` — lo elimina con sus asignaciones. Destructivo y sin vuelta atrás.
+
+Elegir es del cliente, no del script. Y **no corre prisa**: esos proyectos siguen
+funcionando gracias al `required` condicional.
+
+En local reporta 3 incompletos, y algo que conviene notar: **sus clientes no
+tienen ningún registro de obra activo**, así que `--rellenar` no podría
+completarlos todavía. Hay que crear los registros primero.
+
+### La fábrica de pruebas los crea sola
+
+`crearProyecto` ahora prepara el registro patronal y el de obra si no se le pasan,
+y los devuelve. Hacer que cada prueba los montara a mano habría convertido en
+ruido lo que casi nunca es el objeto de la prueba.

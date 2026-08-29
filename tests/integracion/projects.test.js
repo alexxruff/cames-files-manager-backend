@@ -14,6 +14,8 @@ const {
   adscribir,
   agregarACartera,
   crearProyecto,
+  crearRegistroPatronal,
+  crearRegistroObra,
   asignar,
   auth
 } = require('../helpers/factories')
@@ -26,16 +28,28 @@ async function escenario(datos = {}) {
   const cliente = await crearCliente({ nombre: `Cliente de ${sesion.empresa.nombre}` })
   await agregarACartera(sesion.empresa, cliente)
   const categoria = await crearCategoria(undefined, 'mano_de_obra')
-  return { ...sesion, cliente, categoria }
+  // Obligatorios en todo proyecto nuevo desde D-69.
+  const registroPatronal = await crearRegistroPatronal(sesion.empresa)
+  const registroObra = await crearRegistroObra(cliente)
+  return { ...sesion, cliente, categoria, registroPatronal, registroObra }
 }
 
-const cuerpo = ({ empresa, cliente, categoria, ...extra }) => ({
+const cuerpo = ({
+  empresa,
+  cliente,
+  categoria,
+  registroPatronal,
+  registroObra,
+  ...extra
+}) => ({
   empresaId: empresa._id.toString(),
   clienteId: cliente._id.toString(),
   nombre: 'Torre Andares — Etapa 2',
   fechaInicio: '2026-09-01',
   fechaFinEstimada: '2027-06-30',
   categorias: [categoria._id.toString()],
+  registroPatronalId: registroPatronal?._id?.toString(),
+  registroObraId: registroObra?._id?.toString(),
   ...extra
 })
 
@@ -43,12 +57,13 @@ describe('POST /api/v1/proyectos', () => {
   beforeAll(() => Project.init())
 
   it('crea el proyecto con su cliente y categorías', async () => {
-    const { token, empresa, cliente, categoria } = await escenario()
+    const { token, empresa, cliente, categoria, registroPatronal, registroObra } =
+      await escenario()
 
     const res = await request(app)
       .post(RUTA)
       .set(auth(token))
-      .send(cuerpo({ empresa, cliente, categoria }))
+      .send(cuerpo({ empresa, cliente, categoria, registroPatronal, registroObra }))
 
     expect(res.status).toBe(201)
     expect(res.body.data.proyecto).toMatchObject({
@@ -67,13 +82,16 @@ describe('POST /api/v1/proyectos', () => {
   })
 
   it('EXIGE que el cliente esté en la cartera activa de la empresa', async () => {
-    const { token, empresa, categoria } = await escenario()
+    const { token, empresa, categoria, registroPatronal } = await escenario()
     const fuera = await crearCliente({ nombre: 'Cliente sin cartera' })
+    const registroObra = await crearRegistroObra(fuera)
 
     const res = await request(app)
       .post(RUTA)
       .set(auth(token))
-      .send(cuerpo({ empresa, cliente: fuera, categoria }))
+      .send(
+        cuerpo({ empresa, cliente: fuera, categoria, registroPatronal, registroObra })
+      )
 
     expect(res.status).toBe(400)
     expect(res.body.message).toMatch(/no está en la cartera activa/i)
@@ -94,7 +112,8 @@ describe('POST /api/v1/proyectos', () => {
   })
 
   it('exige al menos una categoría, y que exista y esté activa', async () => {
-    const { token, empresa, cliente, categoria } = await escenario()
+    const { token, empresa, cliente, categoria, registroPatronal, registroObra } =
+      await escenario()
     const desactivada = await crearCategoria('Desactivada', 'mano_de_obra')
     desactivada.activo = false
     await desactivada.save()
@@ -102,12 +121,28 @@ describe('POST /api/v1/proyectos', () => {
     const sinCategorias = await request(app)
       .post(RUTA)
       .set(auth(token))
-      .send(cuerpo({ empresa, cliente, categoria, categorias: [] }))
+      .send(
+        cuerpo({
+          empresa,
+          cliente,
+          categoria,
+          registroPatronal,
+          registroObra,
+          categorias: []
+        })
+      )
     const inactiva = await request(app)
       .post(RUTA)
       .set(auth(token))
       .send(
-        cuerpo({ empresa, cliente, categoria, categorias: [desactivada._id.toString()] })
+        cuerpo({
+          empresa,
+          cliente,
+          categoria,
+          registroPatronal,
+          registroObra,
+          categorias: [desactivada._id.toString()]
+        })
       )
 
     expect(sinCategorias.status).toBe(400)
@@ -116,7 +151,8 @@ describe('POST /api/v1/proyectos', () => {
   })
 
   it('la fecha de fin estimada debe ser posterior al inicio', async () => {
-    const { token, empresa, cliente, categoria } = await escenario()
+    const { token, empresa, cliente, categoria, registroPatronal, registroObra } =
+      await escenario()
 
     const res = await request(app)
       .post(RUTA)
@@ -126,6 +162,8 @@ describe('POST /api/v1/proyectos', () => {
           empresa,
           cliente,
           categoria,
+          registroPatronal,
+          registroObra,
           fechaInicio: '2026-09-01',
           fechaFinEstimada: '2026-08-01'
         })
@@ -137,24 +175,12 @@ describe('POST /api/v1/proyectos', () => {
 
   it('el nombre es único DENTRO de la empresa, pero se repite entre empresas', async () => {
     const uno = await escenario()
-    await request(app)
-      .post(RUTA)
-      .set(auth(uno.token))
-      .send(
-        cuerpo({ empresa: uno.empresa, cliente: uno.cliente, categoria: uno.categoria })
-      )
+    await request(app).post(RUTA).set(auth(uno.token)).send(cuerpo(uno))
 
     const repetido = await request(app)
       .post(RUTA)
       .set(auth(uno.token))
-      .send(
-        cuerpo({
-          empresa: uno.empresa,
-          cliente: uno.cliente,
-          categoria: uno.categoria,
-          nombre: 'torre andares — etapa 2'
-        })
-      )
+      .send(cuerpo({ ...uno, nombre: 'torre andares — etapa 2' }))
     expect(repetido.status).toBe(409)
     expect(repetido.body.code).toBe('PROYECTO_DUPLICADO')
 
@@ -163,20 +189,18 @@ describe('POST /api/v1/proyectos', () => {
     const otraEmpresa = await request(app)
       .post(RUTA)
       .set(auth(dos.token))
-      .send(
-        cuerpo({ empresa: dos.empresa, cliente: dos.cliente, categoria: dos.categoria })
-      )
+      .send(cuerpo(dos))
     expect(otraEmpresa.status).toBe(201)
   })
 
   it('404 si la empresa no es suya', async () => {
-    const { token, cliente, categoria } = await escenario()
+    const e = await escenario()
     const ajena = await crearEmpresa()
 
     const res = await request(app)
       .post(RUTA)
-      .set(auth(token))
-      .send(cuerpo({ empresa: ajena, cliente, categoria }))
+      .set(auth(e.token))
+      .send(cuerpo({ ...e, empresa: ajena }))
 
     expect(res.status).toBe(404)
   })
@@ -186,16 +210,7 @@ describe('POST /api/v1/proyectos', () => {
       nivelAcceso: 'jefe_area',
       areas: ['operaciones_urbanizadora']
     })
-    const conJefe = await request(app)
-      .post(RUTA)
-      .set(auth(jefe.token))
-      .send(
-        cuerpo({
-          empresa: jefe.empresa,
-          cliente: jefe.cliente,
-          categoria: jefe.categoria
-        })
-      )
+    const conJefe = await request(app).post(RUTA).set(auth(jefe.token)).send(cuerpo(jefe))
     expect(conJefe.status).toBe(201)
 
     const consulta = await escenario({ nivelAcceso: 'rh_consulta' })
@@ -204,16 +219,15 @@ describe('POST /api/v1/proyectos', () => {
       .set(auth(consulta.token))
       .send(
         cuerpo({
-          empresa: consulta.empresa,
-          cliente: consulta.cliente,
-          categoria: consulta.categoria
+          ...consulta
         })
       )
     expect(conConsulta.status).toBe(403)
   })
 
   it('400 con mensajes por campo', async () => {
-    const { token, empresa, cliente, categoria } = await escenario()
+    const { token, empresa, cliente, categoria, registroPatronal, registroObra } =
+      await escenario()
     const casos = [
       [{ nombre: 'ab' }, 'nombre'],
       [{ fechaInicio: '01/09/2026' }, 'fechaInicio'],
@@ -225,7 +239,16 @@ describe('POST /api/v1/proyectos', () => {
       const res = await request(app)
         .post(RUTA)
         .set(auth(token))
-        .send(cuerpo({ empresa, cliente, categoria, ...extra }))
+        .send(
+          cuerpo({
+            empresa,
+            cliente,
+            categoria,
+            registroPatronal,
+            registroObra,
+            ...extra
+          })
+        )
       expect(res.status).toBe(400)
       expect(res.body.errors.some((e) => e.path === campo)).toBe(true)
     }
@@ -308,6 +331,8 @@ describe('PATCH /api/v1/proyectos/:id', () => {
     const { proyecto } = await crearProyecto(empresa)
     const otroCliente = await crearCliente({ nombre: 'Otro Cliente' })
     await agregarACartera(empresa, otroCliente)
+    // Cambiar de cliente exige su registro de obra en la misma petición (D-69).
+    const otroRegistroObra = await crearRegistroObra(otroCliente)
     const otraCategoria = await crearCategoria('Otra', 'mano_de_obra')
 
     const res = await request(app)
@@ -316,6 +341,7 @@ describe('PATCH /api/v1/proyectos/:id', () => {
       .send({
         nombre: 'Torre Andares — Etapa 3',
         clienteId: otroCliente._id.toString(),
+        registroObraId: otroRegistroObra._id.toString(),
         categorias: [otraCategoria._id.toString()]
       })
 
@@ -716,21 +742,16 @@ describe('registro patronal y registro de obra del proyecto (D-67)', () => {
     fechaInicio: '2026-09-01',
     fechaFinEstimada: '2027-06-30',
     categorias: [e.categoria._id.toString()],
+    // Obligatorios desde D-69; las pruebas que prueban su ausencia los quitan.
+    registroPatronalId: e.registroPatronalId,
+    registroObraId: e.registroObraId,
     ...extra
   })
 
   it('se crean con ambos, y la respuesta los devuelve RESUELTOS', async () => {
     const e = await escenario()
 
-    const res = await request(app)
-      .post(RUTA)
-      .set(auth(e.token))
-      .send(
-        cuerpo(e, {
-          registroPatronalId: e.registroPatronalId,
-          registroObraId: e.registroObraId
-        })
-      )
+    const res = await request(app).post(RUTA).set(auth(e.token)).send(cuerpo(e))
 
     expect(res.status).toBe(201)
     const p = res.body.data.proyecto
@@ -747,14 +768,34 @@ describe('registro patronal y registro de obra del proyecto (D-67)', () => {
     })
   })
 
-  it('siguen siendo opcionales: sin ellos el alta funciona', async () => {
+  it('son OBLIGATORIOS: sin ellos el alta falla (D-69)', async () => {
     const e = await escenario()
 
-    const res = await request(app).post(RUTA).set(auth(e.token)).send(cuerpo(e))
+    const sinPatronal = await request(app)
+      .post(RUTA)
+      .set(auth(e.token))
+      .send(cuerpo(e, { registroPatronalId: undefined }))
+    expect(sinPatronal.status).toBe(400)
+    expect(sinPatronal.body.errors[0].path).toBe('registroPatronalId')
 
-    expect(res.status).toBe(201)
-    expect(res.body.data.proyecto.registroPatronalId).toBeNull()
-    expect(res.body.data.proyecto.registroPatronal).toBeNull()
+    const sinObra = await request(app)
+      .post(RUTA)
+      .set(auth(e.token))
+      .send(cuerpo(e, { registroObraId: undefined }))
+    expect(sinObra.status).toBe(400)
+    expect(sinObra.body.errors[0].path).toBe('registroObraId')
+  })
+
+  it('y no se pueden vaciar después con PATCH', async () => {
+    const e = await escenario()
+    const alta = await request(app).post(RUTA).set(auth(e.token)).send(cuerpo(e))
+
+    const res = await request(app)
+      .patch(`${RUTA}/${alta.body.data.proyecto._id}`)
+      .set(auth(e.token))
+      .send({ registroPatronalId: null })
+
+    expect(res.status).toBe(400)
   })
 
   it('400 si el registro patronal es de OTRA empresa', async () => {
@@ -793,64 +834,62 @@ describe('registro patronal y registro de obra del proyecto (D-67)', () => {
     empresa.registrosPatronales[0].activo = false
     await empresa.save()
 
-    const res = await request(app)
-      .post(RUTA)
-      .set(auth(e.token))
-      .send(cuerpo(e, { registroPatronalId: e.registroPatronalId }))
+    const res = await request(app).post(RUTA).set(auth(e.token)).send(cuerpo(e))
 
     expect(res.status).toBe(400)
     expect(res.body.message).toContain('dado de baja')
   })
 
-  it('se pueden asignar después, con PATCH', async () => {
+  it('se pueden CAMBIAR por otro de la misma empresa', async () => {
+    const e = await escenario()
+    const alta = await request(app).post(RUTA).set(auth(e.token)).send(cuerpo(e))
+
+    const empresa = await Company.findById(e.empresa._id)
+    empresa.registrosPatronales.push({ numero: 'H67-29973-10-5' })
+    await empresa.save()
+    const otro = empresa.registrosPatronales[empresa.registrosPatronales.length - 1]
+
+    const res = await request(app)
+      .patch(`${RUTA}/${alta.body.data.proyecto._id}`)
+      .set(auth(e.token))
+      .send({ registroPatronalId: otro._id.toString() })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.proyecto.registroPatronal.numero).toBe('H67-29973-10-5')
+  })
+
+  it('cambiar de cliente EXIGE su registro de obra en la misma petición', async () => {
     const e = await escenario()
     const alta = await request(app).post(RUTA).set(auth(e.token)).send(cuerpo(e))
     const proyectoId = alta.body.data.proyecto._id
 
+    const nuevoCliente = await crearCliente({ nombre: 'Cliente Nuevo' })
+    await agregarACartera(e.empresa, nuevoCliente)
+    const suRegistro = await crearRegistroObra(nuevoCliente)
+
+    // Sin el registro nuevo: 400, porque el que tiene es del cliente anterior.
+    const soloCliente = await request(app)
+      .patch(`${RUTA}/${proyectoId}`)
+      .set(auth(e.token))
+      .send({ clienteId: nuevoCliente._id.toString() })
+    expect(soloCliente.status).toBe(400)
+    expect(soloCliente.body.errors[0].path).toBe('registroObraId')
+
+    // Con los dos juntos, sí.
     const res = await request(app)
       .patch(`${RUTA}/${proyectoId}`)
       .set(auth(e.token))
       .send({
-        registroPatronalId: e.registroPatronalId,
-        registroObraId: e.registroObraId
+        clienteId: nuevoCliente._id.toString(),
+        registroObraId: suRegistro._id.toString()
       })
-
     expect(res.status).toBe(200)
-    expect(res.body.data.proyecto.registroPatronal.numero).toBe('R13-77767-10-5')
-    expect(res.body.data.proyecto.registroObra.numero).toBe('OB-2026-0145')
-  })
-
-  it('cambiar de cliente limpia el registro de obra: era del anterior', async () => {
-    const e = await escenario()
-    const alta = await request(app)
-      .post(RUTA)
-      .set(auth(e.token))
-      .send(cuerpo(e, { registroObraId: e.registroObraId }))
-    const proyectoId = alta.body.data.proyecto._id
-
-    const nuevoCliente = await crearCliente({ nombre: 'Cliente Nuevo' })
-    await agregarACartera(e.empresa, nuevoCliente)
-
-    const res = await request(app)
-      .patch(`${RUTA}/${proyectoId}`)
-      .set(auth(e.token))
-      .send({ clienteId: nuevoCliente._id.toString() })
-
-    expect(res.status).toBe(200)
-    expect(res.body.data.proyecto.registroObraId).toBeNull()
+    expect(res.body.data.proyecto.registroObra._id).toBe(suRegistro._id.toString())
   })
 
   it('no se da de baja un registro que un proyecto EN CURSO usa', async () => {
     const e = await escenario()
-    await request(app)
-      .post(RUTA)
-      .set(auth(e.token))
-      .send(
-        cuerpo(e, {
-          registroPatronalId: e.registroPatronalId,
-          registroObraId: e.registroObraId
-        })
-      )
+    await request(app).post(RUTA).set(auth(e.token)).send(cuerpo(e))
 
     const patronal = await request(app)
       .patch(
@@ -872,10 +911,7 @@ describe('registro patronal y registro de obra del proyecto (D-67)', () => {
 
   it('pero sí se da de baja si el proyecto ya se finalizó', async () => {
     const e = await escenario()
-    const alta = await request(app)
-      .post(RUTA)
-      .set(auth(e.token))
-      .send(cuerpo(e, { registroPatronalId: e.registroPatronalId }))
+    const alta = await request(app).post(RUTA).set(auth(e.token)).send(cuerpo(e))
 
     const fin = await request(app)
       .post(`${RUTA}/${alta.body.data.proyecto._id}/finalizar`)
