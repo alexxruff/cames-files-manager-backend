@@ -110,12 +110,25 @@ const companySchema = new mongoose.Schema(
           _id: ret._id.toString(),
           nombre: ret.nombre,
           rfc: ret.rfc ?? null,
-          registrosPatronales: (ret.registrosPatronales || []).map((r) => ({
-            _id: r._id.toString(),
-            numero: r.numero,
-            descripcion: r.descripcion ?? null,
-            activo: r.activo
-          })),
+          /*
+           * Se descartan los que no tengan número (D-68).
+           *
+           * No es defensa teórica: en una base a medio migrar de D-64 —donde
+           * esto era `[String]`— Mongoose intenta convertir la cadena en
+           * subdocumento, no sabe dónde ponerla, y produce uno **sin `numero`**.
+           * Emitirlo rompía al front, que espera `numero: string` por contrato.
+           *
+           * El dato no se pierde: sigue en el documento crudo y lo recupera
+           * `npm run migrate:registros-patronales`.
+           */
+          registrosPatronales: (ret.registrosPatronales || [])
+            .filter((r) => r && r.numero)
+            .map((r) => ({
+              _id: r._id.toString(),
+              numero: r.numero,
+              descripcion: r.descripcion ?? null,
+              activo: r.activo
+            })),
           branding: {
             nombreComercial: ret.branding?.nombreComercial ?? null,
             logoUrl: ret.branding?.logoUrl ?? null,

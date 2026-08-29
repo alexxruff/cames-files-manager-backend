@@ -85,12 +85,16 @@ const clientSchema = new mongoose.Schema(
           _id: ret._id.toString(),
           nombre: ret.nombre,
           rfc: ret.rfc ?? null,
-          registrosObra: (ret.registrosObra || []).map((r) => ({
-            _id: r._id.toString(),
-            numero: r.numero,
-            descripcion: r.descripcion ?? null,
-            activo: r.activo
-          })),
+          // Mismo blindaje que en empresas (D-68), por simetría: un registro sin
+          // número no es un registro, y el contrato promete `numero: string`.
+          registrosObra: (ret.registrosObra || [])
+            .filter((r) => r && r.numero)
+            .map((r) => ({
+              _id: r._id.toString(),
+              numero: r.numero,
+              descripcion: r.descripcion ?? null,
+              activo: r.activo
+            })),
           contactoNombre: ret.contactoNombre ?? null,
           contactoEmail: ret.contactoEmail ?? null,
           contactoTelefono: ret.contactoTelefono ?? null,

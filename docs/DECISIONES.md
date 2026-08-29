@@ -2733,3 +2733,45 @@ barata la pregunta «¿qué proyectos usan este registro?» antes de darlo de ba
 
 Los campos nacen en `null`. Poblar los tres proyectos existentes es la Fase 4, y
 no hay dato del cual derivarlos: hay que elegirlos.
+
+## D-68 · Un registro sin número no se emite nunca
+
+**Síntoma.** El front encontró en local un registro patronal **sin número**, con
+sólo `_id`, `descripcion: null` y `activo: true`. Sospecharon de una fila en
+blanco del archivo de nómina o de la migración.
+
+**No era ninguna de las dos.** Era una base **a medio migrar**.
+
+### Qué pasaba
+
+El documento seguía guardado en el formato de D-64 —`["R13-77767-10-5"]`, un
+arreglo de cadenas— porque la migración de D-65 no se había corrido en ese
+entorno. Al leerlo con el esquema nuevo, Mongoose intenta convertir la cadena en
+subdocumento, no encuentra dónde ponerla, y produce uno **sin `numero`**.
+
+El dato no se perdía: seguía intacto en el documento crudo, y
+`npm run migrate:registros-patronales` lo recupera —de hecho lo recuperó, y de
+paso sumó los tres de la nómina.
+
+### La corrección
+
+Que la migración esté pendiente es un estado transitorio y legítimo; **emitir un
+registro roto por contrato, no**. `toJSON` descarta los que no tengan número, en
+`companies` y por simetría en `clients`.
+
+Así, un entorno a medio migrar devuelve **menos** registros, nunca uno
+malformado. El front puede confiar en que `numero` es siempre una cadena.
+
+### Lo que no se cambió, y por qué
+
+La migración **ya saltaba** las filas sin número —tanto en la agregación como al
+normalizar— así que no había nada que arreglar ahí. Y el `POST` tampoco: exige
+entre 3 y 30 caracteres. Ninguno de los dos podía crear esto.
+
+### La lección
+
+Un cambio de forma en un campo persistido deja el sistema en dos estados
+—migrado y sin migrar— y **los dos tienen que devolver algo válido**. Aquí la
+lectura no se defendía del estado viejo. Vale para las fases que quedan: cuando
+la 4 vuelva obligatorios los registros del proyecto, los tres proyectos sin ellos
+son ese mismo estado intermedio.

@@ -512,6 +512,36 @@ describe('registros patronales de una empresa', () => {
     expect(noExiste.status).toBe(404)
   })
 
+  /*
+   * Lo reportó el front: un registro sin número llegaba a la interfaz. No venía
+   * del archivo ni de una prueba — era una base a medio migrar de D-64, donde
+   * esto era `[String]`. Mongoose convierte la cadena en subdocumento, no sabe
+   * dónde ponerla, y sale uno sin `numero` (D-68).
+   */
+  it('nunca devuelve un registro sin número, ni con datos a medio migrar', async () => {
+    const { token } = await admin()
+    const empresa = await crearEmpresa()
+
+    // Se escribe con el driver crudo el formato VIEJO, saltándose el esquema.
+    await mongoose.connection.db
+      .collection('companies')
+      .updateOne(
+        { _id: empresa._id },
+        { $set: { registrosPatronales: ['R13-77767-10-5'] } }
+      )
+
+    const res = await request(app).get(`${RUTA}/${empresa._id}`).set(auth(token))
+
+    expect(res.status).toBe(200)
+    // El roto no se emite: el contrato promete `numero: string`.
+    expect(res.body.data.empresa.registrosPatronales).toEqual([])
+    // Y el dato sigue en la base, listo para que la migración lo recupere.
+    const crudo = await mongoose.connection.db
+      .collection('companies')
+      .findOne({ _id: empresa._id })
+    expect(crudo.registrosPatronales).toEqual(['R13-77767-10-5'])
+  })
+
   it('400 con un número demasiado corto', async () => {
     const { token } = await admin()
     const empresa = await crearEmpresa()
