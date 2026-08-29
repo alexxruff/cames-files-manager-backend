@@ -11,7 +11,10 @@ const {
   clientIdValidation,
   createClientValidation,
   updateClientValidation,
-  clientEstadoValidation
+  clientEstadoValidation,
+  addConstructionRegistrationValidation,
+  updateConstructionRegistrationValidation,
+  constructionRegistrationEstadoValidation
 } = require('../../../validations/clientValidation')
 
 const router = express.Router()
@@ -55,6 +58,37 @@ router.patch(
   clientEstadoValidation,
   validateRequest,
   asyncHandler(clientController.setEstado)
+)
+
+/*
+ * Registros de obra del cliente (D-66). Sub-recurso, igual que los registros
+ * patronales bajo la empresa: no tienen vida fuera de su cliente.
+ *
+ * Mismo permiso que administrar clientes —`rh_admin` y `jefe_area`—, no el de
+ * plataforma: son dato operativo del cliente, no configuración del grupo.
+ */
+router.post(
+  '/:id/registros-obra',
+  administrarClientes,
+  addConstructionRegistrationValidation,
+  validateRequest,
+  asyncHandler(clientController.addRegistroObra)
+)
+
+router.patch(
+  '/:id/registros-obra/:roId',
+  administrarClientes,
+  updateConstructionRegistrationValidation,
+  validateRequest,
+  asyncHandler(clientController.updateRegistroObra)
+)
+
+router.patch(
+  '/:id/registros-obra/:roId/estado',
+  administrarClientes,
+  constructionRegistrationEstadoValidation,
+  validateRequest,
+  asyncHandler(clientController.setEstadoRegistroObra)
 )
 
 module.exports = router

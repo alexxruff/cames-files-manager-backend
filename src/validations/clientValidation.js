@@ -118,3 +118,46 @@ exports.clientEstadoValidation = [
 
 exports.PATRON_RFC = PATRON_RFC
 exports.CAMPOS_CLIENTE = CAMPOS_CLIENTE
+
+/**
+ * Registros de obra del cliente (D-66). Simétricos a los registros patronales de
+ * la empresa: número y descripción; el `_id` lo pone la base.
+ */
+const numeroObra = (obligatorio) => {
+  const regla = body('numero')
+  return (obligatorio ? regla : regla.optional())
+    .trim()
+    .isLength({ min: 3, max: 30 })
+    .withMessage('El número debe tener entre 3 y 30 caracteres')
+}
+
+const descripcionObra = () =>
+  body('descripcion')
+    .optional({ values: 'null' })
+    .trim()
+    .isLength({ max: 120 })
+    .withMessage('La descripción no puede exceder 120 caracteres')
+
+exports.addConstructionRegistrationValidation = [
+  param('id').isMongoId().withMessage('El cliente indicado no es válido'),
+  numeroObra(true),
+  descripcionObra()
+]
+
+exports.updateConstructionRegistrationValidation = [
+  param('id').isMongoId().withMessage('El cliente indicado no es válido'),
+  param('roId').isMongoId().withMessage('El registro de obra indicado no es válido'),
+  body().custom((cuerpo) => {
+    if (Object.keys(cuerpo || {}).length === 0)
+      throw new Error('No hay nada que actualizar')
+    return true
+  }),
+  numeroObra(false),
+  descripcionObra()
+]
+
+exports.constructionRegistrationEstadoValidation = [
+  param('id').isMongoId().withMessage('El cliente indicado no es válido'),
+  param('roId').isMongoId().withMessage('El registro de obra indicado no es válido'),
+  body('activo').isBoolean().withMessage('activo debe ser verdadero o falso')
+]

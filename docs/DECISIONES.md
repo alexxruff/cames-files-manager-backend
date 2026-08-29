@@ -2630,3 +2630,54 @@ que nadie había capturado. Se les pone una descripción que dice de dónde sali
 La baja de un registro patronal **todavía no comprueba nada**, porque aún nadie
 lo referencia. Cuando el proyecto lo haga (Fase 3), aquí entra el candado de «no
 se da de baja uno que un proyecto en curso esté usando».
+
+## D-66 · Registros de obra en el cliente
+
+**Decisión.** `clients.registrosObra` — subdocumentos con `_id`, uno o varios por
+cliente, con sus rutas de alta, edición y baja. Es la Fase 2 del plan
+(`PLAN-OBRA-CONTRATOS.md`).
+
+Simétrico a los registros patronales (D-65) y por las mismas razones: el proyecto
+tendrá que **apuntar a uno**, así que necesita identidad propia; el número es
+editable porque quien lo referencia apunta al `_id`; y se dan de baja con
+`activo`, nunca se borran.
+
+### No confundirlo con el registro patronal
+
+Son ramas distintas del modelo, y mezclarlas es el error que este trabajo intenta
+evitar:
+
+|                       | Pertenece a | Da al proyecto       | Origen de                      |
+| --------------------- | ----------- | -------------------- | ------------------------------ |
+| **Registro patronal** | la EMPRESA  | su contexto patronal | —                              |
+| **Registro de obra**  | el CLIENTE  | su obra              | **los SIROC** de sus contratos |
+
+El SIROC **no** sale del registro patronal.
+
+### Rutas y permiso
+
+```
+POST  /clientes/:id/registros-obra
+PATCH /clientes/:id/registros-obra/:roId
+PATCH /clientes/:id/registros-obra/:roId/estado
+```
+
+Con `MANAGE_CLIENTS` —`rh_admin` y `jefe_area`—, **no** el permiso de plataforma:
+son dato operativo del cliente, no configuración del grupo. Ahí está la
+diferencia con los registros patronales, que sí son de plataforma porque afectan
+a toda la empresa.
+
+### El alcance no acota aquí, y es correcto
+
+Quien administra clientes ve el **catálogo completo** (D-40): es compartido, y
+acotarlo por cartera le impediría registrar la obra de un cliente que todavía no
+ha metido a su cartera. Se comprobó al escribir la prueba, que partía de la
+premisa contraria.
+
+De paso salió que `getById` y el buscador de registros consultaban el cliente dos
+veces; la comprobación de alcance se extrajo a `#assertEnAlcance` y ahora es una.
+
+### Sin migración
+
+No hay datos: el concepto no existía. Los 5 clientes actuales quedan con
+`registrosObra: []`.

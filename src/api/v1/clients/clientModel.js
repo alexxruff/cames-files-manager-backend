@@ -11,6 +11,36 @@ const { normalize } = require('../../../utils/text')
  * El branding y la configuración que este modelo tenía antes se mudaron a
  * `empresas`: el cliente ya no es el eje multi-inquilino.
  */
+/**
+ * Un registro de obra del cliente (D-66).
+ *
+ * Simétrico al registro patronal de la empresa (D-65) y por las mismas razones:
+ * `numero` es el dato, el `_id` es lo que referencia el proyecto, y se dan de
+ * baja con `activo` en vez de borrarse.
+ *
+ * **No confundirlo con el registro patronal.** El patronal pertenece a la
+ * EMPRESA y da el contexto patronal del proyecto; éste pertenece al CLIENTE y es
+ * el origen funcional de los SIROC. Son ramas distintas del modelo.
+ */
+const constructionRegistrationSchema = new mongoose.Schema({
+  numero: {
+    type: String,
+    required: [true, 'El número de registro de obra es requerido'],
+    trim: true,
+    uppercase: true,
+    minlength: [3, 'El registro de obra debe tener al menos 3 caracteres'],
+    maxlength: [30, 'El registro de obra no puede exceder 30 caracteres']
+  },
+  /** Para distinguirlos cuando son varios: la obra, su ubicación… */
+  descripcion: {
+    type: String,
+    trim: true,
+    default: null,
+    maxlength: [120, 'La descripción no puede exceder 120 caracteres']
+  },
+  activo: { type: Boolean, default: true }
+})
+
 const clientSchema = new mongoose.Schema(
   {
     nombre: {
@@ -27,6 +57,15 @@ const clientSchema = new mongoose.Schema(
       // Persona moral (12) o física (13).
       match: [/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/, 'El RFC no tiene un formato válido']
     },
+
+    /**
+     * Registros de obra del cliente. **Uno o varios** (D-66).
+     *
+     * Un proyecto elige exactamente uno de aquí, y de él cuelgan los SIROC de
+     * sus contratos. No se exige ninguno: los clientes que ya existen no los
+     * tienen y obligarlo dejaría inválido lo que ya está guardado.
+     */
+    registrosObra: { type: [constructionRegistrationSchema], default: [] },
 
     contactoNombre: { type: String, trim: true, default: null },
     contactoEmail: { type: String, lowercase: true, trim: true, default: null },
@@ -46,6 +85,12 @@ const clientSchema = new mongoose.Schema(
           _id: ret._id.toString(),
           nombre: ret.nombre,
           rfc: ret.rfc ?? null,
+          registrosObra: (ret.registrosObra || []).map((r) => ({
+            _id: r._id.toString(),
+            numero: r.numero,
+            descripcion: r.descripcion ?? null,
+            activo: r.activo
+          })),
           contactoNombre: ret.contactoNombre ?? null,
           contactoEmail: ret.contactoEmail ?? null,
           contactoTelefono: ret.contactoTelefono ?? null,
@@ -60,6 +105,27 @@ const clientSchema = new mongoose.Schema(
 
 // Único GLOBALMENTE y por nombre normalizado: tener dos veces al mismo cliente
 // rompe el propósito del catálogo compartido.
+/*
+ * El número no se repite DENTRO del cliente (D-66). En el modelo y no en el
+ * servicio, para que valga por cualquier camino. Entre clientes distintos no se
+ * bloquea, mismo criterio que los registros patronales.
+ */
+clientSchema.pre('validate', function registrosObraSinRepetir(next) {
+  const numeros = (this.registrosObra || []).map((r) =>
+    String(r.numero || '')
+      .trim()
+      .toUpperCase()
+  )
+  const repetido = numeros.find((n, i) => n && numeros.indexOf(n) !== i)
+  if (repetido) {
+    this.invalidate(
+      'registrosObra',
+      `El registro de obra ${repetido} ya está en este cliente`
+    )
+  }
+  next()
+})
+
 clientSchema.index({ nombreNormalizado: 1 }, { unique: true })
 clientSchema.index({ activo: 1 })
 /*

@@ -118,25 +118,30 @@ class ClientService {
     const cliente = await Client.findById(id)
     if (!cliente) throw AppError.notFound('El cliente no existe')
 
-    const acceso = contexto.user?.acceso
-    const puedeVerCatalogo =
-      isPlatformAdmin(acceso) || can(acceso, CAPABILITIES.MANAGE_CLIENTS)
-
-    if (!puedeVerCatalogo) {
-      const enSuCartera = await Portfolio.exists({
-        clienteId: cliente._id,
-        activo: true,
-        empresaId: {
-          $in: (contexto.empresasVisibles || []).map(
-            (empresaId) => new mongoose.Types.ObjectId(empresaId)
-          )
-        }
-      })
-      // Fuera de alcance: 404, no 403.
-      if (!enSuCartera) throw AppError.notFound('El cliente no existe')
-    }
-
+    await this.#assertEnAlcance(cliente, contexto)
     return { cliente: cliente.toJSON() }
+  }
+
+  /**
+   * Quien ADMINISTRA clientes ve el catálogo completo (D-40): es compartido, y
+   * acotarlo por cartera le impediría dar de alta a quien todavía no está en
+   * ninguna. Al resto se le exige que esté en la cartera de una empresa suya, y
+   * fuera de alcance es **404, no 403**.
+   */
+  async #assertEnAlcance(cliente, contexto) {
+    const acceso = contexto.user?.acceso
+    if (isPlatformAdmin(acceso) || can(acceso, CAPABILITIES.MANAGE_CLIENTS)) return
+
+    const enSuCartera = await Portfolio.exists({
+      clienteId: cliente._id,
+      activo: true,
+      empresaId: {
+        $in: (contexto.empresasVisibles || []).map(
+          (empresaId) => new mongoose.Types.ObjectId(empresaId)
+        )
+      }
+    })
+    if (!enSuCartera) throw AppError.notFound('El cliente no existe')
   }
 
   async create(datos) {
@@ -181,6 +186,105 @@ class ClientService {
   }
 
   /** Sólo estos campos; el resto se ignora en vez de escribirse por accidente. */
+  // ─── Registros de obra (D-66) ─────────────────────────────────────────────
+
+  /**
+   * Alta de un registro de obra. **Idempotente por número**, igual que los
+   * registros patronales (D-65) y por lo mismo: la interfaz no tiene que
+   * preguntar antes de crear.
+   */
+  async agregarRegistroObra(clienteId, { numero, descripcion }, contexto = {}) {
+    const cliente = await this.#buscarEnAlcance(clienteId, contexto)
+    const buscado = String(numero).trim().toUpperCase()
+
+    const existente = cliente.registrosObra.find((r) => r.numero === buscado)
+    if (existente) {
+      return {
+        cliente: cliente.toJSON(),
+        registro: this.#registro(existente),
+        yaExistia: true
+      }
+    }
+
+    cliente.registrosObra.push({ numero: buscado, descripcion: descripcion || null })
+    await cliente.save()
+
+    const creado = cliente.registrosObra.find((r) => r.numero === buscado)
+    return {
+      cliente: cliente.toJSON(),
+      registro: this.#registro(creado),
+      yaExistia: false
+    }
+  }
+
+  /**
+   * Corregir número o descripción. El **número sí se puede cambiar**: quien lo
+   * referencie apunta al `_id`, así que corregir un dígito no rompe nada.
+   */
+  async actualizarRegistroObra(clienteId, registroId, datos, contexto = {}) {
+    const { cliente, registro } = await this.#buscarRegistroObra(
+      clienteId,
+      registroId,
+      contexto
+    )
+
+    if (datos.numero !== undefined) registro.numero = datos.numero
+    if (datos.descripcion !== undefined) registro.descripcion = datos.descripcion || null
+
+    await cliente.save()
+    return { cliente: cliente.toJSON(), registro: this.#registro(registro) }
+  }
+
+  /**
+   * Dar de baja o reactivar.
+   *
+   * No lo borra: un proyecto puede seguir apuntando a uno que ya no se usa para
+   * obras nuevas. El candado de «no se da de baja uno que un proyecto en curso
+   * esté usando» entra en la fase 3, cuando el proyecto empiece a referenciarlos.
+   */
+  async setEstadoRegistroObra(clienteId, registroId, activo, contexto = {}) {
+    const { cliente, registro } = await this.#buscarRegistroObra(
+      clienteId,
+      registroId,
+      contexto
+    )
+
+    registro.activo = activo
+    await cliente.save()
+    return { cliente: cliente.toJSON(), registro: this.#registro(registro) }
+  }
+
+  #registro(r) {
+    return {
+      _id: r._id.toString(),
+      numero: r.numero,
+      descripcion: r.descripcion ?? null,
+      activo: r.activo
+    }
+  }
+
+  /** El cliente, comprobando el alcance. Una sola consulta, no dos. */
+  async #buscarEnAlcance(clienteId, contexto) {
+    if (!mongoose.isValidObjectId(clienteId)) {
+      throw new AppError(400, 'El cliente indicado no es válido')
+    }
+    const cliente = await Client.findById(clienteId)
+    if (!cliente) throw AppError.notFound('El cliente no existe')
+
+    await this.#assertEnAlcance(cliente, contexto)
+    return cliente
+  }
+
+  async #buscarRegistroObra(clienteId, registroId, contexto) {
+    const cliente = await this.#buscarEnAlcance(clienteId, contexto)
+    if (!mongoose.isValidObjectId(registroId)) {
+      throw new AppError(400, 'El registro de obra indicado no es válido')
+    }
+    const registro = cliente.registrosObra.id(registroId)
+    if (!registro) throw AppError.notFound('El registro de obra no existe')
+    return { cliente, registro }
+  }
+
   #soloCamposPermitidos(datos, { parcial = false } = {}) {
     const campos = [
       'nombre',

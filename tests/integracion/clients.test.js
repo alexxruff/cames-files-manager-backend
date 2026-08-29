@@ -5,6 +5,7 @@ const Client = require('../../src/api/v1/clients/clientModel')
 const {
   crearEmpleadoConSesion,
   crearEmpresa,
+  crearCliente,
   agregarACartera,
   auth
 } = require('../helpers/factories')
@@ -534,5 +535,169 @@ describe('Alcance del catálogo de clientes', () => {
     const { token } = await sesionAdmin()
     const res = await request(app).get(`${RUTA}?catalogoCompleto=quizas`).set(auth(token))
     expect(res.status).toBe(400)
+  })
+})
+
+/**
+ * Registros de obra del cliente (D-66).
+ *
+ * Simétricos a los registros patronales de la empresa (D-65), con una diferencia
+ * que importa: el cliente vive acotado por CARTERA, así que aquí sí hay que
+ * comprobar el alcance.
+ */
+describe('registros de obra de un cliente', () => {
+  const RO = (id) => `${RUTA}/${id}/registros-obra`
+
+  /** Sesión que SÍ alcanza al cliente: está en la cartera de su empresa. */
+  const conCliente = async () => {
+    const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+    const cliente = await crearCliente({ nombre: 'Constructora Del Valle' })
+    await agregarACartera(sesion.empresa, cliente)
+    return { ...sesion, cliente }
+  }
+
+  it('se agregan con _id propio, en mayúsculas', async () => {
+    const { token, cliente } = await conCliente()
+
+    const res = await request(app)
+      .post(RO(cliente._id))
+      .set(auth(token))
+      .send({ numero: 'ob-2026-0145', descripcion: 'Torre Andares' })
+
+    expect(res.status).toBe(201)
+    expect(res.body.data.registro).toMatchObject({
+      numero: 'OB-2026-0145',
+      descripcion: 'Torre Andares',
+      activo: true
+    })
+    expect(res.body.data.registro._id).toMatch(/^[0-9a-f]{24}$/)
+    expect(res.body.data.cliente.registrosObra).toHaveLength(1)
+  })
+
+  it('varios por cliente, y el proyecto elegirá uno', async () => {
+    const { token, cliente } = await conCliente()
+
+    for (const numero of ['OB-0001', 'OB-0002', 'OB-0003']) {
+      const res = await request(app)
+        .post(RO(cliente._id))
+        .set(auth(token))
+        .send({ numero })
+      expect(res.status).toBe(201)
+    }
+
+    const res = await request(app).get(`${RUTA}/${cliente._id}`).set(auth(token))
+    expect(res.body.data.cliente.registrosObra).toHaveLength(3)
+  })
+
+  it('es idempotente por número: el mismo dos veces no lo duplica', async () => {
+    const { token, cliente } = await conCliente()
+    const primera = await request(app)
+      .post(RO(cliente._id))
+      .set(auth(token))
+      .send({ numero: 'OB-0001' })
+
+    const segunda = await request(app)
+      .post(RO(cliente._id))
+      .set(auth(token))
+      .send({ numero: 'ob-0001' })
+
+    expect(segunda.status).toBe(200)
+    expect(segunda.body.data.registro._id).toBe(primera.body.data.registro._id)
+    expect(segunda.body.data.cliente.registrosObra).toHaveLength(1)
+  })
+
+  it('se corrige el número sin perder el _id', async () => {
+    const { token, cliente } = await conCliente()
+    const alta = await request(app)
+      .post(RO(cliente._id))
+      .set(auth(token))
+      .send({ numero: 'OB-0001' })
+    const registroId = alta.body.data.registro._id
+
+    const res = await request(app)
+      .patch(`${RO(cliente._id)}/${registroId}`)
+      .set(auth(token))
+      .send({ numero: 'OB-0002', descripcion: 'Corregido' })
+
+    expect(res.body.data.registro).toMatchObject({
+      _id: registroId,
+      numero: 'OB-0002',
+      descripcion: 'Corregido'
+    })
+  })
+
+  it('se da de baja sin borrar, y se reactiva', async () => {
+    const { token, cliente } = await conCliente()
+    const alta = await request(app)
+      .post(RO(cliente._id))
+      .set(auth(token))
+      .send({ numero: 'OB-0001' })
+    const registroId = alta.body.data.registro._id
+
+    const baja = await request(app)
+      .patch(`${RO(cliente._id)}/${registroId}/estado`)
+      .set(auth(token))
+      .send({ activo: false })
+
+    expect(baja.body.data.registro.activo).toBe(false)
+    expect(baja.body.data.cliente.registrosObra).toHaveLength(1)
+
+    const alta2 = await request(app)
+      .patch(`${RO(cliente._id)}/${registroId}/estado`)
+      .set(auth(token))
+      .send({ activo: true })
+    expect(alta2.body.data.registro.activo).toBe(true)
+  })
+
+  /*
+   * Quien administra clientes alcanza a CUALQUIERA, esté o no en su cartera: el
+   * catálogo es compartido (D-40). Acotarlo aquí le impediría registrar la obra
+   * de un cliente que todavía no ha metido a su cartera.
+   */
+  it('quien administra clientes alcanza a uno fuera de su cartera', async () => {
+    const { token } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+    const ajeno = await crearCliente({ nombre: 'De Otra Cartera' })
+
+    const res = await request(app)
+      .post(RO(ajeno._id))
+      .set(auth(token))
+      .send({ numero: 'OB-0001' })
+
+    expect(res.status).toBe(201)
+  })
+
+  it('404 con un cliente que no existe', async () => {
+    const { token } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+
+    const res = await request(app)
+      .post(RO(new mongoose.Types.ObjectId()))
+      .set(auth(token))
+      .send({ numero: 'OB-0001' })
+
+    expect(res.status).toBe(404)
+  })
+
+  it('403 para quien no administra clientes', async () => {
+    const { cliente } = await conCliente()
+    const { token } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_consulta' })
+
+    const res = await request(app)
+      .post(RO(cliente._id))
+      .set(auth(token))
+      .send({ numero: 'OB-0001' })
+
+    expect(res.status).toBe(403)
+  })
+
+  it('400 con un número demasiado corto', async () => {
+    const { token, cliente } = await conCliente()
+
+    const res = await request(app)
+      .post(RO(cliente._id))
+      .set(auth(token))
+      .send({ numero: 'ab' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.errors[0].path).toBe('numero')
   })
 })

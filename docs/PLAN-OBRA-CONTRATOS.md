@@ -2,7 +2,7 @@
 
 > **Plan de trabajo, no especificación cerrada.** Se implementa **una fase a la
 > vez**. Al terminar cada una, el sistema queda funcional y consistente.
-> Estado: **Fase 1 implementada** (D-65). Siguiente: Fase 2.
+> Estado: **Fases 1 y 2 implementadas** (D-65, D-66). Siguiente: Fase 3.
 
 ---
 
@@ -329,7 +329,7 @@ nómina). _Depende de: G5._
 **Resultado:** las empresas tienen registros patronales referenciables y
 Maquinaria CAMES queda con sus cuatro, sin captura manual.
 
-### FASE 2 — Registro de obra en el cliente
+### FASE 2 — Registro de obra en el cliente ✅ HECHA (D-66)
 
 Simétrica a la 1, sobre `clients`. Sin migración: no hay datos.
 **Resultado:** los clientes pueden registrar sus obras.

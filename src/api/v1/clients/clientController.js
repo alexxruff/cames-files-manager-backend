@@ -63,6 +63,54 @@ class ClientController {
         : 'Cliente desactivado. No se borra: su historial se conserva.'
     )
   }
+
+  // ─── Registros de obra (D-66) ─────────────────────────────────────────────
+
+  /** POST /clientes/:id/registros-obra — idempotente por número */
+  addRegistroObra = async (req, res) => {
+    const { cliente, registro, yaExistia } = await clientService.agregarRegistroObra(
+      req.params.id,
+      req.body,
+      this.#contexto(req)
+    )
+
+    if (yaExistia)
+      return ok(res, { cliente, registro }, 'Ese registro de obra ya existía')
+
+    req.log.info('Registro de obra agregado', {
+      clienteId: req.params.id,
+      numero: registro.numero
+    })
+    return created(res, { cliente, registro }, 'Registro de obra agregado')
+  }
+
+  /** PATCH /clientes/:id/registros-obra/:roId */
+  updateRegistroObra = async (req, res) => {
+    const datos = await clientService.actualizarRegistroObra(
+      req.params.id,
+      req.params.roId,
+      req.body,
+      this.#contexto(req)
+    )
+    return ok(res, datos, 'Registro de obra actualizado')
+  }
+
+  /** PATCH /clientes/:id/registros-obra/:roId/estado */
+  setEstadoRegistroObra = async (req, res) => {
+    const datos = await clientService.setEstadoRegistroObra(
+      req.params.id,
+      req.params.roId,
+      req.body.activo,
+      this.#contexto(req)
+    )
+    return ok(
+      res,
+      datos,
+      datos.registro.activo
+        ? 'Registro de obra reactivado'
+        : 'Registro de obra dado de baja'
+    )
+  }
 }
 
 module.exports = new ClientController()
