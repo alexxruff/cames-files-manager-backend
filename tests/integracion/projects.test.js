@@ -5,6 +5,7 @@ const Project = require('../../src/api/v1/projects/projectModel')
 const Assignment = require('../../src/api/v1/assignments/assignmentModel')
 const Company = require('../../src/api/v1/companies/companyModel')
 const Client = require('../../src/api/v1/clients/clientModel')
+const { normalize } = require('../../src/utils/text')
 const {
   crearEmpresa,
   crearCliente,
@@ -927,5 +928,77 @@ describe('registro patronal y registro de obra del proyecto (D-67)', () => {
       .send({ activo: false })
 
     expect(res.status).toBe(200)
+  })
+
+  /*
+   * El front dedujo esta regla solo, a partir de la nota de D-69, y montó su
+   * validación encima: obligatorios al crear, no al editar. Si el backend
+   * dejara de cumplirla, un proyecto anterior al cambio se volvería inmodificable
+   * incluso para corregirle el nombre.
+   */
+  it('un proyecto HEREDADO sin registros se sigue editando (D-69)', async () => {
+    const e = await escenario()
+
+    // Insercion cruda: es la unica forma de reproducir un documento guardado
+    // antes del cambio, porque el alta ya no lo permite.
+    const heredado = await Project.collection.insertOne({
+      empresaId: e.empresa._id,
+      clienteId: e.cliente._id,
+      registroPatronalId: null,
+      registroObraId: null,
+      nombre: 'Proyecto Anterior',
+      nombreNormalizado: normalize('Proyecto Anterior'),
+      fechaInicio: '2025-01-01',
+      fechaFinEstimada: '2025-12-31',
+      fechaFinReal: null,
+      estado: 'en_curso',
+      categorias: [e.categoria._id],
+      aplazamientos: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    })
+    const id = heredado.insertedId.toString()
+
+    const res = await request(app)
+      .patch(`${RUTA}/${id}`)
+      .set(auth(e.token))
+      .send({ nombre: 'Proyecto Anterior Corregido' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.proyecto.nombre).toBe('Proyecto Anterior Corregido')
+    // Y siguen vacios: editar el nombre no los inventa.
+    expect(res.body.data.proyecto.registroPatronalId).toBeNull()
+    expect(res.body.data.proyecto.registroObra).toBeNull()
+  })
+
+  it('pero cambiarle el cliente le sigue exigiendo el registro de obra', async () => {
+    const e = await escenario()
+    const heredado = await Project.collection.insertOne({
+      empresaId: e.empresa._id,
+      clienteId: e.cliente._id,
+      registroPatronalId: null,
+      registroObraId: null,
+      nombre: 'Otro Anterior',
+      nombreNormalizado: normalize('Otro Anterior'),
+      fechaInicio: '2025-01-01',
+      fechaFinEstimada: '2025-12-31',
+      fechaFinReal: null,
+      estado: 'en_curso',
+      categorias: [e.categoria._id],
+      aplazamientos: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    })
+
+    const nuevoCliente = await crearCliente({ nombre: 'Cliente Distinto' })
+    await agregarACartera(e.empresa, nuevoCliente)
+
+    const res = await request(app)
+      .patch(`${RUTA}/${heredado.insertedId}`)
+      .set(auth(e.token))
+      .send({ clienteId: nuevoCliente._id.toString() })
+
+    expect(res.status).toBe(400)
+    expect(res.body.errors[0].path).toBe('registroObraId')
   })
 })
