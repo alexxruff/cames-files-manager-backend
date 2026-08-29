@@ -273,13 +273,26 @@ empresa los que falten. **Es el que más valor da y no captura nada a mano.**
 tardía): `affiliations.registroPatronalId`, resuelto por el número. Los cuatro
 valores resuelven; lo que no resuelva se reporta y se deja nulo.
 
-**M4 — poblar los proyectos existentes.** 3 proyectos sin los dos campos. **No
-hay dato del cual derivarlos**: hay que elegirlos a mano o dejarlos nulos. Por
-eso la fase 3 los agrega como opcionales y la 4 los vuelve obligatorios sólo
-cuando estén poblados.
+**M4 — los proyectos existentes.** No tienen los dos campos y no hay dato del
+cual derivarlos. Pero **son datos de prueba**, no proyectos reales (confirmado
+por el cliente el 29 de agosto de 2026), así que deja de ser una decisión de
+negocio y pasa a ser limpieza. Dos caminos, los dos limpios:
 
-**Riesgo principal:** hacer `required` antes de poblar deja los 3 proyectos
+- **Borrarlos** y arrancar con proyectos reales creados ya con el modelo nuevo.
+- **Rellenarlos** con el primer registro activo de su empresa y de su cliente,
+  sólo para que el campo obligatorio no los invalide, si el front todavía se
+  apoya en ellos para probar pantallas.
+
+Pendiente de elegir al empezar la Fase 4.
+
+**Riesgo principal:** hacer `required` antes de resolverlos deja esos proyectos
 inválidos, y cualquier `save()` sobre ellos —aplazar, finalizar, editar— falla.
+Es el mismo estado intermedio que causó D-68: un cambio de forma deja el sistema
+en dos estados y los dos tienen que devolver algo válido.
+
+**Ojo:** la base local y la de Fly **divergieron** (3 empresas contra 2), así que
+los proyectos de cada lado no son necesariamente los mismos. Hay que mirar cada
+entorno por separado.
 
 ---
 
