@@ -32,7 +32,8 @@
     "migrate:numeros": "node scripts/migrateEmployeeNumbers.js",
     "migrate:areas": "node scripts/migrateAreas.js",
     "migrate:jefaturas": "node scripts/migrateAreaLeadership.js",
-    "migrate:condiciones": "node scripts/migrateLaborConditions.js"
+    "migrate:condiciones": "node scripts/migrateLaborConditions.js",
+    "migrate:registros-patronales": "node scripts/migrateEmployerRegistrations.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1116.0",

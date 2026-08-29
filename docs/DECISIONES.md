@@ -2567,3 +2567,66 @@ Queda abierto si un registro patronal debe ser **único entre empresas**. Un
 registro del IMSS pertenece a un solo patrón, así que en teoría sí — pero no se
 puso índice único sin confirmarlo, porque bloquearía casos legítimos que este
 equipo conoce mejor que yo.
+
+## D-65 · Los registros patronales dejan de ser cadenas y pasan a tener identidad
+
+**Decisión.** `companies.registrosPatronales` pasa de `[String]` a
+**subdocumentos con `_id`**, con sus rutas de alta, edición y baja. Es la Fase 1
+del plan de obra y contratos (`PLAN-OBRA-CONTRATOS.md`).
+
+### Por qué se rehace algo de anteayer
+
+D-64 los guardó como cadenas, y para lo que se pidió entonces —guardarlos— estaba
+bien. En cuanto el **proyecto tiene que apuntar a uno**, deja de servir: no se
+puede referenciar una posición de un arreglo de cadenas, y corregir un dígito
+rompería la referencia sin que nada falle.
+
+Con `_id` propio la referencia sobrevive a que se corrija el número. Por eso
+**el número sí es editable**: es justo para lo que sirve la identidad.
+
+### Subdocumentos, no colección aparte
+
+No tienen vida fuera de su empresa, no se comparten y la empresa ya se carga
+donde hacen falta. El `_id` de un subdocumento es un ObjectId real y único, así
+que `projects.registroPatronalId` se podrá indexar igual; lo único que se pierde
+es `populate`, que aquí no hace falta.
+
+### Único dentro de la empresa, libre entre empresas
+
+La invariante va en un `pre('validate')` del modelo y no en el servicio, para que
+valga por cualquier camino —alta, edición o un script— y no sólo por la ruta que
+se acuerde de comprobarlo. Entre empresas distintas **no se bloquea**: no hay
+evidencia de que sea imposible y un índice equivocado frenaría trabajo real.
+
+### Rutas
+
+```
+POST  /empresas/:id/registros-patronales             idempotente por número
+PATCH /empresas/:id/registros-patronales/:rpId       número y descripción
+PATCH /empresas/:id/registros-patronales/:rpId/estado
+```
+
+Sub-recurso bajo la empresa, como el acceso de un empleado, y con el mismo
+permiso que editarla (`MANAGE_COMPANIES`).
+
+`PATCH /empresas/:id` **deja de aceptar** `registrosPatronales`: responde `400`
+con la pista de la ruta nueva.
+
+### La migración es lo que más valor da
+
+`npm run migrate:registros-patronales` hace dos cosas:
+
+1. Convierte las cadenas que existan en subdocumentos.
+2. **Los saca del archivo de nómina.** Cada adscripción ya guarda el registro de
+   su persona en `condiciones.registroPatronal` (D-63): agrupando por empresa
+   salen los que de verdad usa, sin capturar nada.
+
+En los datos reales eso lleva a Maquinaria CAMES **de 1 a 4** registros
+—`H67-29973-10-5` (13 personas), `Z61-14090-10-9` (2) y `H68-39212-10-5` (2)—
+que nadie había capturado. Se les pone una descripción que dice de dónde salieron.
+
+### Lo que queda para fases siguientes
+
+La baja de un registro patronal **todavía no comprueba nada**, porque aún nadie
+lo referencia. Cuando el proyecto lo haga (Fase 3), aquí entra el candado de «no
+se da de baja uno que un proyecto en curso esté usando».

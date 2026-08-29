@@ -264,38 +264,17 @@ describe('PATCH /api/v1/empresas/:id', () => {
     })
   })
 
-  it('guarda uno o varios registros patronales, en mayúsculas y sin repetidos', async () => {
+  it('ya NO acepta registrosPatronales: dice a dónde fueron (D-65)', async () => {
     const { token } = await admin()
     const empresa = await crearEmpresa()
 
     const res = await request(app)
       .patch(`${RUTA}/${empresa._id}`)
       .set(auth(token))
-      .send({
-        registrosPatronales: ['r13-77767-10-5', 'R13-77767-10-5', 'y54-12345-10-9']
-      })
+      .send({ registrosPatronales: [{ numero: 'R13-77767-10-5' }] })
 
-    expect(res.status).toBe(200)
-    expect(res.body.data.empresa.registrosPatronales).toEqual([
-      'R13-77767-10-5',
-      'Y54-12345-10-9'
-    ])
-  })
-
-  it('se reemplaza la lista completa: mandar [] los deja sin ninguno', async () => {
-    const { token } = await admin()
-    const empresa = await crearEmpresa()
-    await request(app)
-      .patch(`${RUTA}/${empresa._id}`)
-      .set(auth(token))
-      .send({ registrosPatronales: ['R13-77767-10-5'] })
-
-    const res = await request(app)
-      .patch(`${RUTA}/${empresa._id}`)
-      .set(auth(token))
-      .send({ registrosPatronales: [] })
-
-    expect(res.body.data.empresa.registrosPatronales).toEqual([])
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain('/registros-patronales')
   })
 
   it('409 si el nombre o el RFC ya son de otra empresa', async () => {
@@ -384,5 +363,165 @@ describe('PATCH /api/v1/empresas/:id/estado', () => {
 
     expect(res.status).toBe(400)
     expect(res.body.message).toContain('1 persona adscrita')
+  })
+})
+
+/**
+ * Registros patronales como entidad con identidad propia (D-65).
+ *
+ * Nacieron como cadenas sueltas (D-64). En cuanto el proyecto tiene que apuntar
+ * a uno, eso deja de servir: hace falta un `_id` que sobreviva a que se corrija
+ * el número.
+ */
+describe('registros patronales de una empresa', () => {
+  const admin = () =>
+    crearEmpleadoConSesion({ nivelAcceso: 'rh_admin', alcanceGlobal: true })
+  const RP = (id) => `${RUTA}/${id}/registros-patronales`
+
+  it('se agregan con _id propio, en mayúsculas', async () => {
+    const { token } = await admin()
+    const empresa = await crearEmpresa()
+
+    const res = await request(app)
+      .post(RP(empresa._id))
+      .set(auth(token))
+      .send({ numero: 'r13-77767-10-5', descripcion: 'Zapopan' })
+
+    expect(res.status).toBe(201)
+    expect(res.body.data.registro).toMatchObject({
+      numero: 'R13-77767-10-5',
+      descripcion: 'Zapopan',
+      activo: true
+    })
+    expect(res.body.data.registro._id).toMatch(/^[0-9a-f]{24}$/)
+    expect(res.body.data.empresa.registrosPatronales).toHaveLength(1)
+  })
+
+  it('varios por empresa, sin tope', async () => {
+    const { token } = await admin()
+    const empresa = await crearEmpresa()
+
+    for (const numero of ['R13-77767-10-5', 'H67-29973-10-5', 'Z61-14090-10-9']) {
+      const res = await request(app)
+        .post(RP(empresa._id))
+        .set(auth(token))
+        .send({ numero })
+      expect(res.status).toBe(201)
+    }
+
+    const empresaFinal = await Company.findById(empresa._id)
+    expect(empresaFinal.registrosPatronales).toHaveLength(3)
+  })
+
+  it('es idempotente por número: el mismo dos veces no lo duplica', async () => {
+    const { token } = await admin()
+    const empresa = await crearEmpresa()
+    const primera = await request(app)
+      .post(RP(empresa._id))
+      .set(auth(token))
+      .send({ numero: 'R13-77767-10-5' })
+
+    const segunda = await request(app)
+      .post(RP(empresa._id))
+      .set(auth(token))
+      .send({ numero: 'r13-77767-10-5' })
+
+    expect(segunda.status).toBe(200)
+    expect(segunda.body.data.registro._id).toBe(primera.body.data.registro._id)
+    expect(segunda.body.data.empresa.registrosPatronales).toHaveLength(1)
+  })
+
+  it('el mismo número SÍ puede estar en otra empresa', async () => {
+    const { token } = await admin()
+    const una = await crearEmpresa({ nombre: 'Una SA' })
+    const otra = await crearEmpresa({ nombre: 'Otra SA' })
+
+    await request(app)
+      .post(RP(una._id))
+      .set(auth(token))
+      .send({ numero: 'R13-77767-10-5' })
+    const res = await request(app)
+      .post(RP(otra._id))
+      .set(auth(token))
+      .send({ numero: 'R13-77767-10-5' })
+
+    expect(res.status).toBe(201)
+  })
+
+  it('se corrige el número sin perder el _id: es para lo que sirve', async () => {
+    const { token } = await admin()
+    const empresa = await crearEmpresa()
+    const alta = await request(app)
+      .post(RP(empresa._id))
+      .set(auth(token))
+      .send({ numero: 'R13-77767-10-4' })
+    const registroId = alta.body.data.registro._id
+
+    const res = await request(app)
+      .patch(`${RP(empresa._id)}/${registroId}`)
+      .set(auth(token))
+      .send({ numero: 'R13-77767-10-5', descripcion: 'Corregido' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.registro).toMatchObject({
+      _id: registroId,
+      numero: 'R13-77767-10-5',
+      descripcion: 'Corregido'
+    })
+  })
+
+  it('se da de baja sin borrar, y se reactiva', async () => {
+    const { token } = await admin()
+    const empresa = await crearEmpresa()
+    const alta = await request(app)
+      .post(RP(empresa._id))
+      .set(auth(token))
+      .send({ numero: 'R13-77767-10-5' })
+    const registroId = alta.body.data.registro._id
+
+    const baja = await request(app)
+      .patch(`${RP(empresa._id)}/${registroId}/estado`)
+      .set(auth(token))
+      .send({ activo: false })
+
+    expect(baja.body.data.registro.activo).toBe(false)
+    // Sigue ahí: no se borró.
+    expect(baja.body.data.empresa.registrosPatronales).toHaveLength(1)
+
+    const alta2 = await request(app)
+      .patch(`${RP(empresa._id)}/${registroId}/estado`)
+      .set(auth(token))
+      .send({ activo: true })
+    expect(alta2.body.data.registro.activo).toBe(true)
+  })
+
+  it('403 sin alcance global; 404 con un registro que no existe', async () => {
+    const empresa = await crearEmpresa()
+    const { token } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+    const sinPermiso = await request(app)
+      .post(RP(empresa._id))
+      .set(auth(token))
+      .send({ numero: 'R13-77767-10-5' })
+    expect(sinPermiso.status).toBe(403)
+
+    const { token: global } = await admin()
+    const noExiste = await request(app)
+      .patch(`${RP(empresa._id)}/${new mongoose.Types.ObjectId()}`)
+      .set(auth(global))
+      .send({ numero: 'R13-77767-10-5' })
+    expect(noExiste.status).toBe(404)
+  })
+
+  it('400 con un número demasiado corto', async () => {
+    const { token } = await admin()
+    const empresa = await crearEmpresa()
+
+    const res = await request(app)
+      .post(RP(empresa._id))
+      .set(auth(token))
+      .send({ numero: 'ab' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.errors[0].path).toBe('numero')
   })
 })

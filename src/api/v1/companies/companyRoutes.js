@@ -11,7 +11,10 @@ const {
   companyIdValidation,
   createCompanyValidation,
   updateCompanyValidation,
-  companyEstadoValidation
+  companyEstadoValidation,
+  addEmployerRegistrationValidation,
+  updateEmployerRegistrationValidation,
+  employerRegistrationEstadoValidation
 } = require('../../../validations/companyValidation')
 const portfolioController = require('../portfolios/portfolioController')
 const {
@@ -123,6 +126,39 @@ router.get(
   companyIdValidation,
   validateRequest,
   asyncHandler(affiliationController.jefaturas)
+)
+
+/*
+ * Registros patronales de la empresa (D-65). Sub-recurso, como el acceso de un
+ * empleado: no tienen vida fuera de su empresa, así que se administran bajo ella
+ * y no en una ruta propia.
+ *
+ * Mismo permiso que editar la empresa: afectan a todo el grupo.
+ */
+const administrarEmpresa = requireCapability(CAPABILITIES.MANAGE_COMPANIES)
+
+router.post(
+  '/:id/registros-patronales',
+  administrarEmpresa,
+  addEmployerRegistrationValidation,
+  validateRequest,
+  asyncHandler(companyController.addRegistroPatronal)
+)
+
+router.patch(
+  '/:id/registros-patronales/:rpId',
+  administrarEmpresa,
+  updateEmployerRegistrationValidation,
+  validateRequest,
+  asyncHandler(companyController.updateRegistroPatronal)
+)
+
+router.patch(
+  '/:id/registros-patronales/:rpId/estado',
+  administrarEmpresa,
+  employerRegistrationEstadoValidation,
+  validateRequest,
+  asyncHandler(companyController.setEstadoRegistroPatronal)
 )
 
 module.exports = router

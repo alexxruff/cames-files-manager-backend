@@ -4,28 +4,69 @@ const { body, param, query } = require('express-validator')
 const PATRON_RFC = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/
 
 /**
- * Registros patronales: uno o varios (D-64). Se manda la **lista completa** —no
- * un agrega/quita— así que `[]` los deja sin ninguno.
+ * Registros patronales en el ALTA de la empresa (D-65). Ya no son cadenas sino
+ * objetos con número y descripción; el `_id` lo pone la base.
  */
-const reglasRegistros = (obligatorio = false) => {
-  const regla = body('registrosPatronales')
-  const base = obligatorio ? regla : regla.optional()
-  return base
+const reglasRegistros = () =>
+  body('registrosPatronales')
+    .optional()
     .isArray()
     .withMessage('registrosPatronales debe ser una lista')
     .bail()
     .custom((lista) => {
-      const invalidos = (lista || []).filter(
-        (r) => typeof r !== 'string' || r.trim().length < 3 || r.trim().length > 30
-      )
-      if (invalidos.length > 0) {
-        throw new Error(
-          'Cada registro patronal debe ser texto de entre 3 y 30 caracteres'
-        )
+      for (const r of lista || []) {
+        const numero = r && typeof r === 'object' ? r.numero : r
+        if (
+          typeof numero !== 'string' ||
+          numero.trim().length < 3 ||
+          numero.trim().length > 30
+        ) {
+          throw new Error(
+            'Cada registro patronal necesita un número de entre 3 y 30 caracteres'
+          )
+        }
       }
       return true
     })
+
+const numeroRegistro = (obligatorio) => {
+  const regla = body('numero')
+  return (obligatorio ? regla : regla.optional())
+    .trim()
+    .isLength({ min: 3, max: 30 })
+    .withMessage('El número debe tener entre 3 y 30 caracteres')
 }
+
+const descripcionRegistro = () =>
+  body('descripcion')
+    .optional({ values: 'null' })
+    .trim()
+    .isLength({ max: 120 })
+    .withMessage('La descripción no puede exceder 120 caracteres')
+
+exports.addEmployerRegistrationValidation = [
+  param('id').isMongoId().withMessage('La empresa indicada no es válida'),
+  numeroRegistro(true),
+  descripcionRegistro()
+]
+
+exports.updateEmployerRegistrationValidation = [
+  param('id').isMongoId().withMessage('La empresa indicada no es válida'),
+  param('rpId').isMongoId().withMessage('El registro patronal indicado no es válido'),
+  body().custom((cuerpo) => {
+    if (Object.keys(cuerpo || {}).length === 0)
+      throw new Error('No hay nada que actualizar')
+    return true
+  }),
+  numeroRegistro(false),
+  descripcionRegistro()
+]
+
+exports.employerRegistrationEstadoValidation = [
+  param('id').isMongoId().withMessage('La empresa indicada no es válida'),
+  param('rpId').isMongoId().withMessage('El registro patronal indicado no es válido'),
+  body('activo').isBoolean().withMessage('activo debe ser verdadero o falso')
+]
 
 exports.listCompaniesValidation = [
   query('incluirInactivas')
@@ -67,16 +108,14 @@ exports.updateCompanyValidation = [
     const campos = Object.keys(cuerpo || {})
     if (campos.length === 0) throw new Error('No hay nada que actualizar')
 
-    const permitidos = [
-      'nombre',
-      'rfc',
-      'registrosPatronales',
-      'branding',
-      'configuracion'
-    ]
+    const permitidos = ['nombre', 'rfc', 'branding', 'configuracion']
     const invalidos = campos.filter((c) => !permitidos.includes(c))
     if (invalidos.length > 0) {
-      const pistas = { activo: 'PATCH /empresas/:id/estado' }
+      const pistas = {
+        activo: 'PATCH /empresas/:id/estado',
+        // D-65: dejaron de ser una lista de cadenas y tienen sus propias rutas.
+        registrosPatronales: 'POST /empresas/:id/registros-patronales'
+      }
       const detalle = invalidos
         .map((c) => (pistas[c] ? `${c} (usa ${pistas[c]})` : c))
         .join(', ')
@@ -94,8 +133,7 @@ exports.updateCompanyValidation = [
     .trim()
     .toUpperCase()
     .matches(PATRON_RFC)
-    .withMessage('El RFC no tiene un formato válido'),
-  reglasRegistros()
+    .withMessage('El RFC no tiene un formato válido')
 ]
 
 exports.companyEstadoValidation = [

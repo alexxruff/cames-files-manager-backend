@@ -11,6 +11,32 @@ const { normalize } = require('../../../utils/text')
  *
  * Cambia poco y se lee mucho: buena candidata a caché más adelante.
  */
+/**
+ * Un registro patronal de la empresa (D-65).
+ *
+ * `numero` es el dato; el `_id` es lo que referencia el proyecto. Se dan de baja
+ * con `activo`, nunca se borran: un proyecto puede seguir apuntando a uno que ya
+ * no se usa para obras nuevas.
+ */
+const employerRegistrationSchema = new mongoose.Schema({
+  numero: {
+    type: String,
+    required: [true, 'El número de registro patronal es requerido'],
+    trim: true,
+    uppercase: true,
+    minlength: [3, 'El registro patronal debe tener al menos 3 caracteres'],
+    maxlength: [30, 'El registro patronal no puede exceder 30 caracteres']
+  },
+  /** Para distinguirlos cuando son varios: el municipio, la clase de riesgo… */
+  descripcion: {
+    type: String,
+    trim: true,
+    default: null,
+    maxlength: [120, 'La descripción no puede exceder 120 caracteres']
+  },
+  activo: { type: Boolean, default: true }
+})
+
 const companySchema = new mongoose.Schema(
   {
     nombre: {
@@ -30,21 +56,28 @@ const companySchema = new mongoose.Schema(
     },
 
     /**
-     * Registros patronales ante el IMSS. **Uno o varios** (D-64).
+     * Registros patronales ante el IMSS. **Uno o varios** (D-64, D-65).
      *
      * Varios porque una empresa puede tener registro por entidad o por clase de
      * riesgo, y el archivo de nómina ya trae uno **por persona**
      * (`adscripciones.condiciones.registroPatronal`): con un solo campo no habría
      * dónde guardar los demás.
      *
-     * Se guardan en mayúsculas y sin repetidos. No se exige ninguno: las empresas
-     * que ya existen no lo tienen, y obligarlo dejaría inválido lo que ya está
-     * guardado.
+     * ─── Por qué son subdocumentos y no cadenas ─────────────────────────────
+     * Nacieron como `[String]` (D-64), cuando sólo había que guardarlos. En
+     * cuanto el proyecto tiene que **apuntar a uno** eso deja de servir: no se
+     * puede referenciar una posición de un arreglo de cadenas, y corregir un
+     * dígito rompería la referencia en silencio. Con `_id` propio la referencia
+     * sobrevive a que se corrija el número.
+     *
+     * No es colección aparte porque no tienen vida fuera de su empresa y la
+     * empresa ya se carga donde hacen falta. El `_id` de un subdocumento es un
+     * ObjectId real y único, así que `projects.registroPatronalId` se puede
+     * indexar igual; lo único que se pierde es `populate`, que aquí no hace falta.
+     *
+     * No se exige ninguno: las empresas que ya existen no lo tienen.
      */
-    registrosPatronales: {
-      type: [{ type: String, trim: true, uppercase: true }],
-      default: []
-    },
+    registrosPatronales: { type: [employerRegistrationSchema], default: [] },
 
     // Preparados para el día que cada empresa quiera verse distinta.
     branding: {
@@ -77,7 +110,12 @@ const companySchema = new mongoose.Schema(
           _id: ret._id.toString(),
           nombre: ret.nombre,
           rfc: ret.rfc ?? null,
-          registrosPatronales: ret.registrosPatronales || [],
+          registrosPatronales: (ret.registrosPatronales || []).map((r) => ({
+            _id: r._id.toString(),
+            numero: r.numero,
+            descripcion: r.descripcion ?? null,
+            activo: r.activo
+          })),
           branding: {
             nombreComercial: ret.branding?.nombreComercial ?? null,
             logoUrl: ret.branding?.logoUrl ?? null,
@@ -106,15 +144,26 @@ const companySchema = new mongoose.Schema(
  * para que valga por cualquier camino —alta, edición o un script— y no sólo por
  * la ruta que se acuerde de limpiarlos.
  */
-companySchema.pre('validate', function limpiarRegistros(next) {
-  if (Array.isArray(this.registrosPatronales)) {
-    this.registrosPatronales = [
-      ...new Set(
-        this.registrosPatronales
-          .map((r) => String(r).trim().toUpperCase())
-          .filter(Boolean)
-      )
-    ]
+/*
+ * El número no se repite DENTRO de la empresa (D-65). Va en el modelo y no en el
+ * servicio para que valga por cualquier camino —alta, edición o un script— y no
+ * sólo por la ruta que se acuerde de comprobarlo.
+ *
+ * Entre empresas distintas NO se bloquea: no hay evidencia de que sea imposible
+ * y un índice equivocado frenaría trabajo real.
+ */
+companySchema.pre('validate', function registrosSinRepetir(next) {
+  const numeros = (this.registrosPatronales || []).map((r) =>
+    String(r.numero || '')
+      .trim()
+      .toUpperCase()
+  )
+  const repetido = numeros.find((n, i) => n && numeros.indexOf(n) !== i)
+  if (repetido) {
+    this.invalidate(
+      'registrosPatronales',
+      `El registro patronal ${repetido} ya está en esta empresa`
+    )
   }
   next()
 })

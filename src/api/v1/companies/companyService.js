@@ -136,7 +136,8 @@ class CompanyService {
       }
     }
 
-    for (const campo of ['nombre', 'rfc', 'registrosPatronales']) {
+    // `registrosPatronales` ya NO se toca aquí: tiene sus propias rutas (D-65).
+    for (const campo of ['nombre', 'rfc']) {
       if (datos[campo] === undefined) continue
       // Un opcional vacío es "sin valor", no cadena vacía (regla #5 del contrato).
       empresa[campo] = datos[campo] === '' ? null : datos[campo]
@@ -191,6 +192,96 @@ class CompanyService {
 
     const [conteos] = await this.#conteosPorEmpresa([empresa._id])
     return { empresa: empresa.toJSON(), conteos: conteos || this.#conteosVacios() }
+  }
+
+  // ─── Registros patronales (D-65) ──────────────────────────────────────────
+
+  /**
+   * Alta de un registro patronal. **Idempotente por número**, igual que las
+   * categorías y las áreas: volver a mandar uno que ya existe devuelve el que hay
+   * en vez de un 409, para que la interfaz no tenga que preguntar antes de crear.
+   *
+   * Si existe pero está dado de baja, se devuelve tal cual **sin reactivarlo**:
+   * crear no debería deshacer una baja que alguien decidió.
+   */
+  async agregarRegistroPatronal(empresaId, { numero, descripcion }) {
+    const empresa = await this.#buscar(empresaId)
+    const buscado = String(numero).trim().toUpperCase()
+
+    const existente = empresa.registrosPatronales.find((r) => r.numero === buscado)
+    if (existente) {
+      return {
+        empresa: empresa.toJSON(),
+        registro: this.#registro(existente),
+        yaExistia: true
+      }
+    }
+
+    empresa.registrosPatronales.push({
+      numero: buscado,
+      descripcion: descripcion || null
+    })
+    await empresa.save()
+
+    const creado = empresa.registrosPatronales.find((r) => r.numero === buscado)
+    return {
+      empresa: empresa.toJSON(),
+      registro: this.#registro(creado),
+      yaExistia: false
+    }
+  }
+
+  /**
+   * Corregir número o descripción.
+   *
+   * El **número sí se puede cambiar**: es justo para lo que sirve que el registro
+   * tenga `_id` propio. Quien lo referencie apunta al id, así que corregir un
+   * dígito no rompe nada.
+   */
+  async actualizarRegistroPatronal(empresaId, registroId, datos) {
+    const { empresa, registro } = await this.#buscarRegistro(empresaId, registroId)
+
+    if (datos.numero !== undefined) registro.numero = datos.numero
+    if (datos.descripcion !== undefined) registro.descripcion = datos.descripcion || null
+
+    await empresa.save()
+    return { empresa: empresa.toJSON(), registro: this.#registro(registro) }
+  }
+
+  /**
+   * Dar de baja o reactivar un registro patronal.
+   *
+   * Dar de baja **no lo borra**: deja de ofrecerse para obras nuevas y se puede
+   * reactivar. No hay nada que bloquear todavía porque aún nadie lo referencia;
+   * cuando el proyecto lo haga (fase 3), aquí entra el candado de «no se da de
+   * baja uno que un proyecto en curso esté usando».
+   */
+  async setEstadoRegistroPatronal(empresaId, registroId, activo) {
+    const { empresa, registro } = await this.#buscarRegistro(empresaId, registroId)
+
+    registro.activo = activo
+    await empresa.save()
+    return { empresa: empresa.toJSON(), registro: this.#registro(registro) }
+  }
+
+  /** La forma del contrato para un registro suelto. */
+  #registro(r) {
+    return {
+      _id: r._id.toString(),
+      numero: r.numero,
+      descripcion: r.descripcion ?? null,
+      activo: r.activo
+    }
+  }
+
+  async #buscarRegistro(empresaId, registroId) {
+    const empresa = await this.#buscar(empresaId)
+    if (!mongoose.isValidObjectId(registroId)) {
+      throw new AppError(400, 'El registro patronal indicado no es válido')
+    }
+    const registro = empresa.registrosPatronales.id(registroId)
+    if (!registro) throw AppError.notFound('El registro patronal no existe')
+    return { empresa, registro }
   }
 
   /** 404 con el mismo mensaje siempre: exista o no, es lo mismo para quien pide. */

@@ -2,7 +2,7 @@
 
 > **Plan de trabajo, no especificación cerrada.** Se implementa **una fase a la
 > vez**. Al terminar cada una, el sistema queda funcional y consistente.
-> Estado: **ninguna fase implementada.**
+> Estado: **Fase 1 implementada** (D-65). Siguiente: Fase 2.
 
 ---
 
@@ -321,7 +321,7 @@ evidencia de que sea imposible y un índice equivocado frenaría trabajo real.
 
 Cada fase deja el sistema funcional. Ninguna rompe lo anterior.
 
-### FASE 1 — Registro patronal como entidad referenciable
+### FASE 1 — Registro patronal como entidad referenciable ✅ HECHA (D-65)
 
 Convierte `registrosPatronales` de `string[]` a subdocumentos con `_id`, con sus
 endpoints de alta, edición y baja. Migración **M1** y **M2** (poblar desde la
