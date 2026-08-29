@@ -1,5 +1,6 @@
 const mongoose = require('mongoose')
 const Project = require('./projectModel')
+const contractService = require('../contracts/contractService')
 const Client = require('../clients/clientModel')
 const Company = require('../companies/companyModel')
 const Category = require('../categories/categoryModel')
@@ -118,6 +119,16 @@ class ProjectService {
     const proyecto = await this.#buscarVisible(id, contexto)
 
     if (datos.clienteId && String(datos.clienteId) !== String(proyecto.clienteId)) {
+      /*
+       * G3: en cuanto cuelgan contratos del proyecto, el cliente queda fijo. Los
+       * contratos y sus SIROC son de ESA obra de ESE cliente; moverlos a otro
+       * dejaría avisos de obra apuntando a quien no contrató.
+       */
+      await this.#assertSinContratos(
+        proyecto._id,
+        'No se puede cambiar de cliente',
+        'clienteId'
+      )
       await this.#assertClienteEnCartera(proyecto.empresaId, datos.clienteId)
       proyecto.clienteId = datos.clienteId
       /*
@@ -140,6 +151,20 @@ class ProjectService {
       }
     }
 
+    /*
+     * Los dos candados de G3 comprueban CAMBIO, no presencia: el formulario del
+     * front manda el proyecto entero, así que reenviar el mismo id tiene que
+     * seguir funcionando. Bloquear por "viene en el cuerpo" haría inmodificable
+     * hasta el nombre.
+     */
+    if (this.#cambia(proyecto.registroPatronalId, datos.registroPatronalId)) {
+      // Mientras no haya contratos es libre; después queda fijo (G3).
+      await this.#assertSinContratos(
+        proyecto._id,
+        'No se puede cambiar el registro patronal',
+        'registroPatronalId'
+      )
+    }
     if (datos.registroPatronalId !== undefined) {
       await this.#assertRegistroPatronalDeLaEmpresa(
         proyecto.empresaId,
@@ -148,6 +173,24 @@ class ProjectService {
       proyecto.registroPatronalId = datos.registroPatronalId
     }
 
+    if (this.#cambia(proyecto.registroObraId, datos.registroObraId)) {
+      /*
+       * El registro de obra se bloquea antes que el patronal: basta UN contrato
+       * con SIROC, porque el aviso ante el IMSS ya salió con esa obra. Sin SIROC
+       * todavía se puede corregir.
+       */
+      if (await contractService.algunoConSiroc(proyecto._id)) {
+        throw AppError.validation(
+          'No se puede cambiar el registro de obra: ya hay un contrato con SIROC registrado',
+          [
+            {
+              msg: 'Hay un SIROC registrado sobre esta obra',
+              path: 'registroObraId'
+            }
+          ]
+        )
+      }
+    }
     if (datos.registroObraId !== undefined) {
       // Contra el cliente que va a QUEDAR, no contra el que tenía.
       await this.#assertRegistroObraDelCliente(proyecto.clienteId, datos.registroObraId)
@@ -309,6 +352,24 @@ class ProjectService {
    *
    * @returns el subdocumento, para poder nombrarlo en los mensajes
    */
+  /** Si `nuevo` viene y difiere del actual. `undefined` = no se toca. */
+  #cambia(actual, nuevo) {
+    return nuevo !== undefined && String(actual ?? '') !== String(nuevo)
+  }
+
+  /** Candado de G3: cierto cambio deja de permitirse en cuanto hay contratos. */
+  async #assertSinContratos(proyectoId, queNoSePuede, path) {
+    const contratos = await contractService.contarPorProyecto(proyectoId)
+    if (contratos > 0) {
+      throw AppError.validation(
+        `${queNoSePuede}: el proyecto ya tiene ${contratos} ${
+          contratos === 1 ? 'contrato' : 'contratos'
+        }`,
+        [{ msg: 'El proyecto ya tiene contratos', path }]
+      )
+    }
+  }
+
   async #assertRegistroPatronalDeLaEmpresa(empresaId, registroPatronalId) {
     const empresa = await Company.findById(empresaId).select('nombre registrosPatronales')
     if (!empresa) throw AppError.notFound('La empresa no existe')

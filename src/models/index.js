@@ -26,6 +26,7 @@ const modelos = {
   Portfolio: require('../api/v1/portfolios/portfolioModel'),
   Project: require('../api/v1/projects/projectModel'),
   Assignment: require('../api/v1/assignments/assignmentModel'),
+  Contract: require('../api/v1/contracts/contractModel'),
   ChecklistTemplate: require('../api/v1/checklistTemplates/checklistTemplateModel'),
   Record: require('../api/v1/records/recordModel'),
   AccessLog: require('../api/v1/accessLogs/accessLogModel')

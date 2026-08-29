@@ -2,7 +2,7 @@
 
 > **Plan de trabajo, no especificación cerrada.** Se implementa **una fase a la
 > vez**. Al terminar cada una, el sistema queda funcional y consistente.
-> Estado: **Fases 1 a 4 implementadas** (D-65 a D-69). Siguiente: Fase 5 (contratos y SIROC).
+> Estado: **Fases 1 a 5 implementadas** (D-65 a D-70). Siguiente: Fase 6 (coherencia con empleados).
 
 ---
 
@@ -362,11 +362,17 @@ obligatorios y aplicar las reglas de qué se puede cambiar. _Depende de: G3._
 **Resultado:** la regla «todo proyecto tiene exactamente un registro patronal y
 uno de obra» queda garantizada.
 
-### FASE 5 — Contratos y SIROC
+### FASE 5 — Contratos y SIROC ✅ HECHA (D-70)
 
-Colección `contracts` con el SIROC embebido, y sus endpoints. _Depende de: G1, G4._
-**Resultado:** un proyecto puede dividirse en contratos y cada uno registrar su
-SIROC.
+Colección `contracts` con el SIROC embebido, sus endpoints y los candados de G3
+en el proyecto. _Depende de: G1, G3, G4._
+**Resultado:** un proyecto se divide en contratos, cada uno registra su SIROC —
+único en todo el sistema— y a partir del primer contrato el proyecto deja de
+cambiar de cliente y de registro patronal.
+
+Se agregó `DELETE /contratos/:id/siroc`, que no estaba en el plan: sin él, un
+SIROC capturado en el contrato equivocado dejaba ese número bloqueado para
+siempre.
 
 ### FASE 6 — Coherencia con empleados
 

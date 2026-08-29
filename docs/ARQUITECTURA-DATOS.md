@@ -21,7 +21,7 @@ cambiar cualquier esquema.
 
 ---
 
-## 1. Panorama: 13 colecciones en tres grupos
+## 1. Panorama: 14 colecciones en tres grupos
 
 Lo primero que hay que entender es que **no todas son iguales**. Se comportan
 distinto y se rompen distinto.
@@ -38,23 +38,38 @@ de baja, **nunca se borran**.
 | `categories` | Puestos                  | nombre normalizado          | `activo: false`, bloqueada si en uso |
 | `areas`      | Áreas de la organización | `clave`, nombre normalizado | `activa: false`, bloqueada si en uso |
 
-Los cuatro son **globales**, no por empresa. La razón es siempre la misma: el
+**Dentro de dos de ellos viven subdocumentos con identidad propia** (D-65, D-66),
+y esto importa más de lo que parece:
+
+| Subdocumento                      | Dentro de   | Único por               | Lo referencia                 |
+| --------------------------------- | ----------- | ----------------------- | ----------------------------- |
+| `companies.registrosPatronales[]` | `companies` | `numero`, en su empresa | `projects.registroPatronalId` |
+| `clients.registrosObra[]`         | `clients`   | `numero`, en su cliente | `projects.registroObraId`     |
+
+No son colecciones porque no tienen vida fuera de su padre: un registro patronal
+sin empresa no significa nada. Pero **sí tienen `_id`**, porque hay que apuntarles
+— y un `ObjectId` es único globalmente, así que basta para identificarlo sin
+ambigüedad. La alternativa que se descartó era guardarlos como cadenas: corregir
+un dígito habría roto en silencio cada proyecto que lo apuntaba.
+
+Los cuatro catálogos son **globales**, no por empresa. La razón es siempre la misma: el
 empleado es global y puede estar en dos empresas, así que un catálogo por empresa
 lo dejaría con un puesto o un área ambiguos (D-32).
 
 ### Entidades y vínculos — el núcleo
 
-| Colección             | Qué es                                    | Depende de                            |
-| --------------------- | ----------------------------------------- | ------------------------------------- |
-| `employees`           | **La persona.** El centro de todo         | `categories`                          |
-| `credentials`         | La contraseña, aislada (D-27)             | `employees` (1 a 1)                   |
-| `affiliations`        | **La relación laboral** empresa ↔ persona | `companies`, `employees`, `areas`     |
-| `portfolios`          | Qué clientes usa cada empresa             | `companies`, `clients`                |
-| `projects`            | Obras y proyectos                         | `companies`, `clients`, `categories`  |
-| `assignments`         | Quién está en qué proyecto                | `projects`, `employees`, `categories` |
-| `checklist_templates` | Qué documentos exige cada perfil          | `companies` (o global), `areas`       |
-| `records`             | **El expediente.** Uno por persona        | `employees`, `checklist_templates`    |
-| `access_logs`         | Bitácora legal de accesos a documentos    | `employees`, `records`                |
+| Colección             | Qué es                                         | Depende de                            |
+| --------------------- | ---------------------------------------------- | ------------------------------------- |
+| `employees`           | **La persona.** El centro de todo              | `categories`                          |
+| `credentials`         | La contraseña, aislada (D-27)                  | `employees` (1 a 1)                   |
+| `affiliations`        | **La relación laboral** empresa ↔ persona      | `companies`, `employees`, `areas`     |
+| `portfolios`          | Qué clientes usa cada empresa                  | `companies`, `clients`                |
+| `projects`            | Obras y proyectos                              | `companies`, `clients`, `categories`  |
+| `assignments`         | Quién está en qué proyecto                     | `projects`, `employees`, `categories` |
+| `contracts`           | **El contrato/fase** de una obra, con su SIROC | `projects`                            |
+| `checklist_templates` | Qué documentos exige cada perfil               | `companies` (o global), `areas`       |
+| `records`             | **El expediente.** Uno por persona             | `employees`, `checklist_templates`    |
+| `access_logs`         | Bitácora legal de accesos a documentos         | `employees`, `records`                |
 
 ### Lo que NO es una colección
 
@@ -95,6 +110,13 @@ erDiagram
     EMPLOYEES  ||--o{ ASSIGNMENTS  : "asignado a"
     CATEGORIES ||--o{ ASSIGNMENTS  : "con el puesto"
 
+    PROJECTS   ||--o{ CONTRACTS    : "sus contratos (fases)"
+
+    COMPANIES  ||--o{ REGISTROS_PATRONALES : "embebidos"
+    CLIENTS    ||--o{ REGISTROS_OBRA       : "embebidos"
+    REGISTROS_PATRONALES ||--o{ PROJECTS : "opera con (sin ref)"
+    REGISTROS_OBRA       ||--o{ PROJECTS : "es la obra de (sin ref)"
+
     COMPANIES  ||--o{ CHECKLIST_TEMPLATES : "sus plantillas"
     CHECKLIST_TEMPLATES ||--o{ RECORDS    : "genera el checklist"
 
@@ -107,8 +129,12 @@ erDiagram
 
 **Leer el diagrama:** `||` es uno, `o{` es varios, `o|` es cero o uno.
 
-Las dos últimas líneas son distintas de todas las demás y están explicadas en la
-sección 4: **no son `ObjectId`, son cadenas**.
+`REGISTROS_PATRONALES` y `REGISTROS_OBRA` **no son colecciones**: son los arreglos
+embebidos de la sección anterior, dibujados aparte porque los proyectos les
+apuntan.
+
+Las líneas de `AREAS` y las de los registros son distintas de todas las demás y
+están explicadas en la sección 4: **Mongoose no las resuelve sola**.
 
 ---
 
@@ -175,9 +201,38 @@ cada adscripción.
 ### `projects` y `assignments`
 
 `projects` cuelga de una empresa y un cliente, y **exige que el cliente esté en
-la cartera activa** de esa empresa (`portfolios`). `assignments` es único por
-`(proyectoId, empleadoId)` **sólo mientras está activa** — índice parcial, para
-que alguien pueda volver al mismo proyecto después.
+la cartera activa** de esa empresa (`portfolios`). Desde D-69 exige además dos
+referencias que dicen **con qué registro patronal opera** y **cuál es su obra**:
+`registroPatronalId` (de su empresa) y `registroObraId` (de su cliente). Son
+obligatorias en los proyectos nuevos, **no en los que ya existían** —
+`required: () => this.isNew` — porque un cambio de forma deja el sistema en dos
+estados y los dos tienen que funcionar.
+
+`assignments` es único por `(proyectoId, empleadoId)` **sólo mientras está
+activa** — índice parcial, para que alguien pueda volver al mismo proyecto
+después.
+
+### `contracts` — el contrato, que es la fase, y su SIROC
+
+Cada fase de una obra tiene exactamente un contrato, y un proyecto de una sola
+fase no tiene fases: **son la misma entidad** y por eso hay una sola colección
+(D-70). `nombre` es la etiqueta ('Cimentación') y es opcional.
+
+- `numero` es una **secuencia dentro del proyecto que asigna el servidor**, no un
+  dato que se captura. Cuenta también los dados de baja: reusar un número
+  chocaría contra el índice único.
+- `siroc` va **embebido** porque es 1:1 con el contrato y no tiene ciclo de vida
+  propio. Nace en `null`.
+- **`siroc.numero` es único en TODO el sistema**, con índice parcial por
+  `$type: 'string'` — no `sparse`, que haría chocar entre sí a los contratos sin
+  SIROC. Repetirlo responde `409` diciendo dónde está el otro.
+- `estado` (`en_curso` | `finalizado`) y `activo` **no son lo mismo**: el primero
+  es un contrato que terminó bien, el segundo uno capturado por error. Van por
+  rutas distintas.
+
+**Los contratos traban al proyecto.** En cuanto existe uno, el proyecto no cambia
+de cliente ni de registro patronal; en cuanto uno tiene SIROC, tampoco de
+registro de obra. La razón es que el aviso ante el IMSS ya salió con esa obra.
 
 ### `access_logs` — bitácora
 
@@ -190,14 +245,31 @@ registro siga siendo legible aunque la persona cambie.
 
 ## 4. Las relaciones que no son `ObjectId` — cuidado aquí
 
-Casi todas las relaciones son `ObjectId` con `ref`, y Mongoose las resuelve. **Dos
-no**, y son las que se rompen en silencio:
+Casi todas las relaciones son `ObjectId` con `ref`, y Mongoose las resuelve.
+**Cinco no**, y son las que se rompen en silencio. Fallan por dos motivos
+distintos.
+
+**Las que apuntan por cadena**, contra la `clave` del área:
 
 | Desde                         | Hacia         | Por    |
 | ----------------------------- | ------------- | ------ |
 | `affiliations.areas[]`        | `areas.clave` | cadena |
 | `affiliations.dirigeAreas[]`  | `areas.clave` | cadena |
 | `checklist_templates.areas[]` | `areas.clave` | cadena |
+
+**Las que apuntan DENTRO de un arreglo embebido.** Son `ObjectId` de verdad, pero
+**sin `ref`**, porque no hay colección a la que referir:
+
+| Desde                         | Hacia                                 |
+| ----------------------------- | ------------------------------------- |
+| `projects.registroPatronalId` | `companies.registrosPatronales[]._id` |
+| `projects.registroObraId`     | `clients.registrosObra[]._id`         |
+
+`populate()` **no las resuelve**: hay que traer la empresa o el cliente y buscar
+el subdocumento por `_id` dentro de su arreglo. `projectService` lo hace en
+`#registroDe`, y por eso los `populate` de proyectos seleccionan
+`'nombre registrosPatronales'` en vez de sólo el nombre. Olvidarlo no da error:
+devuelve `null` y la pantalla se queda en blanco.
 
 **Por qué así:** la `clave` es el valor del contrato — es lo que el front compara
 y lo que viaja en `?area=`. Guardar el `ObjectId` habría obligado a resolverlo en
@@ -221,19 +293,22 @@ colección: `records.documentos[].tipo` apunta a `DOCUMENT_TYPES` en
 
 ## 5. Matriz de impacto: si tocas esto, revisa aquello
 
-| Si cambias…                     | Revisa                                                                                                          |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **`employees.categoriaId`**     | `tipo` se deriva de ahí (D-59) → cambia **quién puede gestionar a esa persona**                                 |
-| **`employees.tipo`**            | `utils/permissions.js` (`canManageEmployeeType`), el desplegable de puestos                                     |
-| **`affiliations.areas`**        | El checklist (se resuelve por área) → puede cambiar **qué documentos se le exigen**                             |
-| **`affiliations.dirigeAreas`**  | `scopeMiddleware` → **qué gente ve un jefe de área**                                                            |
-| **`affiliations.activo`**       | El alcance del usuario, el checklist, las alertas, y si se queda sin ninguna activa, su baja del sistema (D-55) |
-| **`areas` (dar de baja)**       | Bloqueado si alguien la tiene. Al reactivar, vuelve a ofrecerse en los desplegables                             |
-| **`categories.tipo`**           | El `tipo` de todos los que tienen ese puesto                                                                    |
-| **`checklist_templates`**       | El checklist de **todos** los que caigan en esa plantilla; hay que re-sincronizar expedientes                   |
-| **`companies.activo`**          | Nadie puede importar ni adscribir a una empresa de baja                                                         |
-| **Un enum de `src/constants/`** | Es **contrato**: el front compara por igualdad estricta. Cambiar un valor lo rompe                              |
-| **Cualquier índice único**      | `npm run db:indices` en producción — `autoIndex` está apagado ahí                                               |
+| Si cambias…                                    | Revisa                                                                                                          |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **`employees.categoriaId`**                    | `tipo` se deriva de ahí (D-59) → cambia **quién puede gestionar a esa persona**                                 |
+| **`employees.tipo`**                           | `utils/permissions.js` (`canManageEmployeeType`), el desplegable de puestos                                     |
+| **`affiliations.areas`**                       | El checklist (se resuelve por área) → puede cambiar **qué documentos se le exigen**                             |
+| **`affiliations.dirigeAreas`**                 | `scopeMiddleware` → **qué gente ve un jefe de área**                                                            |
+| **`affiliations.activo`**                      | El alcance del usuario, el checklist, las alertas, y si se queda sin ninguna activa, su baja del sistema (D-55) |
+| **`areas` (dar de baja)**                      | Bloqueado si alguien la tiene. Al reactivar, vuelve a ofrecerse en los desplegables                             |
+| **`categories.tipo`**                          | El `tipo` de todos los que tienen ese puesto                                                                    |
+| **`checklist_templates`**                      | El checklist de **todos** los que caigan en esa plantilla; hay que re-sincronizar expedientes                   |
+| **`companies.activo`**                         | Nadie puede importar ni adscribir a una empresa de baja                                                         |
+| **Dar de baja un registro patronal o de obra** | Bloqueado si un proyecto **en curso** lo usa. Hay que cerrarlos o cambiárselo primero                           |
+| **Crear un contrato**                          | Traba el `clienteId` y el `registroPatronalId` de su proyecto (D-70)                                            |
+| **Registrar un SIROC**                         | Traba además el `registroObraId`. Quitarlo lo libera                                                            |
+| **Un enum de `src/constants/`**                | Es **contrato**: el front compara por igualdad estricta. Cambiar un valor lo rompe                              |
+| **Cualquier índice único**                     | `npm run db:indices` en producción — `autoIndex` está apagado ahí                                               |
 
 ### Los tres efectos en cadena más largos
 

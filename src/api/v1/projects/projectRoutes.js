@@ -1,6 +1,7 @@
 const express = require('express')
 const projectController = require('./projectController')
 const assignmentController = require('../assignments/assignmentController')
+const contractController = require('../contracts/contractController')
 const asyncHandler = require('../../../utils/asyncHandler')
 const validateRequest = require('../../../middlewares/validateRequest')
 const { protect, requireCapability } = require('../../../middlewares/authMiddleware')
@@ -20,6 +21,10 @@ const {
   listAssignmentsValidation,
   createAssignmentValidation
 } = require('../../../validations/assignmentValidation')
+const {
+  listContractsValidation,
+  createContractValidation
+} = require('../../../validations/contractValidation')
 
 const router = express.Router()
 
@@ -104,5 +109,22 @@ router.get(
   validateRequest,
   asyncHandler(assignmentController.asignables)
 )
+
+// ─── Contratos del proyecto (D-70) ───────────────────────────────────────────
+// Cuelgan del proyecto porque no existen sin él. Lo demás —editar, SIROC,
+// finalizar, baja— opera sobre el contrato, en `/contratos/:id`.
+router
+  .route('/:id/contratos')
+  .get(
+    listContractsValidation,
+    validateRequest,
+    asyncHandler(contractController.listByProject)
+  )
+  .post(
+    gestionarProyectos,
+    createContractValidation,
+    validateRequest,
+    asyncHandler(contractController.create)
+  )
 
 module.exports = router

@@ -54,7 +54,10 @@ Sólo estas cuatro: `POST /auth/login`, `GET /api/v1` (inventario), `GET /health
 | POST   | `/empleados/:id/acceso/restablecer-password`               | `rh_admin`                   | Cierra sus sesiones                                                                                                                     |
 | GET    | `/empresas` · `/empresas/:id`                              | sesión                       | Las suyas, con conteos reales de empleados, cartera y proyectos en curso                                                                |
 | POST   | `/empresas`                                                | admin de plataforma          | 409 en nombre o RFC repetidos                                                                                                           |
-| PATCH  | `/empresas/:id`                                            | admin de plataforma          | Nombre, RFC, **registros patronales**, branding y configuración (D-64)                                                                  |
+| PATCH  | `/empresas/:id`                                            | admin de plataforma          | Nombre, RFC, branding y configuración. **Ya no acepta `registrosPatronales`**: tienen rutas propias (D-65)                              |
+| POST   | `/empresas/:id/registros-patronales`                       | admin de plataforma          | Registros patronales de la empresa; únicos dentro de ella (D-65)                                                                        |
+| PATCH  | `/empresas/:id/registros-patronales/:rpId`                 | admin de plataforma          | Número y descripción                                                                                                                    |
+| PATCH  | `/empresas/:id/registros-patronales/:rpId/estado`          | admin de plataforma          | Baja y reactivación; 400 si un proyecto en curso lo usa                                                                                 |
 | PATCH  | `/empresas/:id/estado`                                     | admin de plataforma          | Baja y reactivación; 400 si tiene gente adscrita o proyectos abiertos (D-64)                                                            |
 | GET    | `/categorias`                                              | sesión                       | Pueblan el desplegable del alta; filtro `?tipo=`                                                                                        |
 | POST   | `/categorias`                                              | admin de plataforma          | Idempotente por nombre: 200 si ya existía                                                                                               |
@@ -74,8 +77,8 @@ Sólo estas cuatro: `POST /auth/login`, `GET /api/v1` (inventario), `GET /health
 | POST   | `/empresas/:id/clientes`                                   | `rh_admin` o `jefe_area`     | Mete un cliente a la cartera; 200 si reactiva un vínculo previo                                                                         |
 | PATCH  | `/carteras/:id` · `/carteras/:id/estado`                   | `rh_admin` o `jefe_area`     | Contacto y notas; sacar falla si hay proyectos con ese cliente                                                                          |
 | GET    | `/proyectos` · `/proyectos/:id`                            | sesión                       | Paginado, por alcance. Trae `diasParaCierre` derivado                                                                                   |
-| POST   | `/proyectos`                                               | `rh_admin` o `jefe_area`     | Exige cliente **en cartera activa** y ≥1 categoría                                                                                      |
-| PATCH  | `/proyectos/:id`                                           | `rh_admin` o `jefe_area`     | **Rechaza** `fechaFinEstimada` (D-38)                                                                                                   |
+| POST   | `/proyectos`                                               | `rh_admin` o `jefe_area`     | Exige cliente **en cartera activa**, ≥1 categoría y **`registroPatronalId` + `registroObraId`** (D-69)                                  |
+| PATCH  | `/proyectos/:id`                                           | `rh_admin` o `jefe_area`     | **Rechaza** `fechaFinEstimada` (D-38); los registros se cambian pero no se vacían (D-69) y se traban con los contratos (D-70)           |
 | POST   | `/proyectos/:id/aplazar`                                   | `rh_admin` o `jefe_area`     | Única forma de mover el cierre; exige motivo y queda en el historial                                                                    |
 | POST   | `/proyectos/:id/finalizar`                                 | `rh_admin` o `jefe_area`     | Cierra también las asignaciones abiertas                                                                                                |
 | POST   | `/proyectos/:id/reabrir`                                   | `rh_admin` o `jefe_area`     | Limpia `fechaFinReal`; no reabre asignaciones                                                                                           |
@@ -84,6 +87,13 @@ Sólo estas cuatro: `POST /auth/login`, `GET /api/v1` (inventario), `GET /health
 | GET    | `/proyectos/:id/asignables`                                | asignar a proyectos          | El selector: adscritos, activos, con categoría habilitada y sin asignar                                                                 |
 | POST   | `/proyectos/:id/asignaciones`                              | asignar a proyectos          | Exige adscripción activa y categoría habilitada                                                                                         |
 | PATCH  | `/asignaciones/:id/salida`                                 | asignar a proyectos          | Cierra, no borra                                                                                                                        |
+| GET    | `/proyectos/:id/contratos`                                 | sesión                       | Contratos del proyecto por número; `?incluirInactivos=true` (D-70)                                                                      |
+| POST   | `/proyectos/:id/contratos`                                 | `rh_admin` o `jefe_area`     | El `numero` **lo asigna el servidor**; 400 si el proyecto está finalizado (D-70)                                                        |
+| PATCH  | `/contratos/:id`                                           | `rh_admin` o `jefe_area`     | Nombre y fechas. El SIROC y el estado van por sus rutas                                                                                 |
+| PUT    | `/contratos/:id/siroc`                                     | `rh_admin` o `jefe_area`     | Registra o corrige el SIROC entero; **409 `SIROC_DUPLICADO`** si el número ya existe (G4)                                               |
+| DELETE | `/contratos/:id/siroc`                                     | `rh_admin` o `jefe_area`     | Lo quita y libera el número; 400 si no tenía                                                                                            |
+| POST   | `/contratos/:id/finalizar` · `/contratos/:id/reabrir`      | `rh_admin` o `jefe_area`     | Mueven `estado`; no se reabre si el proyecto está finalizado                                                                            |
+| PATCH  | `/contratos/:id/estado`                                    | `rh_admin` o `jefe_area`     | Mueve `activo` (la baja), que **no es lo mismo** que `estado` (D-70)                                                                    |
 | GET    | `/expedientes`                                             | ver empleados                | Paginado; mismos filtros que `/empleados` **más `estatus`** (D-45)                                                                      |
 | GET    | `/empleados/:id/expediente`                                | ver empleados                | Crea el expediente si no existía; `data: { expediente, empleado, avance }`                                                              |
 | GET    | `/expedientes/:id`                                         | ver empleados                | Lo mismo por id de expediente; 404 si el empleado no es visible                                                                         |
@@ -202,6 +212,64 @@ archivo pasa de 10 MB · `415` no es un .xlsx.
 **Las filas malas no detienen a las buenas.** Un archivo con 2 filas sin CURP y
 143 correctas responde `201`, importa las 143 y las 2 salen en `conError` con su
 número de renglón.
+
+### Contratos y SIROC (D-70)
+
+Un contrato **es una fase**: cada fase de la obra tiene exactamente un contrato,
+y un proyecto de un solo contrato no tiene fases. Por eso `nombre` es opcional.
+
+```jsonc
+{
+  "_id": "66f...",
+  "proyectoId": "66f...",
+  "numero": 1, // secuencia dentro del proyecto; la pone el servidor
+  "nombre": "Cimentación", // etiqueta de la fase, o null
+  "fechaInicio": "2026-09-01",
+  "fechaFin": "2026-12-31",
+  "siroc": null, // o { numero, fechaRegistro, vigenciaHasta }
+  "estado": "en_curso", // en_curso | finalizado
+  "activo": true,
+  "createdAt": "…",
+  "updatedAt": "…"
+}
+```
+
+**`estado` y `activo` no son lo mismo.** `finalizado` es un contrato que terminó
+bien; `activo: false` es uno capturado por error o cancelado. Van por rutas
+distintas a propósito: `POST /contratos/:id/finalizar` mueve el primero,
+`PATCH /contratos/:id/estado` el segundo.
+
+**El SIROC es único en TODO el sistema.** Repetirlo responde `409` con el
+contrato y el proyecto que ya lo tienen, para que quien captura vea dónde está el
+choque:
+
+```jsonc
+{
+  "status": "fail",
+  "message": "El SIROC SIR-2026-0001 ya está registrado en el contrato 1 de Torre Andares",
+  "code": "SIROC_DUPLICADO",
+  "data": {
+    "contratoId": "66f…",
+    "contratoNumero": 1,
+    "proyectoId": "66f…",
+    "proyectoNombre": "Torre Andares"
+  }
+}
+```
+
+**Qué deja de poderse cambiar en el proyecto cuando hay contratos** (G3). Los
+candados miran el **cambio**, no la presencia: reenviar el mismo id en el
+formulario completo sigue funcionando.
+
+| Campo del proyecto   | Se bloquea cuando             | `errors[0].path`     |
+| -------------------- | ----------------------------- | -------------------- |
+| `registroPatronalId` | hay ≥1 contrato activo        | `registroPatronalId` |
+| `registroObraId`     | hay ≥1 contrato **con SIROC** | `registroObraId`     |
+| `clienteId`          | hay ≥1 contrato activo        | `clienteId`          |
+| `empresaId`          | siempre                       | —                    |
+
+Dar de baja el contrato lo saca de la cuenta, y quitar su SIROC libera el
+registro de obra.
 
 ### `AuthUser`
 

@@ -79,7 +79,8 @@ Mapa de nombres (modelo → colección → nombre en el spec):
 `Category`/`categories`/categorías · `Area`/`areas`/áreas ·
 `Affiliation`/`affiliations`/adscripciones ·
 `Portfolio`/`portfolios`/carteras · `Assignment`/`assignments`/asignaciones ·
-`Project`/`projects`/proyectos · `Record`/`records`/expedientes ·
+`Project`/`projects`/proyectos · `Contract`/`contracts`/contratos ·
+`Record`/`records`/expedientes ·
 `ChecklistTemplate`/`checklist_templates`/plantillas ·
 `AccessLog`/`access_logs`/bitácora.
 
@@ -94,6 +95,7 @@ src/
     credentials/        material secreto, aislado (D-27)
     companies/          empresas: la entidad raíz
     affiliations/       adscripción empresa ↔ empleado: la relación laboral
+    contracts/          contratos del proyecto (= fases) y su SIROC (D-70)
     alerts/             bandeja derivada: documentos y cumpleaños (D-47)
     clients/ categories/  catálogos compartidos
     areas/              catálogo de áreas: 9 base + las temporales que deja el
@@ -193,8 +195,15 @@ Y las **alertas**: `GET /alertas` con documentación faltante (más vencida, por
 vencer y rechazada) y cumpleaños, **derivadas en cada consulta** (D-47) — por eso
 se resuelven solas y no hay nada que marcar.
 
-**Pendiente:** métricas, reportes y el job diario de vigencias — ver
-`docs/ESTADO.md` para el detalle y el orden sugerido.
+Y la **cadena de la obra**, en fases (`docs/PLAN-OBRA-CONTRATOS.md`, fases 1 a 5
+de 8): empresa → registros patronales → proyecto ← cliente → registros de obra, y
+los **contratos** del proyecto —que son sus fases— con el **SIROC** embebido y
+único en todo el sistema (D-65 a D-70). A partir del primer contrato el proyecto
+deja de cambiar de cliente y de registro patronal; a partir del primer SIROC,
+tampoco de registro de obra.
+
+**Pendiente:** las fases 6 a 8 del plan de obra, métricas, reportes y el job
+diario de vigencias — ver `docs/ESTADO.md` para el detalle y el orden sugerido.
 
 **Decisión abierta que bloquea al front:** `affiliations.nomina` guarda salario,
 SBC y cuenta bancaria porque el archivo de nómina los trae, pero **ninguna

@@ -2831,3 +2831,82 @@ completarlos todavía. Hay que crear los registros primero.
 `crearProyecto` ahora prepara el registro patronal y el de obra si no se le pasan,
 y los devuelve. Hacer que cada prueba los montara a mano habría convertido en
 ruido lo que casi nunca es el objeto de la prueba.
+
+## D-70 · Contratos con el SIROC embebido
+
+**Decisión.** Colección `contracts`, un contrato por fase, con el SIROC dentro y
+único en todo el sistema. Es la Fase 5 del plan.
+
+### Contrato y fase son la misma entidad (G1)
+
+Cada fase de una obra tiene exactamente un contrato, y un proyecto de un solo
+contrato no tiene fases. **Dos entidades 1:1 obligatorias son una sola con dos
+nombres**; `nombre` cubre la etiqueta ('Fase 1', 'Cimentación') y es opcional
+justamente porque el proyecto de un contrato no la necesita.
+
+### Colección propia, SIROC embebido
+
+Los contratos crecen sin tope, se agregan con el tiempo y hay que consultarlos
+solos: colección. El SIROC es 1:1 con el contrato y no tiene ciclo de vida
+propio: embebido. Es el mismo criterio que separa `assignments` de
+`aplazamientos`. Si algún día el SIROC necesita historial, se gradúa entonces.
+
+### El `numero` lo asigna el servidor
+
+Es una secuencia dentro del proyecto, no un dato que se captura. Dejar que lo
+mandara el cliente sólo produce huecos y choques contra el índice único. El alta
+lo calcula como `max + 1` **contando también los dados de baja** —reusar un
+número chocaría— y reintenta si dos altas simultáneas calculan el mismo.
+
+### `estado` y `activo` son cosas distintas, y por eso van por rutas distintas
+
+`finalizado` es un contrato que terminó bien; `activo: false` es uno capturado
+por error o cancelado. Confundirlos borraría la diferencia entre una obra
+completada y una que nunca existió.
+
+- `POST /contratos/:id/finalizar` · `/reabrir` → `estado`, igual que en proyectos.
+- `PATCH /contratos/:id/estado` → `activo`, igual que en el resto del catálogo.
+
+Es la única colisión de nombres del contrato de la API: `/estado` mueve `activo`
+mientras existe además un campo llamado `estado`. Se conservan las dos
+convenciones porque cada una ya es la del recurso al que se parece, y romper
+cualquiera de las dos sorprendería más que documentarlo.
+
+### El SIROC es único GLOBAL (G4)
+
+Índice único **parcial** sobre `contracts.siroc.numero`, por `$type: 'string'` y
+no `sparse`: el contrato nace sin SIROC y `siroc` queda en `null`, así que el
+campo puede existir valiendo nulo y `sparse` haría chocar entre sí a todos los
+contratos sin SIROC. Es la misma trampa que en el resto del modelo.
+
+Repetirlo responde **409 `SIROC_DUPLICADO` con el contrato y el proyecto que ya
+lo tienen**, no un error de base de datos: quien captura necesita saber dónde
+está el choque. Se consulta antes de escribir sólo para poder decirlo; la
+garantía real la sigue dando el índice, y la carrera la atrapa el `catch`, que
+vuelve a consultar y produce el mismo 409. Se comprobó anulando la consulta
+previa: el índice atrapa el choque igual.
+
+### `DELETE /contratos/:id/siroc` — no estaba en el plan y hacía falta
+
+Con el número único global, un SIROC capturado en el contrato equivocado deja ese
+número bloqueado **para siempre**: corregirlo en el contrato correcto sería
+imposible porque chocaría consigo mismo. Quitarlo también libera el registro de
+obra del proyecto, que estaba trabado por él.
+
+### Los candados de G3 miran el CAMBIO, no la presencia
+
+| Campo del proyecto   | Se bloquea cuando             |
+| -------------------- | ----------------------------- |
+| `registroPatronalId` | hay ≥1 contrato activo        |
+| `registroObraId`     | hay ≥1 contrato **con SIROC** |
+| `clienteId`          | hay ≥1 contrato activo        |
+| `empresaId`          | siempre                       |
+
+El registro de obra se traba **antes** que el patronal, y con un umbral distinto:
+basta un SIROC, porque el aviso ante el IMSS ya salió con esa obra. Sin SIROC
+todavía se corrige.
+
+Y el detalle que importa: comparan contra el valor actual, no contra "vino en el
+cuerpo". El formulario del front manda el proyecto entero, así que bloquear por
+presencia habría vuelto inmodificable hasta el nombre — la misma clase de error
+que D-68 y D-69, ahora en la escritura en vez de la lectura.
