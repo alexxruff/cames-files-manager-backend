@@ -2,7 +2,8 @@
 
 > **Plan de trabajo, no especificación cerrada.** Se implementa **una fase a la
 > vez**. Al terminar cada una, el sistema queda funcional y consistente.
-> Estado: **Fases 1 a 5 implementadas** (D-65 a D-70). Siguiente: Fase 6 (coherencia con empleados).
+> Estado: **las ocho fases hechas** (D-65 a D-72). Queda correr las migraciones
+> en Fly: en local ya están corridas y verificadas.
 
 ---
 
@@ -374,19 +375,82 @@ Se agregó `DELETE /contratos/:id/siroc`, que no estaba en el plan: sin él, un
 SIROC capturado en el contrato equivocado dejaba ese número bloqueado para
 siempre.
 
-### FASE 6 — Coherencia con empleados
+### FASE 6 — Coherencia con empleados ✅ HECHA (D-71)
 
 La validación de G2 al asignar, y la cadena resuelta
 (`empleado → empresa → registro patronal → proyecto → registro de obra`) en la
 respuesta del detalle. **Sin duplicar ids.** _Depende de: G2._
 **Resultado:** se puede responder la trazabilidad completa desde la API.
 
-### FASE 7 — Vincular la adscripción a su registro patronal _(opcional)_
+Asignar a alguien que cotiza en otro registro patronal responde **201 con el
+aviso** en `data.avisos` y en `message`, nunca un error. `registroPatronalCoincide`
+tiene tres estados y `null` —«no se pudo comparar»— no es `false`. La comparación
+ignora guiones, espacios y mayúsculas, porque el mismo registro se captura de
+varias formas y un aviso que sale en masa se aprende a ignorar.
 
-`affiliations.registroPatronalId` + **M3**, y que el importador lo resuelva.
+Se agregó `GET /asignaciones/:id`, que no existía: el detalle es donde vive la
+cadena. Y el listado del proyecto trae la coincidencia por renglón, con **una
+consulta más** en total, porque el aviso del alta se ve una vez y RH necesita
+encontrar los desajustes después.
+
+### FASE 7 — Vincular la adscripción a su registro patronal ✅ HECHA (D-72)
+
+`affiliations.registroPatronalId` + **M3** (`npm run migrate:vinculo-rp`), y que
+el importador lo resuelva.
 **Resultado:** la cadena deja de depender de comparar cadenas de texto.
 
-### FASE 8 — Limpieza
+El vínculo **convive con el texto** en vez de reemplazarlo: `registroPatronalId`
+es el dato validado, `condiciones.registroPatronal` lo que dijo el archivo. Mismo
+reparto que entre `areas` y `departamento`.
+
+Lo que cambió en la coherencia de G2 no es la comparación sino **de dónde sale el
+número**: del catálogo si hay vínculo, del texto si no. Las dos rutas conviven a
+propósito, porque M3 deja en nulo lo que no resuelve.
+
+El importador vincula pero **no crea registros patronales** —eso es del
+administrador de plataforma (D-65)—: lo que no resuelve lo reporta con el número y
+a cuánta gente afecta, y re-importar después de agregarlo enlaza a los que
+quedaron sueltos. Ni él ni M3 pisan un vínculo que ya está.
+
+**Pendiente de operación**, en este orden y por entorno separado —local y Fly
+divergieron—:
+
+1. `npm run migrate:vinculo-rp -- --dry-run`, para ver qué resuelve y qué no.
+2. Agregar a mano los registros patronales que el reporte diga que faltan, con
+   `POST /empresas/:id/registros-patronales`.
+3. `npm run migrate:vinculo-rp` en firme. Es idempotente: se puede repetir.
+
+**No hay índice nuevo que sincronizar**: `registroPatronalId` no se consulta
+todavía —sólo se escribe y se resuelve en memoria—, así que indexarlo sería
+cargar escrituras a cambio de nada. Cuando exista «quién cotiza en este registro
+patronal», el índice llega con esa consulta.
+
+### FASE 8 — Limpieza ✅ HECHA
 
 Borrar respaldos de las migraciones, actualizar `ARQUITECTURA-DATOS.md`, y el
 mensaje de cambios para el front.
+
+**En la base local, hecho y verificado:**
+
+| Qué                                    | Resultado                             |
+| -------------------------------------- | ------------------------------------- |
+| `migrate:vinculo-rp` (M3)              | 144 de 144, ninguna sin resolver      |
+| `migrate:condiciones --limpiar` (D-63) | respaldo borrado en 148 adscripciones |
+| `migrate:numeros --limpiar` (D-54)     | respaldo borrado en 147 adscripciones |
+
+Antes de borrar se comprobó, campo por campo, que **ningún valor viviera sólo en
+el respaldo**: los 8 de `condiciones` estaban todos en su lugar nuevo, y los 147
+números coincidían con el que ya tiene su persona. Las 4 adscripciones donde el
+respaldo y el dato migrado «diferían» eran `null` contra campo ausente.
+
+`nomina` quedó con **sólo sus siete campos sensibles**, que es lo que declara
+`payrollSchema`: mientras cargó los ocho de `condiciones` duplicados, exponerla el
+día que se decida quién ve el salario habría filtrado datos de más — y
+potencialmente desactualizados.
+
+El mensaje para el front es
+[`CAMBIOS-FRONTEND-OBRA.md`](./CAMBIOS-FRONTEND-OBRA.md).
+
+**Falta hacerlo en Fly**, con las mismas tres corridas y el mismo cuidado: las dos
+bases divergieron, así que ahí los números pueden ser otros y puede haber
+registros patronales que agregar antes de M3.

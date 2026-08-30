@@ -79,10 +79,10 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 | Empleados — edición y baja        | 6.2       | ✅     | Editar: quien puede crear ese tipo. Baja: `rh_admin`. El acceso y las adscripciones tienen su propia ruta                                                                                                                     |
 | Clientes                          | 6.2       | ✅     | CRUD, baja lógica y **acotado por cartera** (D-40)                                                                                                                                                                            |
 | Empresas                          | 6.3       | ✅     | Alta sólo admin de plataforma, listado con conteos                                                                                                                                                                            |
-| Adscripciones                     | 6.3       | ✅     | Alta, edición y baja de esa empresa; baja cierra sus asignaciones ahí (D-45); filtros por tipo/categoría y orden por número (D-51); `activo` con default excluyente (D-52)                                                    |
+| Adscripciones                     | 6.3       | ✅     | Alta, edición y baja de esa empresa; baja cierra sus asignaciones ahí (D-45); filtros y orden (D-51); `activo` con default excluyente (D-52); **vínculo con el registro patronal** de su empresa (D-72)                       |
 | Carteras                          | 6.3       | ✅     | Bajo la empresa; reactiva en vez de duplicar (D-37)                                                                                                                                                                           |
 | Proyectos                         | 6.4       | ✅     | CRUD, aplazar, finalizar, reabrir, clonar categorías (D-38)                                                                                                                                                                   |
-| Asignaciones                      | 6.4       | ✅     | Con `asignables` (§9.3) y cierre con fecha de salida                                                                                                                                                                          |
+| Asignaciones                      | 6.4       | ✅     | Con `asignables` (§9.3), cierre con fecha de salida, y el **aviso de registro patronal** más `GET /asignaciones/:id` con la cadena resuelta (D-71)                                                                            |
 | Contratos y SIROC                 | 6.7       | ✅     | Contrato = fase; SIROC embebido y único global; traba los cambios del proyecto (D-70)                                                                                                                                         |
 | Expedientes y documentos          | 6.5       | ✅     | Listado paginado, consulta, subida y **revisar** (valida y rechaza) (D-42, D-43, D-45); mismos filtros nuevos que `/empleados` (D-52)                                                                                         |
 | Lógica de dominio                 | modelo §6 | ✅     | Estatus, avance, semáforo, vigencias y la **unión** de plantillas, listos y probados                                                                                                                                          |
@@ -116,7 +116,19 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 11. ~~**Alertas**~~ ✅ `GET /alertas` con las dos familias que pidió Urbacames
     —documentación faltante y cumpleaños—, derivadas y sin estado que apagar
     (D-47).
-12. **Métricas y reportes**, y el job diario de vigencias con correos. Lo que
+12. ~~**La cadena de la obra**~~ ✅ fases 1 a 6 de 8 de
+    `PLAN-OBRA-CONTRATOS.md`: registros patronales y de obra con identidad
+    propia, el proyecto referenciándolos, los contratos con su SIROC único, y la
+    coherencia del registro patronal al asignar —que **avisa, no bloquea**— con
+    la trazabilidad completa resuelta al leer (D-65 a D-71).
+13. ~~**Fase 7 del plan de obra**~~ ✅ `affiliations.registroPatronalId` con su
+    migración **M3** (`npm run migrate:vinculo-rp`) y el importador resolviéndolo
+    (D-72). La cadena deja de depender de comparar cadenas de texto donde hay
+    vínculo, y donde no lo hay sigue funcionando con el texto.
+14. ~~**Fase 8 del plan de obra**~~ ✅ migraciones corridas y respaldos borrados en
+    local, `ARQUITECTURA-DATOS.md` al día y el mensaje al front en
+    `CAMBIOS-FRONTEND-OBRA.md`. **Falta correrlas en Fly**, que divergió.
+15. **Métricas y reportes**, y el job diario de vigencias con correos. Lo que
     queda del backlog original. El job puede reusar `deriveAlerts` tal cual.
 
 ## Decisiones abiertas
@@ -164,3 +176,8 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 15. **Las 99 fechas de término de contrato pendientes.** Entran marcadas en
     `datosPendientes` (D-46) y mientras lo estén su documento `contrato` no
     deriva vigencia. Falta capturarlas, y falta decidir si se avisa en el tablero.
+16. ~~¿Se vincula la adscripción a su registro patronal?~~ **Resuelto:** sí,
+    `affiliations.registroPatronalId` (D-72), y M3 ya corrió en local: 144 de 144.
+    **Queda correrla en Fly**, con `--dry-run` primero: si algún número no
+    resuelve hay que agregarlo al catálogo de su empresa a mano, porque el
+    importador no los crea (eso es del administrador de plataforma).

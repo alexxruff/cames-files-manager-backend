@@ -94,8 +94,11 @@ src/
                         importación desde el .xlsx de nómina (D-46)
     credentials/        material secreto, aislado (D-27)
     companies/          empresas: la entidad raíz
-    affiliations/       adscripción empresa ↔ empleado: la relación laboral
+    affiliations/       adscripción empresa ↔ empleado: la relación laboral, con
+                        su registro patronal vinculado (D-72)
     contracts/          contratos del proyecto (= fases) y su SIROC (D-70)
+    assignments/        proyecto ↔ empleado; avisa si el registro patronal no
+                        coincide y resuelve la trazabilidad (D-71)
     alerts/             bandeja derivada: documentos y cumpleaños (D-47)
     clients/ categories/  catálogos compartidos
     areas/              catálogo de áreas: 9 base + las temporales que deja el
@@ -112,7 +115,7 @@ src/
   utils/                response (envelope) · asyncHandler · dates · text ·
                         permissions · logger · routeInventory · spreadsheet
   utils/domain/         reglas PURAS: documentStatus · progress · alerts ·
-                        checklist · expiry · employeeImport
+                        checklist · expiry · employeeImport · registries
   services/             bootstrapAdmin · seedChecklistTemplates
 scripts/                semillas, índices y migración
 tests/                  unitarias/ · integracion/ · helpers/
@@ -195,15 +198,29 @@ Y las **alertas**: `GET /alertas` con documentación faltante (más vencida, por
 vencer y rechazada) y cumpleaños, **derivadas en cada consulta** (D-47) — por eso
 se resuelven solas y no hay nada que marcar.
 
-Y la **cadena de la obra**, en fases (`docs/PLAN-OBRA-CONTRATOS.md`, fases 1 a 5
-de 8): empresa → registros patronales → proyecto ← cliente → registros de obra, y
+Y la **cadena de la obra**, completa (`docs/PLAN-OBRA-CONTRATOS.md`, sus ocho
+fases): empresa → registros patronales → proyecto ← cliente → registros de obra, y
 los **contratos** del proyecto —que son sus fases— con el **SIROC** embebido y
 único en todo el sistema (D-65 a D-70). A partir del primer contrato el proyecto
 deja de cambiar de cliente y de registro patronal; a partir del primer SIROC,
 tampoco de registro de obra.
 
-**Pendiente:** las fases 6 a 8 del plan de obra, métricas, reportes y el job
-diario de vigencias — ver `docs/ESTADO.md` para el detalle y el orden sugerido.
+Y la **coherencia con la gente** (D-71): asignar a alguien que cotiza en otro
+registro patronal **avisa, no bloquea** —Maquinaria CAMES tiene 144 personas
+repartidas en cuatro registros—, y `GET /asignaciones/:id` devuelve la cadena
+`empleado → empresa → registro patronal → proyecto → registro de obra` resuelta
+al leer, sin guardar un solo id nuevo.
+
+Y desde D-72 la adscripción **se vincula a su registro patronal** por id
+(`registroPatronalId`), que convive con el texto de la nómina en vez de
+reemplazarlo: donde hay vínculo, el número sale del catálogo de la empresa; donde
+no, del texto. Se llena con `npm run migrate:vinculo-rp` y con cada importación,
+y **nada lo pisa** una vez corregido a mano.
+
+**Pendiente:** métricas, reportes y el job diario de vigencias — ver
+`docs/ESTADO.md` para el detalle y el orden sugerido. Y, de operación, **correr
+las migraciones en Fly**: en local ya están corridas y los respaldos borrados,
+pero las dos bases divergieron.
 
 **Decisión abierta que bloquea al front:** `affiliations.nomina` guarda salario,
 SBC y cuenta bancaria porque el archivo de nómina los trae, pero **ninguna
