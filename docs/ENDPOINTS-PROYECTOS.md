@@ -144,6 +144,18 @@ interface Proyecto {
   clienteId: string
   empresaNombre: string | null
   clienteNombre: string | null
+
+  /**
+   * Obligatorios desde D-69. Se MANDAN como id y se LEEN de las dos formas: el
+   * id crudo, y el subdocumento resuelto contra su dueño —la empresa para el
+   * patronal, el cliente para el de obra—. El número no se guarda duplicado en
+   * el proyecto: se resuelve al leer, como `empresaNombre`.
+   */
+  registroPatronalId: string | null
+  registroObraId: string | null
+  registroPatronal: RegistroResuelto | null
+  registroObra: RegistroResuelto | null
+
   nombre: string
   fechaInicio: string // 'YYYY-MM-DD'
   fechaFinEstimada: string // 'YYYY-MM-DD'
@@ -162,7 +174,21 @@ interface Proyecto {
   createdAt: string
   updatedAt: string
 }
+
+/** La misma forma para el registro patronal y para el de obra. */
+interface RegistroResuelto {
+  _id: string
+  numero: string
+  descripcion: string | null
+  activo: boolean
+}
 ```
+
+**Los cuatro campos pueden venir en `null`, id incluido.** Obligatorio significa
+obligatorio **al crear**: los proyectos anteriores a D-69 se quedaron sin ellos y
+se siguen editando a propósito, así que ahí `registroObraId` es literalmente
+`null`. Verificado contra el servidor. Píntalo como dato faltante, no como error,
+y no des por hecho el id en el tipo.
 
 ### `GET /proyectos`
 
@@ -198,6 +224,11 @@ Orden: **en curso primero, y dentro de ellos el que cierra más pronto.**
 {
   "empresaId": "…",
   "clienteId": "…",
+  // Obligatorios desde D-69. OJO: el patronal sale de la EMPRESA
+  // (`empresa.registrosPatronales`) y el de obra del CLIENTE
+  // (`cliente.registrosObra`). Suenan parecido y son catálogos distintos.
+  "registroPatronalId": "…",
+  "registroObraId": "…",
   "nombre": "Torre Andares — Etapa 2",
   "fechaInicio": "2026-09-01",
   "fechaFinEstimada": "2027-06-30",
@@ -210,6 +241,8 @@ Orden: **en curso primero, y dentro de ellos el que cierra más pronto.**
 | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `400`  | **El cliente no está en la cartera activa de esa empresa** (`path: clienteId`)                                                                                               |
 | `400`  | Sin categorías, o alguna no existe o está desactivada (`path: categorias`)                                                                                                   |
+| `400`  | El registro patronal **no es de esa empresa**, o está dado de baja (`path: registroPatronalId`)                                                                              |
+| `400`  | El registro de obra **no es de ese cliente**, o está dado de baja (`path: registroObraId`)                                                                                   |
 | `400`  | `fechaFinEstimada` no es posterior a `fechaInicio`                                                                                                                           |
 | `409`  | `code: PROYECTO_DUPLICADO` — el nombre es único **dentro de la empresa**, ignorando acentos y mayúsculas. Dos empresas del grupo sí pueden tener cada una su «Torre Andares» |
 | `404`  | La empresa no es suya                                                                                                                                                        |
@@ -217,17 +250,30 @@ Orden: **en curso primero, y dentro de ellos el que cierra más pronto.**
 
 ### `PATCH /proyectos/:id`
 
-Acepta **sólo** `nombre`, `clienteId`, `fechaInicio`, `categorias`.
+Acepta **sólo** `nombre`, `clienteId`, `fechaInicio`, `categorias`,
+`registroPatronalId` y `registroObraId`.
 
 ```jsonc
 { "nombre": "Torre Andares — Etapa 3" }
 // data: { "proyecto": { … } }
 ```
 
+Los dos registros **no se pueden vaciar** —son obligatorios— y se traban conforme
+cuelgan contratos: ver la tabla de §4. Los candados miran el **cambio** y no la
+presencia, así que reenviar el mismo id en el formulario completo sigue
+funcionando.
+
+**Cambiar de cliente obliga a mandar el `registroObraId` nuevo en la misma
+petición**: el anterior era del cliente viejo y el campo no puede quedar vacío.
+Omitirlo responde `400` con `path: registroObraId`.
+
 | Código | Cuándo                                                                                                                                                                  |
 | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `400`  | **Rechaza `fechaFinEstimada`** e indica: «usa `POST /proyectos/:id/aplazar`, que exige motivo». También rechaza `estado`, `fechaFinReal`, `empresaId` y `aplazamientos` |
 | `400`  | El cliente nuevo tampoco está en la cartera                                                                                                                             |
+| `400`  | El registro patronal **no es de esa empresa**, o está dado de baja (`path: registroPatronalId`)                                                                         |
+| `400`  | El registro de obra **no es de ese cliente**, o está dado de baja (`path: registroObraId`)                                                                              |
+| `400`  | Se cambia de cliente sin mandar el `registroObraId` nuevo                                                                                                               |
 | `400`  | Se quita una categoría que alguien asignado está usando (dice cuántas personas)                                                                                         |
 | `404`  | Proyecto ajeno                                                                                                                                                          |
 

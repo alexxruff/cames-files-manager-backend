@@ -262,12 +262,12 @@ choque:
 candados miran el **cambio**, no la presencia: reenviar el mismo id en el
 formulario completo sigue funcionando.
 
-| Campo del proyecto   | Se bloquea cuando             | `errors[0].path`     |
-| -------------------- | ----------------------------- | -------------------- |
-| `registroPatronalId` | hay ≥1 contrato activo        | `registroPatronalId` |
-| `registroObraId`     | hay ≥1 contrato **con SIROC** | `registroObraId`     |
-| `clienteId`          | hay ≥1 contrato activo        | `clienteId`          |
-| `empresaId`          | siempre                       | —                    |
+| Campo del proyecto   | Se bloquea cuando                    | `errors[0].path`     |
+| -------------------- | ------------------------------------ | -------------------- |
+| `registroPatronalId` | hay ≥1 contrato activo               | `registroPatronalId` |
+| `registroObraId`     | hay ≥1 contrato activo **con SIROC** | `registroObraId`     |
+| `clienteId`          | hay ≥1 contrato activo               | `clienteId`          |
+| `empresaId`          | siempre                              | —                    |
 
 Dar de baja el contrato lo saca de la cuenta, y quitar su SIROC libera el
 registro de obra.

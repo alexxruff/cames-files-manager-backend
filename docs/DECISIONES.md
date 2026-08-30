@@ -2895,12 +2895,12 @@ obra del proyecto, que estaba trabado por él.
 
 ### Los candados de G3 miran el CAMBIO, no la presencia
 
-| Campo del proyecto   | Se bloquea cuando             |
-| -------------------- | ----------------------------- |
-| `registroPatronalId` | hay ≥1 contrato activo        |
-| `registroObraId`     | hay ≥1 contrato **con SIROC** |
-| `clienteId`          | hay ≥1 contrato activo        |
-| `empresaId`          | siempre                       |
+| Campo del proyecto   | Se bloquea cuando                    |
+| -------------------- | ------------------------------------ |
+| `registroPatronalId` | hay ≥1 contrato activo               |
+| `registroObraId`     | hay ≥1 contrato activo **con SIROC** |
+| `clienteId`          | hay ≥1 contrato activo               |
+| `empresaId`          | siempre                              |
 
 El registro de obra se traba **antes** que el patronal, y con un umbral distinto:
 basta un SIROC, porque el aviso ante el IMSS ya salió con esa obra. Sin SIROC

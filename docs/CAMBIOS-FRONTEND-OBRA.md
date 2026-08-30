@@ -57,12 +57,15 @@ descripción— además del id, así que para mostrarlos no hace falta cruzar na
 Estos campos dejan de poderse cambiar según lo que cuelgue del proyecto (D-70).
 Conviene deshabilitarlos en la interfaz en vez de dejar que el `400` los explique:
 
-| Campo                | Se bloquea cuando             |
-| -------------------- | ----------------------------- |
-| `registroPatronalId` | hay ≥1 contrato               |
-| `registroObraId`     | hay ≥1 contrato **con SIROC** |
-| `clienteId`          | hay ≥1 contrato               |
-| `empresaId`          | siempre                       |
+| Campo                | Se bloquea cuando                    |
+| -------------------- | ------------------------------------ |
+| `registroPatronalId` | hay ≥1 contrato **activo**           |
+| `registroObraId`     | hay ≥1 contrato activo **con SIROC** |
+| `clienteId`          | hay ≥1 contrato **activo**           |
+| `empresaId`          | siempre                              |
+
+«Activo» importa: un contrato **dado de baja sale de la cuenta**, así que si era
+el único, el proyecto vuelve a poder cambiar de cliente y de registro patronal.
 
 **Cambiar de cliente exige mandar el `registroObraId` nuevo en la misma
 petición**: el anterior era del cliente viejo y el campo ya no puede quedar vacío.
