@@ -181,3 +181,24 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
     144 de 144, ninguna sin resolver. Si en el futuro un archivo trae un registro
     que no está en el catálogo, hay que agregarlo a mano y volver a importar: el
     importador no los crea (eso es del administrador de plataforma).
+17. **Los proyectos sin registro de obra (o sin ninguno de los dos).** Los campos
+    son obligatorios **al crear** desde D-69, pero los proyectos anteriores al
+    cambio se quedaron sin ellos y se siguen editando a propósito (hay una prueba
+    que lo garantiza). Falta cerrarlo. Estado al 30 de agosto de 2026, con
+    `npm run proyectos:incompletos` (sin banderas sólo reporta):
+
+    | Entorno | Incompletos | Cuáles                                                               |
+    | ------- | ----------- | -------------------------------------------------------------------- |
+    | local   | 2           | «Torre Andares — Etapa 2» (le faltan los dos) y «Plenares» (la obra) |
+    | Fly     | 1           | «Axis 3», de Urbanizadora Cames / KAAB: le faltan los dos            |
+
+    **`--rellenar` no puede con todos**: pone el primer registro _activo_ de la
+    empresa y del cliente, y ni Urbacames Edificación ni Urbanizadora Cames tienen
+    registro patronal, ni sus clientes registro de obra. A ésos hay que crearles
+    los registros primero (`POST /empresas/:id/registros-patronales` y
+    `POST /clientes/:id/registros-obra`) o borrar el proyecto con `--borrar`.
+    «Plenares» sí tiene candidato (`OB-2026-0145`).
+
+    Son datos de prueba —confirmado por el cliente el 29 de agosto de 2026—, así
+    que elegir es limpieza y no una decisión de negocio. **No corre prisa**: no
+    rompe nada mientras tanto.
