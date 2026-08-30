@@ -29,6 +29,12 @@ class AssignmentController {
     return ok(res, datos)
   }
 
+  /** GET /asignaciones/:id — el detalle, con la cadena resuelta (Fase 6) */
+  getById = async (req, res) => {
+    const datos = await assignmentService.getById(req.params.id, this.#contexto(req))
+    return ok(res, datos)
+  }
+
   /** POST /proyectos/:id/asignaciones */
   create = async (req, res) => {
     const datos = await assignmentService.create(
@@ -38,9 +44,15 @@ class AssignmentController {
     )
     req.log.info('Personal asignado', {
       proyectoId: req.params.id,
-      empleadoId: req.body.empleadoId
+      empleadoId: req.body.empleadoId,
+      avisos: datos.avisos.length
     })
-    return created(res, datos, 'Personal asignado al proyecto')
+    /*
+     * El aviso de G2 viaja en `message` además de en `avisos` para que salga en
+     * la interfaz aunque el front todavía no lea el campo nuevo. No cambia el
+     * código: sigue siendo 201, porque la asignación se hizo.
+     */
+    return created(res, datos, datos.avisos[0] || 'Personal asignado al proyecto')
   }
 
   /** PATCH /asignaciones/:id/salida — cierra, no borra */

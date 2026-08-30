@@ -2,7 +2,7 @@ const mongoose = require('mongoose')
 const Project = require('./projectModel')
 const contractService = require('../contracts/contractService')
 const Client = require('../clients/clientModel')
-const Company = require('../companies/companyModel')
+const companyService = require('../companies/companyService')
 const Category = require('../categories/categoryModel')
 const Assignment = require('../assignments/assignmentModel')
 const portfolioService = require('../portfolios/portfolioService')
@@ -10,6 +10,7 @@ const { AppError } = require('../../../middlewares/errorHandler')
 const { normalize, escapeRegex } = require('../../../utils/text')
 const { today, isAfter, isBefore, daysBetween } = require('../../../utils/dates')
 const { empresaEsVisible } = require('../../../middlewares/scopeMiddleware')
+const { findRegistry } = require('../../../utils/domain')
 
 /**
  * Proyectos (backend-spec §6.4).
@@ -94,7 +95,11 @@ class ProjectService {
     await this.#assertNombreLibre(datos.empresaId, datos.nombre)
 
     // Obligatorios desde D-69, y cada uno tiene que ser de su dueño.
-    await this.#assertRegistroPatronalDeLaEmpresa(
+    /*
+     * De la empresa del proyecto y activo (D-67, reglas 5 y 6). La regla es de la
+     * empresa, así que vive en su servicio y la comparte con la adscripción.
+     */
+    await companyService.assertRegistroPatronalUsable(
       datos.empresaId,
       datos.registroPatronalId
     )
@@ -166,7 +171,7 @@ class ProjectService {
       )
     }
     if (datos.registroPatronalId !== undefined) {
-      await this.#assertRegistroPatronalDeLaEmpresa(
+      await companyService.assertRegistroPatronalUsable(
         proyecto.empresaId,
         datos.registroPatronalId
       )
@@ -343,15 +348,6 @@ class ProjectService {
     }
   }
 
-  /**
-   * El registro patronal tiene que ser **de la empresa del proyecto** y estar
-   * activo (D-67, reglas 5 y 6 del plan).
-   *
-   * Se comprueba en el backend y no se confía en que el front mande uno de la
-   * lista correcta: es una regla de integridad, no una ayuda de interfaz.
-   *
-   * @returns el subdocumento, para poder nombrarlo en los mensajes
-   */
   /** Si `nuevo` viene y difiere del actual. `undefined` = no se toca. */
   #cambia(actual, nuevo) {
     return nuevo !== undefined && String(actual ?? '') !== String(nuevo)
@@ -368,25 +364,6 @@ class ProjectService {
         [{ msg: 'El proyecto ya tiene contratos', path }]
       )
     }
-  }
-
-  async #assertRegistroPatronalDeLaEmpresa(empresaId, registroPatronalId) {
-    const empresa = await Company.findById(empresaId).select('nombre registrosPatronales')
-    if (!empresa) throw AppError.notFound('La empresa no existe')
-
-    const registro = empresa.registrosPatronales.id(registroPatronalId)
-    if (!registro) {
-      throw AppError.validation(`Ese registro patronal no es de ${empresa.nombre}`, [
-        { msg: 'El registro patronal no es de esta empresa', path: 'registroPatronalId' }
-      ])
-    }
-    if (!registro.activo) {
-      throw AppError.validation(
-        `El registro patronal ${registro.numero} está dado de baja`,
-        [{ msg: 'Ese registro patronal está dado de baja', path: 'registroPatronalId' }]
-      )
-    }
-    return registro
   }
 
   /**
@@ -496,19 +473,6 @@ class ProjectService {
   }
 
   /** Agrega los nombres de empresa y cliente, y los días que faltan para cerrar. */
-  /** El subdocumento resuelto a la forma del contrato, o `null`. */
-  #registroDe(registros, id) {
-    if (!id || !Array.isArray(registros)) return null
-    const encontrado = registros.find((r) => String(r._id) === String(id))
-    if (!encontrado) return null
-    return {
-      _id: encontrado._id.toString(),
-      numero: encontrado.numero,
-      descripcion: encontrado.descripcion ?? null,
-      activo: encontrado.activo
-    }
-  }
-
   #formatear(proyecto) {
     const json = proyecto.toJSON()
     const cliente = proyecto.clienteId
@@ -524,11 +488,11 @@ class ProjectService {
        * Vienen en `null` si el proyecto todavía no los tiene, o si la consulta
        * no pobló empresa y cliente.
        */
-      registroPatronal: this.#registroDe(
+      registroPatronal: findRegistry(
         empresa?.registrosPatronales,
         proyecto.registroPatronalId
       ),
-      registroObra: this.#registroDe(cliente?.registrosObra, proyecto.registroObraId),
+      registroObra: findRegistry(cliente?.registrosObra, proyecto.registroObraId),
       empresaId: (empresa?._id || empresa)?.toString() ?? null,
       clienteId: (cliente?._id || cliente)?.toString() ?? null,
       empresaNombre: empresa?.nombre ?? null,

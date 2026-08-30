@@ -114,8 +114,9 @@ erDiagram
 
     COMPANIES  ||--o{ REGISTROS_PATRONALES : "embebidos"
     CLIENTS    ||--o{ REGISTROS_OBRA       : "embebidos"
-    REGISTROS_PATRONALES ||--o{ PROJECTS : "opera con (sin ref)"
-    REGISTROS_OBRA       ||--o{ PROJECTS : "es la obra de (sin ref)"
+    REGISTROS_PATRONALES ||--o{ PROJECTS     : "opera con (sin ref)"
+    REGISTROS_PATRONALES ||--o{ AFFILIATIONS : "cotiza en (sin ref, D-72)"
+    REGISTROS_OBRA       ||--o{ PROJECTS     : "es la obra de (sin ref)"
 
     COMPANIES  ||--o{ CHECKLIST_TEMPLATES : "sus plantillas"
     CHECKLIST_TEMPLATES ||--o{ RECORDS    : "genera el checklist"
@@ -130,8 +131,8 @@ erDiagram
 **Leer el diagrama:** `||` es uno, `o{` es varios, `o|` es cero o uno.
 
 `REGISTROS_PATRONALES` y `REGISTROS_OBRA` **no son colecciones**: son los arreglos
-embebidos de la sección anterior, dibujados aparte porque los proyectos les
-apuntan.
+embebidos de la sección anterior, dibujados aparte porque el proyecto —y, desde
+D-72, también la adscripción— les apuntan.
 
 Las líneas de `AREAS` y las de los registros son distintas de todas las demás y
 están explicadas en la sección 4: **Mongoose no las resuelve sola**.
@@ -172,10 +173,17 @@ El vínculo empresa ↔ persona, y **la colección más cargada de reglas**.
 - **`areas`** — dónde **trabaja**, en esa empresa.
 - **`dirigeAreas`** — qué áreas **dirige** ahí (D-60). Son cosas distintas: de
   aquí sale el alcance del jefe de área, no de `areas`.
-- **`nomina`** (`select: false`) — salario, SBC y cuenta bancaria. **Ninguna
-  respuesta los devuelve** hasta que se decida quién puede verlos (LFPDPPP).
+- **`nomina`** (`select: false`) — salario, SBC y cuenta bancaria, **y nada más**.
+  **Ninguna respuesta los devuelve** hasta que se decida quién puede verlos
+  (LFPDPPP). Hasta la limpieza de la Fase 8 cargaba además los ocho campos de
+  `condiciones` duplicados, del respaldo de D-63: si ves un volcado viejo con
+  `nomina.registroPatronal`, es eso y no un campo que falte hoy.
 - **`payrollSnapshot`** (`select: false`) — lo que dijo el último archivo de
   nómina, para distinguir «el archivo cambió» de «lo cambiaron a mano» (D-57).
+- **`registroPatronalId`** — el registro patronal de esa relación, por id contra
+  el catálogo de su empresa (D-72). `null` en lo que la migración M3 no resolvió;
+  el texto crudo sigue en `condiciones.registroPatronal`. Ni el importador ni la
+  migración lo **pisan** si ya está: se corrige a mano y esa decisión gana.
 - **Invariantes:** contrato temporal exige fecha de término; una baja exige
   motivo; `datosPendientes` relaja lo que el importador dejó sin capturar.
 
@@ -246,7 +254,7 @@ registro siga siendo legible aunque la persona cambie.
 ## 4. Las relaciones que no son `ObjectId` — cuidado aquí
 
 Casi todas las relaciones son `ObjectId` con `ref`, y Mongoose las resuelve.
-**Cinco no**, y son las que se rompen en silencio. Fallan por dos motivos
+**Siete no**, y son las que se rompen en silencio. Fallan por tres motivos
 distintos.
 
 **Las que apuntan por cadena**, contra la `clave` del área:
@@ -266,10 +274,33 @@ distintos.
 | `projects.registroObraId`     | `clients.registrosObra[]._id`         |
 
 `populate()` **no las resuelve**: hay que traer la empresa o el cliente y buscar
-el subdocumento por `_id` dentro de su arreglo. `projectService` lo hace en
-`#registroDe`, y por eso los `populate` de proyectos seleccionan
-`'nombre registrosPatronales'` en vez de sólo el nombre. Olvidarlo no da error:
-devuelve `null` y la pantalla se queda en blanco.
+el subdocumento por `_id` dentro de su arreglo. Lo hace `findRegistry`, en
+`utils/domain/registries.js`, y por eso los `populate` de proyectos y de
+asignaciones seleccionan `'nombre registrosPatronales'` en vez de sólo el nombre.
+Olvidarlo no da error: devuelve `null` y la pantalla se queda en blanco.
+
+La tercera de esta familia se sumó en D-72:
+
+| Desde                             | Hacia                                 |
+| --------------------------------- | ------------------------------------- |
+| `affiliations.registroPatronalId` | `companies.registrosPatronales[]._id` |
+
+**Y una que apunta por TEXTO al mismo subdocumento**, la más floja de todas:
+
+| Desde                                       | Hacia                                    |
+| ------------------------------------------- | ---------------------------------------- |
+| `affiliations.condiciones.registroPatronal` | `companies.registrosPatronales[].numero` |
+
+Es la cadena libre que llegó del archivo de nómina, y **convive** con el id:
+aquél es el vínculo validado, ésta el dato crudo del archivo — el mismo reparto
+que entre `areas` y `departamento`. Nada garantiza que el texto exista entre los
+registros de su empresa; el id sí.
+
+Por eso la coherencia contra el proyecto **toma el número del vínculo cuando
+existe** y se cae al texto cuando no (D-72), y en los dos casos compara números
+normalizados —sólo letras y dígitos, en mayúsculas— y **avisa en vez de
+bloquear** (D-71). Las dos rutas tienen que dar un resultado válido:
+`registroPatronalId` está en nulo en todo lo que la migración M3 no resolvió.
 
 **Por qué así:** la `clave` es el valor del contrato — es lo que el front compara
 y lo que viaja en `?area=`. Guardar el `ObjectId` habría obligado a resolverlo en
@@ -293,22 +324,25 @@ colección: `records.documentos[].tipo` apunta a `DOCUMENT_TYPES` en
 
 ## 5. Matriz de impacto: si tocas esto, revisa aquello
 
-| Si cambias…                                    | Revisa                                                                                                          |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **`employees.categoriaId`**                    | `tipo` se deriva de ahí (D-59) → cambia **quién puede gestionar a esa persona**                                 |
-| **`employees.tipo`**                           | `utils/permissions.js` (`canManageEmployeeType`), el desplegable de puestos                                     |
-| **`affiliations.areas`**                       | El checklist (se resuelve por área) → puede cambiar **qué documentos se le exigen**                             |
-| **`affiliations.dirigeAreas`**                 | `scopeMiddleware` → **qué gente ve un jefe de área**                                                            |
-| **`affiliations.activo`**                      | El alcance del usuario, el checklist, las alertas, y si se queda sin ninguna activa, su baja del sistema (D-55) |
-| **`areas` (dar de baja)**                      | Bloqueado si alguien la tiene. Al reactivar, vuelve a ofrecerse en los desplegables                             |
-| **`categories.tipo`**                          | El `tipo` de todos los que tienen ese puesto                                                                    |
-| **`checklist_templates`**                      | El checklist de **todos** los que caigan en esa plantilla; hay que re-sincronizar expedientes                   |
-| **`companies.activo`**                         | Nadie puede importar ni adscribir a una empresa de baja                                                         |
-| **Dar de baja un registro patronal o de obra** | Bloqueado si un proyecto **en curso** lo usa. Hay que cerrarlos o cambiárselo primero                           |
-| **Crear un contrato**                          | Traba el `clienteId` y el `registroPatronalId` de su proyecto (D-70)                                            |
-| **Registrar un SIROC**                         | Traba además el `registroObraId`. Quitarlo lo libera                                                            |
-| **Un enum de `src/constants/`**                | Es **contrato**: el front compara por igualdad estricta. Cambiar un valor lo rompe                              |
-| **Cualquier índice único**                     | `npm run db:indices` en producción — `autoIndex` está apagado ahí                                               |
+| Si cambias…                                     | Revisa                                                                                                          |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **`employees.categoriaId`**                     | `tipo` se deriva de ahí (D-59) → cambia **quién puede gestionar a esa persona**                                 |
+| **`employees.tipo`**                            | `utils/permissions.js` (`canManageEmployeeType`), el desplegable de puestos                                     |
+| **`affiliations.areas`**                        | El checklist (se resuelve por área) → puede cambiar **qué documentos se le exigen**                             |
+| **`affiliations.dirigeAreas`**                  | `scopeMiddleware` → **qué gente ve un jefe de área**                                                            |
+| **`affiliations.activo`**                       | El alcance del usuario, el checklist, las alertas, y si se queda sin ninguna activa, su baja del sistema (D-55) |
+| **`areas` (dar de baja)**                       | Bloqueado si alguien la tiene. Al reactivar, vuelve a ofrecerse en los desplegables                             |
+| **`categories.tipo`**                           | El `tipo` de todos los que tienen ese puesto                                                                    |
+| **`checklist_templates`**                       | El checklist de **todos** los que caigan en esa plantilla; hay que re-sincronizar expedientes                   |
+| **`companies.activo`**                          | Nadie puede importar ni adscribir a una empresa de baja                                                         |
+| **Dar de baja un registro patronal o de obra**  | Bloqueado si un proyecto **en curso** lo usa. Hay que cerrarlos o cambiárselo primero                           |
+| **Crear un contrato**                           | Traba el `clienteId` y el `registroPatronalId` de su proyecto (D-70)                                            |
+| **Registrar un SIROC**                          | Traba además el `registroObraId`. Quitarlo lo libera                                                            |
+| **`affiliations.registroPatronalId`**           | El aviso de coherencia al asignar y en el listado (D-71). Manda sobre el texto; no bloquea nada                 |
+| **`affiliations.condiciones.registroPatronal`** | Lo mismo, pero **sólo mientras no haya vínculo**: es el respaldo de las que M3 no resolvió (D-72)               |
+| **`projects.registroPatronalId`**               | Lo mismo: el aviso se recalcula al leer, así que cambiarlo mueve toda la trazabilidad ya registrada             |
+| **Un enum de `src/constants/`**                 | Es **contrato**: el front compara por igualdad estricta. Cambiar un valor lo rompe                              |
+| **Cualquier índice único**                      | `npm run db:indices` en producción — `autoIndex` está apagado ahí                                               |
 
 ### Los tres efectos en cadena más largos
 

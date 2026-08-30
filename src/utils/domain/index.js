@@ -14,5 +14,6 @@ module.exports = {
   ...require('./progress'),
   ...require('./alerts'),
   ...require('./checklist'),
-  ...require('./expiry')
+  ...require('./expiry'),
+  ...require('./registries')
 }

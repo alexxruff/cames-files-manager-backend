@@ -279,6 +279,41 @@ class CompanyService {
   }
 
   /** La forma del contrato para un registro suelto. */
+  /**
+   * El registro patronal existe en ESA empresa y está activo, o lanza.
+   *
+   * Vive aquí y no en cada servicio porque la regla es de la empresa, y la usan
+   * el proyecto (D-67) y la adscripción (D-72). Dos copias derivarían: una
+   * aceptaría un registro dado de baja y la otra no, y nadie lo notaría hasta
+   * ver los datos.
+   *
+   * @returns el subdocumento, para poder nombrarlo en los mensajes
+   */
+  async assertRegistroPatronalUsable(empresaId, registroPatronalId) {
+    const empresa = await Company.findById(empresaId).select('nombre registrosPatronales')
+    if (!empresa) throw AppError.notFound('La empresa no existe')
+
+    if (!mongoose.isValidObjectId(registroPatronalId)) {
+      throw AppError.validation('El registro patronal indicado no es válido', [
+        { msg: 'Registro patronal no válido', path: 'registroPatronalId' }
+      ])
+    }
+
+    const registro = empresa.registrosPatronales.id(registroPatronalId)
+    if (!registro) {
+      throw AppError.validation(`Ese registro patronal no es de ${empresa.nombre}`, [
+        { msg: 'El registro patronal no es de esta empresa', path: 'registroPatronalId' }
+      ])
+    }
+    if (!registro.activo) {
+      throw AppError.validation(
+        `El registro patronal ${registro.numero} está dado de baja`,
+        [{ msg: 'Ese registro patronal está dado de baja', path: 'registroPatronalId' }]
+      )
+    }
+    return registro
+  }
+
   #registro(r) {
     return {
       _id: r._id.toString(),

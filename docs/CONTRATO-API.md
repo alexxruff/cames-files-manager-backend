@@ -83,9 +83,10 @@ Sólo estas cuatro: `POST /auth/login`, `GET /api/v1` (inventario), `GET /health
 | POST   | `/proyectos/:id/finalizar`                                 | `rh_admin` o `jefe_area`     | Cierra también las asignaciones abiertas                                                                                                |
 | POST   | `/proyectos/:id/reabrir`                                   | `rh_admin` o `jefe_area`     | Limpia `fechaFinReal`; no reabre asignaciones                                                                                           |
 | POST   | `/proyectos/:id/categorias/clonar`                         | `rh_admin` o `jefe_area`     | Suma sin quitar ni duplicar                                                                                                             |
-| GET    | `/proyectos/:id/asignaciones`                              | sesión                       | `?activo=`; activas primero                                                                                                             |
+| GET    | `/proyectos/:id/asignaciones`                              | sesión                       | `?activo=`; activas primero. Cada renglón trae `registroPatronalCoincide` en tres estados (D-71)                                        |
 | GET    | `/proyectos/:id/asignables`                                | asignar a proyectos          | El selector: adscritos, activos, con categoría habilitada y sin asignar                                                                 |
-| POST   | `/proyectos/:id/asignaciones`                              | asignar a proyectos          | Exige adscripción activa y categoría habilitada                                                                                         |
+| POST   | `/proyectos/:id/asignaciones`                              | asignar a proyectos          | Exige adscripción activa y categoría habilitada; **avisa sin bloquear** si el registro patronal no coincide (D-71)                      |
+| GET    | `/asignaciones/:id`                                        | sesión                       | El detalle con la **cadena resuelta**: empleado → empresa → registro patronal → proyecto → registro de obra (D-71)                      |
 | PATCH  | `/asignaciones/:id/salida`                                 | asignar a proyectos          | Cierra, no borra                                                                                                                        |
 | GET    | `/proyectos/:id/contratos`                                 | sesión                       | Contratos del proyecto por número; `?incluirInactivos=true` (D-70)                                                                      |
 | POST   | `/proyectos/:id/contratos`                                 | `rh_admin` o `jefe_area`     | El `numero` **lo asigna el servidor**; 400 si el proyecto está finalizado (D-70)                                                        |
@@ -102,7 +103,7 @@ Sólo estas cuatro: `POST /auth/login`, `GET /api/v1` (inventario), `GET /health
 | POST   | `/expedientes/:id/documentos/:tipo/revisar`                | `rh_admin` · `rh_consulta`   | `{ aprobado, motivo? }`: valida o rechaza la versión en revisión (D-43, D-44)                                                           |
 | GET    | `/empresas/:id/adscripciones`                              | ver empleados                | `?activo=&area=&tipo=&categoriaId=&orden=`; el jefe de área sólo ve sus propias áreas (D-45, D-51)                                      |
 | POST   | `/empresas/:id/adscripciones`                              | `rh_admin`                   | Vincula a alguien que ya existe; 200 si reactiva una adscripción previa (D-45)                                                          |
-| PATCH  | `/adscripciones/:id`                                       | `rh_admin`                   | areas, tipoContrato, fechaIngreso, fechaTerminoContrato; re-sincroniza el checklist                                                     |
+| PATCH  | `/adscripciones/:id`                                       | `rh_admin`                   | areas, tipoContrato, fechas y **`registroPatronalId`** (D-72); re-sincroniza el checklist                                               |
 | PATCH  | `/adscripciones/:id/estado`                                | `rh_admin`                   | Baja **de esa empresa**; cierra sus asignaciones abiertas ahí (D-45)                                                                    |
 | PATCH  | `/adscripciones/:id/jefaturas`                             | `rh_admin`                   | Qué áreas **dirige** esa persona en esa empresa (D-60)                                                                                  |
 | GET    | `/empresas/:id/jefaturas`                                  | `rh_admin`                   | Quién dirige cada área; incluye las que nadie dirige (D-60)                                                                             |
@@ -270,6 +271,81 @@ formulario completo sigue funcionando.
 
 Dar de baja el contrato lo saca de la cuenta, y quitar su SIROC libera el
 registro de obra.
+
+### Coherencia del registro patronal y trazabilidad (D-71)
+
+Una persona puede cotizar en un registro patronal distinto al del proyecto al que
+se le asigna. **Eso avisa, no bloquea** (G2): Maquinaria CAMES ya tiene 144
+personas repartidas en cuatro registros y bloquear frenaría trabajo legítimo.
+
+`POST /proyectos/:id/asignaciones` responde **201 igual**, con el aviso en
+`data.avisos` y repetido en `message`:
+
+```jsonc
+{
+  "status": "success",
+  "message": "Ana Ruiz cotiza en el registro patronal R13-77767-10-5 y este proyecto es del H67-29973-10-5. La asignación queda registrada; revisa si hay que moverla de registro.",
+  "data": {
+    "asignacion": {},
+    "avisos": ["…"] // vacío cuando no hay nada que advertir
+  }
+}
+```
+
+`registroPatronalCoincide` tiene **tres estados**, y `null` no es `false`:
+
+| Valor   | Significa                                                          |
+| ------- | ------------------------------------------------------------------ |
+| `true`  | coinciden (ignorando guiones, espacios y mayúsculas)               |
+| `false` | la persona cotiza en otro registro                                 |
+| `null`  | **no se pudo comparar**: su adscripción no tiene registro patronal |
+
+Sale en cada renglón de `GET /proyectos/:id/asignaciones`, junto con
+`registroPatronalEmpleado` (el texto de su adscripción, no el del proyecto).
+
+`GET /asignaciones/:id` devuelve el detalle con la **cadena completa resuelta al
+leer**. No hay ningún id nuevo guardado en la asignación: todo se cruza en la
+consulta, así que corregir el registro de la adscripción se refleja solo.
+
+```jsonc
+{
+  "asignacion": {}, // más empleadoNombre, empleadoTipo, categoriaNombre
+  "trazabilidad": {
+    "empleado": { "_id": "66f…", "nombre": "Ana Ruiz" },
+    "empresa": { "_id": "66f…", "nombre": "Maquinaria CAMES" },
+    "adscripcionId": "66f…", // el eslabón: de ahí sale el registro de la persona
+    "adscripcionActiva": true,
+    "registroPatronalEmpleado": "R13-77767-10-5", // texto libre, o null
+    "proyecto": { "_id": "66f…", "nombre": "Torre Andares" },
+    "registroPatronal": {
+      "_id": "66f…",
+      "numero": "H67-29973-10-5",
+      "descripcion": null,
+      "activo": true
+    },
+    "cliente": { "_id": "66f…", "nombre": "Inmobiliaria X" },
+    "registroObra": {
+      "_id": "66f…",
+      "numero": "OB-0012",
+      "descripcion": null,
+      "activo": true
+    },
+    "registroPatronalCoincide": false
+  },
+  "avisos": ["…"]
+}
+```
+
+Lo lee cualquier sesión con alcance sobre el proyecto —mirar quién está en la
+obra no es moverlo—, y responde **404** si el proyecto no es visible.
+
+`registroPatronalId` en la adscripción (D-72) vincula la relación laboral con el
+catálogo de su empresa, y **convive** con `condiciones.registroPatronal`, que
+sigue siendo el texto crudo del archivo de nómina. Cuando el vínculo existe, el
+número de la persona sale del catálogo —canónico— y no del texto; por eso
+`registroPatronalCoincide` de una adscripción vinculada es exacto por
+construcción. `null` mientras la migración M3 no lo haya resuelto: el respaldo
+sigue siendo el texto.
 
 ### `AuthUser`
 

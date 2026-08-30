@@ -130,6 +130,11 @@ checklist.
 `400` si manda `activo` (usa el endpoint 4) o si deja a un `administrativo` sin
 ningún área.
 
+**También acepta `registroPatronalId`** (D-72), y `null` lo desvincula. Tiene que
+ser un registro **de la empresa de esa adscripción** y estar activo; si no, `400`
+con `errors[0].path: "registroPatronalId"`. La empresa no se puede cambiar, así
+que no hay forma de acabar apuntando al catálogo de otra.
+
 ---
 
 ## 4. Dar de baja o reactivar (de esa empresa)
@@ -199,6 +204,35 @@ sólo quitar llenando el dato.
 (salario, SBC, banco, cuenta) y **ninguna respuesta los devuelve**: son datos
 personales sensibles y falta decidir quién puede verlos. Si los necesitas, dilo y
 se define el permiso; no los busques en la respuesta porque no están.
+
+## El vínculo con el registro patronal (D-72)
+
+La adscripción gana **un campo más**, aditivo como los anteriores:
+
+| Campo                | Tipo           | Qué es                                       |
+| -------------------- | -------------- | -------------------------------------------- |
+| `registroPatronalId` | `string\|null` | El registro patronal de esa relación laboral |
+
+Apunta al catálogo de su empresa (`registrosPatronales`, D-65). **Convive con
+`condiciones.registroPatronal`, que sigue ahí y sigue siendo texto**, y cada uno
+tiene su papel:
+
+| Campo                          | Qué es                                  | Se puede confiar en él |
+| ------------------------------ | --------------------------------------- | ---------------------- |
+| `registroPatronalId`           | el vínculo validado contra el catálogo  | sí                     |
+| `condiciones.registroPatronal` | lo que dijo el archivo de nómina, crudo | no: no se valida nada  |
+
+Es el mismo reparto que entre `areas` (el dato modelado) y `departamento` (el
+texto original del archivo).
+
+**`null` es lo normal todavía.** La migración vincula lo que resuelve por número y
+deja en nulo lo que no; el importador hace lo mismo con cada archivo nuevo. Para
+mostrar el registro patronal de alguien, usa el número resuelto que ya te dan las
+asignaciones (`registroPatronalEmpleado`) o cae a
+`condiciones.registroPatronal` — **no** asumas que el id está.
+
+**Nada lo pisa.** Si lo corriges por `PATCH /adscripciones/:id`, ni el importador
+ni la migración lo sobrescriben: los dos sólo llenan lo que está vacío.
 
 ## Jefaturas de área — quién dirige qué (D-60)
 

@@ -7,8 +7,27 @@ const CAMPOS_ADSCRIPCION = [
   'areas',
   'tipoContrato',
   'fechaIngreso',
-  'fechaTerminoContrato'
+  'fechaTerminoContrato',
+  // El vínculo con el catálogo de la empresa (D-72). `null` lo desvincula.
+  'registroPatronalId'
 ]
+
+/**
+ * `registroPatronalId` — id, o `null` para desvincular.
+ *
+ * Se acepta `null` explícito porque hay que poder deshacer un vínculo mal puesto;
+ * que **sea** de esa empresa y esté activo lo valida el servicio, que es quien
+ * puede consultarla.
+ */
+const reglaRegistroPatronal = body('registroPatronalId')
+  .optional({ nullable: true })
+  .custom((valor) => {
+    if (valor === null || valor === '') return true
+    if (!/^[0-9a-fA-F]{24}$/.test(String(valor))) {
+      throw new Error('El registro patronal indicado no es válido')
+    }
+    return true
+  })
 
 const fechaCalendario = (campo, etiqueta) =>
   body(campo)
@@ -75,7 +94,8 @@ exports.addAffiliationValidation = [
     return true
   }),
   fechaCalendario('fechaTerminoContrato', 'La fecha de término'),
-  reglasAreas
+  reglasAreas,
+  reglaRegistroPatronal
 ]
 
 exports.updateAffiliationValidation = [
@@ -104,7 +124,8 @@ exports.updateAffiliationValidation = [
     .withMessage('Selecciona un tipo de contrato válido'),
   fechaCalendario('fechaIngreso', 'La fecha de ingreso'),
   fechaCalendario('fechaTerminoContrato', 'La fecha de término'),
-  reglasAreas
+  reglasAreas,
+  reglaRegistroPatronal
 ]
 
 /**

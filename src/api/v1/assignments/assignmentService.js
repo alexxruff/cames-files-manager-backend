@@ -3,12 +3,19 @@ const Assignment = require('./assignmentModel')
 const Project = require('../projects/projectModel')
 const Employee = require('../employees/employeeModel')
 const Affiliation = require('../affiliations/affiliationModel')
+const Company = require('../companies/companyModel')
 const { AppError } = require('../../../middlewares/errorHandler')
 const {
   empresaEsVisible,
   areasVisibles
 } = require('../../../middlewares/scopeMiddleware')
 const { isBefore } = require('../../../utils/dates')
+const { idAString } = require('../../../utils/ids')
+const {
+  findRegistry,
+  matchesEmployerRegistry,
+  employerRegistryWarning
+} = require('../../../utils/domain')
 
 /**
  * Asignaciones — proyecto ↔ empleado (backend-spec §6.4, modelo-datos §5b.3).
@@ -19,6 +26,11 @@ const { isBefore } = require('../../../utils/dates')
  *    pone en una obra de Empresa 1 a alguien que no trabaja para Empresa 1.
  * 2. Su categoría en el proyecto debe estar **habilitada en ese proyecto**.
  * 3. No se asigna a alguien dado de baja ni a un proyecto finalizado.
+ *
+ * Y una cuarta que **avisa en vez de bloquear** (G2, Fase 6): que la persona
+ * cotice en el registro patronal del proyecto. Maquinaria CAMES ya tiene 144
+ * personas repartidas en cuatro registros, así que impedirlo frenaría trabajo
+ * legítimo; el aviso deja el dato a la vista y quien lo lee decide.
  *
  * Quitar a alguien **no borra**: cierra la asignación con `fechaSalida`. Hay que
  * poder responder quién estaba en la obra el día de un accidente.
@@ -35,15 +47,119 @@ class AssignmentService {
       .populate({ path: 'empleadoId', select: 'nombre tipo activo' })
       .populate({ path: 'categoriaId', select: 'nombre' })
 
+    const conEmpleado = asignaciones.filter((a) => a.empleadoId)
+
+    /*
+     * G2 en el listado, y no sólo al asignar: el aviso del alta lo ve quien
+     * captura, una vez. Lo que RH necesita después es poder mirar la obra y
+     * encontrar a los que cotizan en otro registro sin abrir uno por uno.
+     */
+    const registros = await this.#registrosPatronalesDe(proyecto.empresaId)
+    const registroDelProyecto = findRegistry(registros, proyecto.registroPatronalId)
+    const registroPorEmpleado = await this.#registrosPatronalesDeLaGente(
+      proyecto.empresaId,
+      conEmpleado.map((a) => a.empleadoId._id),
+      registros
+    )
+
     return {
-      asignaciones: asignaciones
-        .filter((a) => a.empleadoId)
-        .map((a) => ({
+      asignaciones: conEmpleado.map((a) => {
+        const registroEmpleado = registroPorEmpleado.get(String(a.empleadoId._id)) ?? null
+        return {
           ...a.toJSON(),
           empleadoNombre: a.empleadoId.nombre,
           empleadoTipo: a.empleadoId.tipo,
-          categoriaNombre: a.categoriaId?.nombre ?? null
-        }))
+          categoriaNombre: a.categoriaId?.nombre ?? null,
+          // El de SU adscripción en esta empresa, no el del proyecto.
+          registroPatronalEmpleado: registroEmpleado,
+          // `null` = no se puede comparar, que no es lo mismo que `false`.
+          registroPatronalCoincide: matchesEmployerRegistry(
+            registroEmpleado,
+            registroDelProyecto?.numero ?? null
+          )
+        }
+      })
+    }
+  }
+
+  /**
+   * GET /asignaciones/:id — el detalle, con la **cadena resuelta** (Fase 6).
+   *
+   * `empleado → empresa → registro patronal → proyecto → registro de obra`, toda
+   * de una vez. Se arma al leer cruzando lo que ya existe; **no se persiste
+   * ningún id nuevo en la asignación** (plan §C5): duplicarlos crearía dos
+   * verdades, y la de la adscripción cambiaría sin que la asignación se enterara.
+   */
+  async getById(id, contexto = {}) {
+    const asignacion = await this.#buscarAsignacion(id)
+    const proyecto = await this.#buscarProyectoVisible(asignacion.proyectoId, contexto, {
+      poblar: true
+    })
+
+    await asignacion.populate([
+      { path: 'empleadoId', select: 'nombre tipo activo' },
+      { path: 'categoriaId', select: 'nombre' }
+    ])
+
+    const empresa = proyecto.empresaId
+    const cliente = proyecto.clienteId
+    const empleado = asignacion.empleadoId
+
+    const adscripcion = empleado
+      ? await Affiliation.findOne({
+          empresaId: empresa._id,
+          empleadoId: empleado._id
+        }).select('activo registroPatronalId condiciones.registroPatronal')
+      : null
+
+    const registroEmpleado = this.#numeroDeLaAdscripcion(
+      adscripcion,
+      empresa.registrosPatronales
+    )
+    const registroPatronal = findRegistry(
+      empresa.registrosPatronales,
+      proyecto.registroPatronalId
+    )
+    const registroObra = findRegistry(cliente?.registrosObra, proyecto.registroObraId)
+
+    const aviso = employerRegistryWarning({
+      empleadoNombre: empleado?.nombre,
+      registroEmpleado,
+      registroProyecto: registroPatronal?.numero ?? null
+    })
+
+    return {
+      asignacion: {
+        ...asignacion.toJSON(),
+        empleadoNombre: empleado?.nombre ?? null,
+        empleadoTipo: empleado?.tipo ?? null,
+        categoriaNombre: asignacion.categoriaId?.nombre ?? null
+      },
+      trazabilidad: {
+        empleado: empleado
+          ? { _id: empleado._id.toString(), nombre: empleado.nombre }
+          : null,
+        empresa: { _id: empresa._id.toString(), nombre: empresa.nombre },
+        // La adscripción es el eslabón: de ahí sale el registro de la persona.
+        adscripcionId: adscripcion?._id.toString() ?? null,
+        adscripcionActiva: adscripcion?.activo ?? null,
+        /*
+         * El id está cuando la adscripción ya está **vinculada** al catálogo de
+         * la empresa (D-72); `null` significa que el número de arriba es el texto
+         * crudo de la nómina y nadie lo ha validado contra nada.
+         */
+        registroPatronalEmpleadoId: idAString(adscripcion?.registroPatronalId),
+        registroPatronalEmpleado: registroEmpleado,
+        proyecto: { _id: proyecto._id.toString(), nombre: proyecto.nombre },
+        registroPatronal,
+        cliente: cliente ? { _id: cliente._id.toString(), nombre: cliente.nombre } : null,
+        registroObra,
+        registroPatronalCoincide: matchesEmployerRegistry(
+          registroEmpleado,
+          registroPatronal?.numero ?? null
+        )
+      },
+      avisos: aviso ? [aviso] : []
     }
   }
 
@@ -203,6 +319,19 @@ class AssignmentService {
       )
     }
 
+    /*
+     * G2: **avisa, no bloquea**. Se calcula ANTES de escribir sólo porque hace
+     * falta el registro del proyecto, pero no puede impedir el alta: la
+     * asignación se crea igual y el aviso viaja con la respuesta.
+     */
+    const registros = await this.#registrosPatronalesDe(proyecto.empresaId)
+    const aviso = employerRegistryWarning({
+      empleadoNombre: empleado.nombre,
+      registroEmpleado: this.#numeroDeLaAdscripcion(adscripcion, registros),
+      registroProyecto:
+        findRegistry(registros, proyecto.registroPatronalId)?.numero ?? null
+    })
+
     try {
       const asignacion = await Assignment.create({
         proyectoId: proyecto._id,
@@ -210,7 +339,10 @@ class AssignmentService {
         categoriaId: datos.categoriaId,
         fechaAsignacion: datos.fechaAsignacion
       })
-      return this.#unaConNombres(asignacion._id)
+      return {
+        ...(await this.#unaConNombres(asignacion._id)),
+        avisos: aviso ? [aviso] : []
+      }
     } catch (error) {
       // El índice parcial: ya tiene una asignación ACTIVA en este proyecto.
       if (error.code === 11000) {
@@ -224,11 +356,7 @@ class AssignmentService {
 
   /** Cierra la asignación. No borra: el histórico es el punto. */
   async salida(id, { fechaSalida }, contexto = {}) {
-    if (!mongoose.isValidObjectId(id)) {
-      throw new AppError(400, 'La asignación indicada no es válida')
-    }
-    const asignacion = await Assignment.findById(id)
-    if (!asignacion) throw AppError.notFound('La asignación no existe')
+    const asignacion = await this.#buscarAsignacion(id)
 
     // El alcance se comprueba por el proyecto al que pertenece.
     await this.#buscarProyectoVisible(asignacion.proyectoId, contexto)
@@ -242,6 +370,61 @@ class AssignmentService {
     await asignacion.save()
 
     return this.#unaConNombres(asignacion._id)
+  }
+
+  /**
+   * El catálogo de registros patronales de la empresa, una sola vez.
+   *
+   * Tanto el proyecto como la adscripción guardan **sólo el id** (plan §C3,
+   * D-72), y ninguno de los dos se resuelve con `populate`: son subdocumentos.
+   * El número, que es lo comparable y lo que se muestra, sale de aquí.
+   */
+  async #registrosPatronalesDe(empresaId) {
+    const empresa = await Company.findById(empresaId).select('registrosPatronales')
+    return empresa?.registrosPatronales || []
+  }
+
+  /**
+   * El número de registro patronal de una adscripción.
+   *
+   * **El vínculo manda sobre el texto** (D-72): si la adscripción ya apunta a un
+   * registro del catálogo, el número sale de ahí —canónico, y garantizado a
+   * existir en la empresa—. Si todavía no —la Fase 7 es gradual y M3 deja nulo lo
+   * que no resuelve—, se cae al texto que dejó la nómina.
+   *
+   * Por eso la comparación no cambió: lo que cambió es de dónde sale el número.
+   */
+  #numeroDeLaAdscripcion(adscripcion, registros) {
+    if (!adscripcion) return null
+    return (
+      findRegistry(registros, adscripcion.registroPatronalId)?.numero ??
+      adscripcion.condiciones?.registroPatronal ??
+      null
+    )
+  }
+
+  /**
+   * `empleadoId → su número de registro patronal en esa empresa`.
+   *
+   * Sin filtrar por `activo`: el listado incluye asignaciones cerradas, y a esa
+   * gente se le pudo dar de baja de la empresa. Excluirlas dejaría el renglón
+   * histórico sin el dato que justo se quiere ver. Hay a lo más una adscripción
+   * por (empresa, empleado) — índice único —, así que no hay ambigüedad.
+   */
+  async #registrosPatronalesDeLaGente(empresaId, empleadoIds, registros) {
+    if (empleadoIds.length === 0) return new Map()
+
+    const adscripciones = await Affiliation.find({
+      empresaId,
+      empleadoId: { $in: empleadoIds }
+    }).select('empleadoId registroPatronalId condiciones.registroPatronal')
+
+    return new Map(
+      adscripciones.map((a) => [
+        String(a.empleadoId),
+        this.#numeroDeLaAdscripcion(a, registros)
+      ])
+    )
   }
 
   async #unaConNombres(id) {
@@ -259,17 +442,35 @@ class AssignmentService {
     }
   }
 
-  async #buscarProyectoVisible(proyectoId, contexto) {
+  /** Existe, sin mirar alcance todavía: eso lo decide su proyecto. */
+  async #buscarAsignacion(id) {
+    if (!mongoose.isValidObjectId(id)) {
+      throw new AppError(400, 'La asignación indicada no es válida')
+    }
+    const asignacion = await Assignment.findById(id)
+    if (!asignacion) throw AppError.notFound('La asignación no existe')
+    return asignacion
+  }
+
+  async #buscarProyectoVisible(proyectoId, contexto, { poblar = false } = {}) {
     if (!mongoose.isValidObjectId(proyectoId)) {
       throw new AppError(400, 'El proyecto indicado no es válido')
     }
-    const proyecto = await Project.findById(proyectoId)
+
+    const consulta = Project.findById(proyectoId)
+    if (poblar) {
+      // Con los registros, que es lo que hace falta para resolver la cadena.
+      consulta
+        .populate({ path: 'empresaId', select: 'nombre registrosPatronales' })
+        .populate({ path: 'clienteId', select: 'nombre registrosObra' })
+    }
+    const proyecto = await consulta
     if (!proyecto) throw AppError.notFound('El proyecto no existe')
 
     if (
       !empresaEsVisible(
         { empresasVisibles: contexto.empresasVisibles },
-        proyecto.empresaId
+        proyecto.empresaId?._id || proyecto.empresaId
       )
     ) {
       throw AppError.notFound('El proyecto no existe')

@@ -5,6 +5,7 @@ const app = require('../../src/app')
 const Employee = require('../../src/api/v1/employees/employeeModel')
 const Affiliation = require('../../src/api/v1/affiliations/affiliationModel')
 const Category = require('../../src/api/v1/categories/categoryModel')
+const Company = require('../../src/api/v1/companies/companyModel')
 const Record = require('../../src/api/v1/records/recordModel')
 const {
   ensureBaseChecklistTemplates
@@ -15,6 +16,7 @@ const {
   crearEmpleado,
   crearEmpleadoConSesion,
   adscribir,
+  crearRegistroPatronal,
   auth
 } = require('../helpers/factories')
 const {
@@ -1489,5 +1491,133 @@ describe('POST /api/v1/empleados/importar', () => {
       },
       300000
     )
+  })
+})
+
+/**
+ * El importador vincula cada adscripción con el registro patronal de la empresa
+ * (Fase 7, D-72). El archivo trae el número **como texto**; el catálogo de la
+ * empresa tiene identidad propia desde D-65, y aquí se cruzan.
+ */
+describe('El importador resuelve el registro patronal (D-72)', () => {
+  const R13 = 'R13-77767-10-5'
+  const H67 = 'H67-29973-10-5'
+
+  /**
+   * Las del archivo, sin la del usuario de la sesión: `crearEmpleadoConSesion`
+   * adscribe a quien importa, y esa no viene de la nómina.
+   */
+  const importadas = (empresa, sesion) =>
+    Affiliation.find({
+      empresaId: empresa._id,
+      empleadoId: { $ne: sesion.empleado._id }
+    })
+
+  it('vincula a quien trae un número que SÍ está en el catálogo', async () => {
+    const { empresa, sesion } = await escenario()
+    const registro = await crearRegistroPatronal(empresa, R13)
+    const archivo = await construirArchivo({
+      filas: filas(3, () => ({ registroPatronal: R13 }))
+    })
+
+    const res = await importar(sesion.token, archivo, { empresaId: empresa._id })
+
+    expect(res.status).toBe(201)
+    const adscripciones = await importadas(empresa, sesion)
+    expect(adscripciones).toHaveLength(3)
+    for (const a of adscripciones) {
+      expect(String(a.registroPatronalId)).toBe(registro._id.toString())
+      // El texto NO se borra: es lo que dijo el archivo.
+      expect(a.condiciones.registroPatronal).toBe(R13)
+    }
+  })
+
+  it('cruza ignorando guiones y mayúsculas, como la comparación', async () => {
+    const { empresa, sesion } = await escenario()
+    const registro = await crearRegistroPatronal(empresa, R13)
+    const archivo = await construirArchivo({
+      filas: filas(1, () => ({ registroPatronal: 'r13 77767 10 5' }))
+    })
+
+    await importar(sesion.token, archivo, { empresaId: empresa._id })
+
+    const [a] = await importadas(empresa, sesion)
+    expect(String(a.registroPatronalId)).toBe(registro._id.toString())
+  })
+
+  it('lo que no resuelve se REPORTA y se queda sin vincular; no lo crea solo', async () => {
+    const { empresa, sesion } = await escenario()
+    await crearRegistroPatronal(empresa, R13)
+    const archivo = await construirArchivo({
+      filas: filas(2, () => ({ registroPatronal: H67 }))
+    })
+
+    const res = await importar(sesion.token, archivo, { empresaId: empresa._id })
+
+    expect(res.status).toBe(201)
+    const aviso = res.body.data.avisos.find((a) => a.includes(H67))
+    expect(aviso).toBeDefined()
+    expect(aviso).toMatch(/2 personas lo traen/i)
+    expect(aviso).toMatch(/agrégalo a la empresa/i)
+
+    const adscripciones = await importadas(empresa, sesion)
+    expect(adscripciones).toHaveLength(2)
+    expect(adscripciones.every((a) => a.registroPatronalId === null)).toBe(true)
+    // Dar de alta un registro patronal es del admin de plataforma: no se crea solo.
+    const { registrosPatronales } = await Company.findById(empresa._id)
+    expect(registrosPatronales).toHaveLength(1)
+  })
+
+  it('re-importar DESPUÉS de agregar el registro enlaza a los que quedaron sueltos', async () => {
+    const { empresa, sesion } = await escenario()
+    const archivo = await construirArchivo({
+      filas: filas(2, () => ({ registroPatronal: H67 }))
+    })
+
+    await importar(sesion.token, archivo, { empresaId: empresa._id })
+    expect(
+      (await importadas(empresa, sesion)).every((a) => a.registroPatronalId === null)
+    ).toBe(true)
+
+    // Lo que promete el aviso: se agrega y se vuelve a subir el MISMO archivo.
+    const registro = await crearRegistroPatronal(empresa, H67)
+    const otraVez = await construirArchivo({
+      filas: filas(2, () => ({ registroPatronal: H67 }))
+    })
+    await importar(sesion.token, otraVez, { empresaId: empresa._id })
+
+    const adscripciones = await importadas(empresa, sesion)
+    expect(adscripciones).toHaveLength(2)
+    for (const a of adscripciones) {
+      expect(String(a.registroPatronalId)).toBe(registro._id.toString())
+    }
+  })
+
+  it('no pisa un vínculo puesto a mano: el archivo no manda sobre esa decisión', async () => {
+    const { empresa, sesion } = await escenario()
+    const delArchivo = await crearRegistroPatronal(empresa, R13)
+    const aMano = await crearRegistroPatronal(empresa, H67)
+
+    await importar(
+      sesion.token,
+      await construirArchivo({ filas: filas(1, () => ({ registroPatronal: R13 })) }),
+      { empresaId: empresa._id }
+    )
+    const [adscripcion] = await importadas(empresa, sesion)
+    expect(String(adscripcion.registroPatronalId)).toBe(delArchivo._id.toString())
+
+    // Alguien lo corrige a mano, y el archivo vuelve a decir lo suyo.
+    await Affiliation.updateOne(
+      { _id: adscripcion._id },
+      { $set: { registroPatronalId: aMano._id } }
+    )
+    await importar(
+      sesion.token,
+      await construirArchivo({ filas: filas(1, () => ({ registroPatronal: R13 })) }),
+      { empresaId: empresa._id }
+    )
+
+    const despues = await Affiliation.findById(adscripcion._id)
+    expect(String(despues.registroPatronalId)).toBe(aMano._id.toString())
   })
 })

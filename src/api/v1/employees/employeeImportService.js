@@ -19,6 +19,7 @@ const {
   mapearFila,
   columnasFaltantes
 } = require('../../../utils/domain/employeeImport')
+const { normalizeRegistryNumber } = require('../../../utils/domain')
 
 /**
  * Importación de colaboradores desde el archivo de nómina (D-46).
@@ -221,6 +222,13 @@ class EmployeeImportService {
      */
     const areas = await this.#resolverAreas(filas, avisosGenerales)
 
+    /*
+     * El registro patronal de cada fila, contra el catálogo de la empresa (D-72).
+     * También ANTES de clasificar: `registroPatronalId` es un campo más de la
+     * adscripción y entra en la comparación con lo que ya está guardado.
+     */
+    this.#resolverRegistrosPatronales(filas, empresa, avisosGenerales)
+
     await this.#clasificar(filas, empresa, opciones)
 
     const rfcArchivo = hoja.meta[META_RFC]
@@ -400,6 +408,56 @@ class EmployeeImportService {
    * Se resuelve una vez por departamento distinto, no una por fila: el archivo
    * de Urbacames tiene 145 filas y una docena de departamentos.
    */
+  /**
+   * Vincula cada fila con el registro patronal de la empresa (D-72).
+   *
+   * El archivo trae el registro **como texto** y la empresa tiene su catálogo con
+   * identidad propia desde D-65: aquí se cruzan por número normalizado, para que
+   * la adscripción nazca ya vinculada en vez de esperar a la migración.
+   *
+   * **No crea los que faltan**, a propósito: dar de alta un registro patronal es
+   * del administrador de plataforma (D-65), y crearlos desde un archivo saltaría
+   * ese permiso. Lo que no resuelve se reporta —con el número y a cuánta gente
+   * afecta— y se queda en `null`; el aviso dice exactamente qué hay que agregar.
+   *
+   * Es puro cruce en memoria: la empresa ya está cargada, no cuesta consultas.
+   */
+  #resolverRegistrosPatronales(filas, empresa, avisosGenerales = []) {
+    const catalogo = new Map(
+      (empresa.registrosPatronales || [])
+        .filter((r) => r.activo)
+        .map((r) => [normalizeRegistryNumber(r.numero), r._id])
+    )
+
+    const sinResolver = new Map()
+
+    for (const fila of filas) {
+      if (fila.errores.length > 0) continue
+
+      const texto = fila.adscripcion.condiciones?.registroPatronal
+      if (!texto) continue
+
+      const id = catalogo.get(normalizeRegistryNumber(texto))
+      if (id) {
+        fila.adscripcion.registroPatronalId = id
+        continue
+      }
+
+      const numero = String(texto).trim()
+      sinResolver.set(numero, (sinResolver.get(numero) || 0) + 1)
+    }
+
+    for (const [numero, personas] of sinResolver) {
+      avisosGenerales.push(
+        `El registro patronal "${numero}" no está en el catálogo de ${empresa.nombre} (${personas} ${
+          personas === 1 ? 'persona lo trae' : 'personas lo traen'
+        }). Se importan sin vincular; agrégalo a la empresa y vuelve a importar para enlazarlas.`
+      )
+    }
+
+    return sinResolver
+  }
+
   async #resolverAreas(filas, avisosGenerales = []) {
     const areas = new Map()
 
@@ -1040,7 +1098,10 @@ class EmployeeImportService {
          * adscripciones que ya existían antes de D-57, y sin él nunca podrían
          * detectar un cambio manual.
          */
-        if (yaTeniaAdscripcion) await this.#refrescarSnapshot(fila)
+        if (yaTeniaAdscripcion) {
+          await this.#refrescarSnapshot(fila)
+          await this.#vincularRegistroPatronal(fila)
+        }
         fila.aplicada = true
       } catch (error) {
         /*
@@ -1201,6 +1262,7 @@ class EmployeeImportService {
     for (const [campo, valor] of Object.entries(fila.adscripcion.condiciones)) {
       if (valor !== null && valor !== undefined) adscripcion.condiciones[campo] = valor
     }
+
     for (const [campo, valor] of Object.entries(fila.adscripcion.nomina)) {
       if (valor !== null && valor !== undefined) adscripcion.nomina[campo] = valor
     }
@@ -1249,6 +1311,31 @@ class EmployeeImportService {
     await Affiliation.updateOne(
       { _id: fila.adscripcionId },
       { $set: { payrollSnapshot: this.#snapshot(fila) } }
+    )
+  }
+
+  /**
+   * Llena el vínculo con el registro patronal **sólo si está vacío** (D-72).
+   *
+   * Va aquí, con el snapshot, y no en `#aplicarAdscripcion`, por la misma razón
+   * que aquél: tiene que correr también en las filas **sin cambios**. Re-subir el
+   * mismo archivo después de dar de alta el registro que faltaba es justo lo que
+   * promete el aviso, y esas filas no cambian nada más.
+   *
+   * **No pisa lo que ya está.** El archivo trae el número como texto; el vínculo
+   * es una decisión que alguien pudo tomar —o corregir— desde
+   * `PATCH /adscripciones/:id`, y sobrescribirla en silencio desharía ese trabajo.
+   * Por eso el filtro incluye `registroPatronalId: null`.
+   */
+  async #vincularRegistroPatronal(fila) {
+    if (!fila.adscripcionId || !fila.adscripcion.registroPatronalId) return
+
+    await Affiliation.updateOne(
+      {
+        _id: fila.adscripcionId,
+        $or: [{ registroPatronalId: null }, { registroPatronalId: { $exists: false } }]
+      },
+      { $set: { registroPatronalId: fila.adscripcion.registroPatronalId } }
     )
   }
 

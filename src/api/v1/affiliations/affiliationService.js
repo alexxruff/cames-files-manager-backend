@@ -4,6 +4,7 @@ const Employee = require('../employees/employeeModel')
 const Company = require('../companies/companyModel')
 const Assignment = require('../assignments/assignmentModel')
 const areaService = require('../areas/areaService')
+const companyService = require('../companies/companyService')
 const Project = require('../projects/projectModel')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { today } = require('../../../utils/dates')
@@ -111,11 +112,21 @@ class AffiliationService {
       })
     }
 
+    // De ESTA empresa y activo (D-72). Opcional: la mayoría se resuelve sola
+    // con la migración M3 y con lo que trae el archivo de nómina.
+    if (datos.registroPatronalId) {
+      await companyService.assertRegistroPatronalUsable(
+        empresaId,
+        datos.registroPatronalId
+      )
+    }
+
     const campos = {
       areas: datos.areas || [],
       tipoContrato: datos.tipoContrato,
       fechaIngreso: datos.fechaIngreso,
-      fechaTerminoContrato: datos.fechaTerminoContrato || null
+      fechaTerminoContrato: datos.fechaTerminoContrato || null,
+      registroPatronalId: datos.registroPatronalId || null
     }
 
     let adscripcion
@@ -161,11 +172,24 @@ class AffiliationService {
      * está en la lista blanca de la validación, así que nadie puede ponerlo desde
      * el `PATCH` — sólo quitarlo, llenando el dato (D-46).
      */
+    /*
+     * El registro patronal se valida contra la empresa de ESTA adscripción, que
+     * no se puede cambiar: no hay forma de acabar apuntando al catálogo de otra.
+     * `null` o `''` desvinculan — hay que poder deshacer un vínculo mal puesto.
+     */
+    if (datos.registroPatronalId) {
+      await companyService.assertRegistroPatronalUsable(
+        adscripcion.empresaId,
+        datos.registroPatronalId
+      )
+    }
+
     for (const campo of [
       'areas',
       'tipoContrato',
       'fechaIngreso',
-      'fechaTerminoContrato'
+      'fechaTerminoContrato',
+      'registroPatronalId'
     ]) {
       if (datos[campo] === undefined) continue
       adscripcion[campo] = datos[campo] === '' ? null : datos[campo]

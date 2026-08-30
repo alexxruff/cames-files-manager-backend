@@ -157,6 +157,28 @@ const affiliationSchema = new mongoose.Schema(
     condiciones: { type: conditionsSchema, default: () => ({}) },
 
     /**
+     * El registro patronal de esta relación laboral, **por id** (Fase 7, D-72).
+     *
+     * Apunta a `companies.registrosPatronales[]._id` de SU empresa. Va sin `ref`
+     * porque es un subdocumento y no hay colección a la que referir: `populate`
+     * no lo resuelve, hay que traer la empresa y buscarlo con `findRegistry`.
+     * Es la misma forma que `projects.registroPatronalId`.
+     *
+     * **Convive con `condiciones.registroPatronal`, que es texto**, y cada uno
+     * tiene su papel: aquí vive el vínculo validado contra el catálogo de la
+     * empresa; allá, lo que dijo el archivo de nómina, tal cual. Es el mismo
+     * reparto que entre `areas` y `departamento` (D-46) — el dato modelado y su
+     * origen crudo.
+     *
+     * `null` mientras no se resuelva: la migración M3 lo llena por número y lo
+     * que no resuelva se reporta y se queda nulo. Nada depende de que esté.
+     */
+    registroPatronalId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null
+    },
+
+    /**
      * Importes y datos bancarios. NO se serializan: ver `payrollSchema`.
      *
      * Desde D-63 aquí quedan **sólo los siete campos sensibles**; el resto de lo
@@ -254,6 +276,7 @@ const affiliationSchema = new mongoose.Schema(
           fechaTerminoContrato: ret.fechaTerminoContrato ?? null,
           datosPendientes: ret.datosPendientes || [],
           condiciones: ret.condiciones || {},
+          registroPatronalId: idAString(ret.registroPatronalId),
           // `nomina` NO se serializa: datos sensibles, ver payrollSchema.
           activo: ret.activo,
           motivoBaja: ret.motivoBaja ?? null,

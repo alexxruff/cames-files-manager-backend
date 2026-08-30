@@ -34,6 +34,7 @@
     "migrate:jefaturas": "node scripts/migrateAreaLeadership.js",
     "migrate:condiciones": "node scripts/migrateLaborConditions.js",
     "migrate:registros-patronales": "node scripts/migrateEmployerRegistrations.js",
+    "migrate:vinculo-rp": "node scripts/linkAffiliationRegistrations.js",
     "proyectos:incompletos": "node scripts/resolveLegacyProjects.js"
   },
   "dependencies": {

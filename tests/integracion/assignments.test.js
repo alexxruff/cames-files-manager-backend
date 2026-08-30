@@ -2,6 +2,7 @@ const request = require('supertest')
 const mongoose = require('mongoose')
 const app = require('../../src/app')
 const Assignment = require('../../src/api/v1/assignments/assignmentModel')
+const Affiliation = require('../../src/api/v1/affiliations/affiliationModel')
 const {
   crearEmpresa,
   crearCategoria,
@@ -9,6 +10,7 @@ const {
   crearEmpleadoConSesion,
   adscribir,
   crearProyecto,
+  crearRegistroPatronal,
   asignar,
   auth
 } = require('../helpers/factories')
@@ -485,5 +487,313 @@ describe('PATCH /api/v1/asignaciones/:id/salida', () => {
       .send({ fechaSalida: '2026-10-31' })
 
     expect(res.status).toBe(403)
+  })
+})
+
+/**
+ * Coherencia del registro patronal (Fase 6, G2) y la cadena resuelta.
+ *
+ * Los números son los reales de Maquinaria CAMES: 144 personas repartidas entre
+ * cuatro registros son la razón por la que esto **avisa y no bloquea**.
+ */
+const R13 = 'R13-77767-10-5'
+const H67 = 'H67-29973-10-5'
+
+/** Proyecto con registro patronal conocido, para poder comparar contra él. */
+async function escenarioDeRegistros(datos = {}) {
+  const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin', ...datos })
+  const categoria = await crearCategoria('Albañil', 'mano_de_obra')
+  const registro = await crearRegistroPatronal(sesion.empresa, R13)
+  const { proyecto, cliente, registroObra } = await crearProyecto(sesion.empresa, {
+    categorias: [categoria._id],
+    registroPatronalId: registro._id,
+    fechaInicio: '2026-09-01'
+  })
+
+  /** Alguien asignable, con el registro patronal que se le indique. */
+  const crearAsignable = async (registroPatronal) => {
+    const persona = await crearEmpleado({
+      tipo: 'mano_de_obra',
+      categoriaId: categoria._id
+    })
+    await adscribir(sesion.empresa, persona, {
+      areas: ['operaciones_urbanizadora'],
+      condiciones: registroPatronal ? { registroPatronal } : {}
+    })
+    return persona
+  }
+
+  return {
+    ...sesion,
+    categoria,
+    proyecto,
+    cliente,
+    registro,
+    registroObra,
+    crearAsignable
+  }
+}
+
+describe('Coherencia del registro patronal al asignar (G2)', () => {
+  beforeAll(() => Assignment.init())
+
+  it('AVISA pero no bloquea a quien cotiza en otro registro de la misma empresa', async () => {
+    const { token, proyecto, categoria, crearAsignable } = await escenarioDeRegistros()
+    const persona = await crearAsignable(H67)
+
+    const res = await request(app)
+      .post(`${RUTA}/${proyecto._id}/asignaciones`)
+      .set(auth(token))
+      .send({
+        empleadoId: persona._id.toString(),
+        categoriaId: categoria._id.toString(),
+        fechaAsignacion: '2026-09-15'
+      })
+
+    // 201: la asignación se hizo. El aviso no es un error.
+    expect(res.status).toBe(201)
+    expect(res.body.data.asignacion.activo).toBe(true)
+    expect(res.body.data.avisos).toHaveLength(1)
+    expect(res.body.data.avisos[0]).toContain(H67)
+    expect(res.body.data.avisos[0]).toContain(R13)
+    // Y sale en `message`, para que se vea aunque el front no lea `avisos`.
+    expect(res.body.message).toBe(res.body.data.avisos[0])
+    expect(await Assignment.countDocuments({ proyectoId: proyecto._id })).toBe(1)
+  })
+
+  it('no avisa si coincide, aunque esté capturado con otro formato', async () => {
+    const { token, proyecto, categoria, crearAsignable } = await escenarioDeRegistros()
+    const persona = await crearAsignable('r13 77767 10 5')
+
+    const res = await request(app)
+      .post(`${RUTA}/${proyecto._id}/asignaciones`)
+      .set(auth(token))
+      .send({
+        empleadoId: persona._id.toString(),
+        categoriaId: categoria._id.toString(),
+        fechaAsignacion: '2026-09-15'
+      })
+
+    expect(res.status).toBe(201)
+    expect(res.body.data.avisos).toEqual([])
+    expect(res.body.message).toMatch(/Personal asignado al proyecto/i)
+  })
+
+  it('distingue "no coincide" de "no se pudo comprobar"', async () => {
+    const { token, proyecto, categoria, crearAsignable } = await escenarioDeRegistros()
+    const persona = await crearAsignable(null)
+
+    const res = await request(app)
+      .post(`${RUTA}/${proyecto._id}/asignaciones`)
+      .set(auth(token))
+      .send({
+        empleadoId: persona._id.toString(),
+        categoriaId: categoria._id.toString(),
+        fechaAsignacion: '2026-09-15'
+      })
+
+    expect(res.status).toBe(201)
+    expect(res.body.data.avisos[0]).toMatch(
+      /no tiene registro patronal en su adscripción/i
+    )
+  })
+
+  it('el listado del proyecto deja la coincidencia a la vista, en tres estados', async () => {
+    const { token, proyecto, categoria, crearAsignable } = await escenarioDeRegistros()
+    const coincide = await crearAsignable(R13)
+    const distinto = await crearAsignable(H67)
+    const sinDato = await crearAsignable(null)
+    for (const persona of [coincide, distinto, sinDato]) {
+      await asignar(proyecto, persona, categoria._id, { fechaAsignacion: '2026-09-15' })
+    }
+
+    const res = await request(app)
+      .get(`${RUTA}/${proyecto._id}/asignaciones`)
+      .set(auth(token))
+
+    expect(res.status).toBe(200)
+    const porEmpleado = new Map(res.body.data.asignaciones.map((a) => [a.empleadoId, a]))
+    expect(porEmpleado.get(coincide._id.toString())).toMatchObject({
+      registroPatronalEmpleado: R13,
+      registroPatronalCoincide: true
+    })
+    expect(porEmpleado.get(distinto._id.toString())).toMatchObject({
+      registroPatronalEmpleado: H67,
+      registroPatronalCoincide: false
+    })
+    // Sin dato es `null`, no `false`: no se pudo comparar.
+    expect(porEmpleado.get(sinDato._id.toString())).toMatchObject({
+      registroPatronalEmpleado: null,
+      registroPatronalCoincide: null
+    })
+  })
+})
+
+describe('El vínculo manda sobre el texto (Fase 7, D-72)', () => {
+  beforeAll(() => Assignment.init())
+
+  /**
+   * Una adscripción vinculada al registro del proyecto pero cuyo TEXTO dice otro
+   * —el archivo de nómina traía un número viejo y luego se corrigió el vínculo—.
+   * Gana el vínculo: el número sale del catálogo de la empresa.
+   */
+  it('no avisa si el vínculo coincide, aunque el texto diga otro registro', async () => {
+    const { token, empresa, proyecto, categoria, registro, crearAsignable } =
+      await escenarioDeRegistros()
+    const persona = await crearAsignable(H67) // el texto, desactualizado
+    await Affiliation.updateOne(
+      { empresaId: empresa._id, empleadoId: persona._id },
+      { $set: { registroPatronalId: registro._id } } // el vínculo, correcto
+    )
+
+    const res = await request(app)
+      .post(`${RUTA}/${proyecto._id}/asignaciones`)
+      .set(auth(token))
+      .send({
+        empleadoId: persona._id.toString(),
+        categoriaId: categoria._id.toString(),
+        fechaAsignacion: '2026-09-15'
+      })
+
+    expect(res.status).toBe(201)
+    expect(res.body.data.avisos).toEqual([])
+  })
+
+  it('avisa si el vínculo apunta a otro registro, aunque el texto coincida', async () => {
+    const { token, empresa, proyecto, categoria, crearAsignable } =
+      await escenarioDeRegistros()
+    const otro = await crearRegistroPatronal(empresa, H67)
+    const persona = await crearAsignable(R13) // el texto coincide con el proyecto
+    await Affiliation.updateOne(
+      { empresaId: empresa._id, empleadoId: persona._id },
+      { $set: { registroPatronalId: otro._id } } // pero el vínculo dice otro
+    )
+
+    const res = await request(app)
+      .post(`${RUTA}/${proyecto._id}/asignaciones`)
+      .set(auth(token))
+      .send({
+        empleadoId: persona._id.toString(),
+        categoriaId: categoria._id.toString(),
+        fechaAsignacion: '2026-09-15'
+      })
+
+    expect(res.status).toBe(201)
+    expect(res.body.data.avisos[0]).toContain(H67)
+  })
+
+  it('el detalle distingue vinculado de texto crudo', async () => {
+    const { token, empresa, proyecto, categoria, registro, crearAsignable } =
+      await escenarioDeRegistros()
+    const vinculada = await crearAsignable(R13)
+    await Affiliation.updateOne(
+      { empresaId: empresa._id, empleadoId: vinculada._id },
+      { $set: { registroPatronalId: registro._id } }
+    )
+    const suelta = await crearAsignable(R13)
+
+    const conVinculo = await asignar(proyecto, vinculada, categoria._id)
+    const sinVinculo = await asignar(proyecto, suelta, categoria._id)
+
+    const a = await request(app)
+      .get(`/api/v1/asignaciones/${conVinculo._id}`)
+      .set(auth(token))
+    const b = await request(app)
+      .get(`/api/v1/asignaciones/${sinVinculo._id}`)
+      .set(auth(token))
+
+    expect(a.body.data.trazabilidad.registroPatronalEmpleadoId).toBe(
+      registro._id.toString()
+    )
+    // Sin vínculo: el número es el texto crudo de la nómina, sin validar.
+    expect(b.body.data.trazabilidad.registroPatronalEmpleadoId).toBeNull()
+    expect(b.body.data.trazabilidad.registroPatronalEmpleado).toBe(R13)
+    // Los dos coinciden con el proyecto; el vínculo no cambia el veredicto.
+    expect(a.body.data.trazabilidad.registroPatronalCoincide).toBe(true)
+    expect(b.body.data.trazabilidad.registroPatronalCoincide).toBe(true)
+  })
+})
+
+describe('GET /api/v1/asignaciones/:id — la cadena resuelta (Fase 6)', () => {
+  beforeAll(() => Assignment.init())
+
+  it('devuelve empleado → empresa → registro patronal → proyecto → registro de obra', async () => {
+    const { token, empresa, proyecto, cliente, categoria, registroObra, crearAsignable } =
+      await escenarioDeRegistros()
+    const persona = await crearAsignable(H67)
+    const asignacion = await asignar(proyecto, persona, categoria._id, {
+      fechaAsignacion: '2026-09-15'
+    })
+
+    const res = await request(app)
+      .get(`/api/v1/asignaciones/${asignacion._id}`)
+      .set(auth(token))
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.asignacion).toMatchObject({
+      _id: asignacion._id.toString(),
+      empleadoNombre: persona.nombre,
+      categoriaNombre: 'Albañil'
+    })
+    expect(res.body.data.trazabilidad).toMatchObject({
+      empleado: { _id: persona._id.toString(), nombre: persona.nombre },
+      empresa: { _id: empresa._id.toString(), nombre: empresa.nombre },
+      // El de SU adscripción, texto libre; el del proyecto va resuelto.
+      registroPatronalEmpleado: H67,
+      proyecto: { _id: proyecto._id.toString(), nombre: proyecto.nombre },
+      registroPatronal: { numero: R13, descripcion: null, activo: true },
+      cliente: { _id: cliente._id.toString(), nombre: cliente.nombre },
+      registroPatronalCoincide: false
+    })
+    expect(res.body.data.trazabilidad.registroObra._id).toBe(registroObra.toString())
+    expect(res.body.data.trazabilidad.adscripcionActiva).toBe(true)
+    expect(res.body.data.avisos).toHaveLength(1)
+  })
+
+  it('404 si la asignación es de un proyecto fuera de alcance', async () => {
+    const { proyecto, categoria, crearAsignable } = await escenarioDeRegistros()
+    const persona = await crearAsignable(R13)
+    const asignacion = await asignar(proyecto, persona, categoria._id)
+    // Otro RH, de otra empresa: el proyecto no existe para él.
+    const ajeno = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+
+    const res = await request(app)
+      .get(`/api/v1/asignaciones/${asignacion._id}`)
+      .set(auth(ajeno.token))
+
+    expect(res.status).toBe(404)
+    expect(res.body.message).toMatch(/no existe/i)
+  })
+
+  it('rh_consulta lo lee: mirar quién está en la obra no es moverlo', async () => {
+    const { empresa, proyecto, categoria, crearAsignable } = await escenarioDeRegistros()
+    const persona = await crearAsignable(R13)
+    const asignacion = await asignar(proyecto, persona, categoria._id)
+    const consulta = await crearEmpleadoConSesion({ nivelAcceso: 'rh_consulta', empresa })
+
+    const res = await request(app)
+      .get(`/api/v1/asignaciones/${asignacion._id}`)
+      .set(auth(consulta.token))
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.trazabilidad.registroPatronalCoincide).toBe(true)
+  })
+
+  it('401 sin sesión, 400 con un id inválido y 404 si no existe', async () => {
+    const { token, proyecto, categoria, crearAsignable } = await escenarioDeRegistros()
+    const persona = await crearAsignable(R13)
+    const asignacion = await asignar(proyecto, persona, categoria._id)
+
+    const sinSesion = await request(app).get(`/api/v1/asignaciones/${asignacion._id}`)
+    const invalido = await request(app)
+      .get('/api/v1/asignaciones/no-es-un-id')
+      .set(auth(token))
+    const inexistente = await request(app)
+      .get(`/api/v1/asignaciones/${new mongoose.Types.ObjectId()}`)
+      .set(auth(token))
+
+    expect(sinSesion.status).toBe(401)
+    expect(invalido.status).toBe(400)
+    expect(inexistente.status).toBe(404)
   })
 })

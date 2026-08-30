@@ -21,6 +21,10 @@ exports.createAssignmentValidation = [
   })
 ]
 
+exports.assignmentIdValidation = [
+  param('id').isMongoId().withMessage('La asignación indicada no es válida')
+]
+
 exports.assignmentExitValidation = [
   param('id').isMongoId().withMessage('La asignación indicada no es válida'),
   body('fechaSalida').custom((valor) => {

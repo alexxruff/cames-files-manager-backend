@@ -2910,3 +2910,173 @@ Y el detalle que importa: comparan contra el valor actual, no contra "vino en el
 cuerpo". El formulario del front manda el proyecto entero, así que bloquear por
 presencia habría vuelto inmodificable hasta el nombre — la misma clase de error
 que D-68 y D-69, ahora en la escritura en vez de la lectura.
+
+## D-71 · Coherencia del registro patronal: avisa, no bloquea
+
+**Decisión.** Asignar a alguien a un proyecto cuyo registro patronal no es el
+suyo **se permite**, y la respuesta lo advierte. Y la cadena
+`empleado → empresa → registro patronal → proyecto → registro de obra` se
+resuelve al leer, sin guardar un solo id nuevo. Es la Fase 6 del plan.
+
+### Por qué aviso y no candado (G2)
+
+El archivo de nómina dejó a Maquinaria CAMES con **144 personas repartidas en
+cuatro registros patronales**: `R13-77767-10-5` (127), `H67-29973-10-5` (13),
+`H68-39212-10-5` (2) y `Z61-14090-10-9` (2). Bloquear la asignación cuando el
+registro de la persona no es el del proyecto haría inasignables a casi todos en
+casi todas las obras, y el trabajo es legítimo: mover a alguien de registro es un
+trámite ante el IMSS, no un error de captura.
+
+Bloquear tampoco arreglaría el dato: sólo escondería el problema detrás de un 400. El aviso lo deja a la vista, con los dos números, y quien lo lee decide.
+
+La asignación responde **201, no 4xx**, porque se hizo. El aviso viaja en
+`data.avisos` y se repite en `message`, para que salga en la interfaz aunque el
+front todavía no lea el campo nuevo.
+
+### Tres estados, no dos: `null` no es `false`
+
+`registroPatronalCoincide` vale `true`, `false` o `null`, y el tercero es
+**«no se pudo comparar»**: la adscripción de esa persona no trae registro
+patronal, cosa normal en quien se dio de alta a mano y no vino del archivo. Es la
+misma convención de `rfcCoincide` en la importación (D-46), y por la misma razón:
+«no coincide» y «no se sabe» llevan a acciones distintas —una es un trámite, la
+otra es capturar un dato que falta— y colapsarlas en `false` haría que la
+segunda se leyera como la primera.
+
+Los dos casos avisan, con mensajes distintos. El de «no se pudo comprobar» se
+incluyó a sabiendas de que hoy sale seguido: una adscripción sin registro patronal
+es un dato incompleto, y callarlo lo perpetúa.
+
+### La comparación ignora guiones, espacios y mayúsculas
+
+`R13-77767-10-5`, `R13 77767 10 5` y `r13777671 05` **son el mismo registro**. Se
+comparan sólo letras y dígitos, en mayúsculas. Sin eso, el aviso saldría en masa
+por diferencias de tecleo y la gente aprendería a ignorarlo, que es la peor
+manera de perder una advertencia.
+
+Es una normalización **de comparación, no de almacenamiento**: el texto se guarda
+tal como se capturó. La adscripción trae el registro como cadena libre (`B2` del
+plan) y corregir eso es la Fase 7.
+
+### La cadena se resuelve al leer
+
+`GET /asignaciones/:id` es nuevo y devuelve `trazabilidad` con los cinco eslabones
+resueltos. **No se persiste ningún id en la asignación** (plan §C5): desde ella ya
+se llega a todo cruzando proyecto y adscripción, y duplicarlos crearía dos
+verdades —corregir el registro patronal de la adscripción no actualizaría las
+asignaciones ya hechas, y el dato quedaría mintiendo justo en el reporte para el
+que existe.
+
+Se lee **con sesión, sin capacidad propia**: mirar quién está en la obra no es lo
+mismo que moverlo, igual que `GET /proyectos/:id/asignaciones`. El alcance no se
+comprueba sobre la asignación sino sobre **su proyecto**, que es quien tiene
+empresa; fuera de alcance responde 404.
+
+### El aviso también en el listado, no sólo al asignar
+
+El aviso del alta lo ve quien captura, una vez. Lo que RH necesita después es
+abrir la obra y encontrar a los que cotizan en otro registro sin entrar uno por
+uno, así que cada renglón de `GET /proyectos/:id/asignaciones` trae
+`registroPatronalEmpleado` y `registroPatronalCoincide`. Cuesta **una consulta
+más** a `affiliations` por listado, no una por renglón.
+
+Esa consulta **no filtra por `activo`** a propósito: el listado incluye
+asignaciones cerradas, y a esa gente se le pudo dar de baja de la empresa;
+excluirlas dejaría el renglón histórico sin el dato que justo se quiere ver.
+
+### `findRegistry` es una sola función para los dos registros
+
+El registro patronal de la empresa y el de obra del cliente son el mismo
+subdocumento `{ _id, numero, descripcion, activo }` y el front los pinta igual.
+Estaban resueltos con un método privado de `projectService`; pasaron a
+`utils/domain/registries.js` y ahora los usan los dos servicios. Dos copias de un
+formateador de contrato son dos formatos que derivan.
+
+## D-72 · La adscripción se vincula a su registro patronal
+
+**Decisión.** `affiliations.registroPatronalId` apunta al catálogo de su empresa,
+y el número deja de compararse como cadena suelta cuando el vínculo existe. Es la
+Fase 7 del plan, la que el propio plan marcaba como opcional.
+
+### El vínculo convive con el texto; no lo reemplaza
+
+`condiciones.registroPatronal` **se queda**, y cada campo tiene su papel:
+
+| Campo                          | Qué es                                  |
+| ------------------------------ | --------------------------------------- |
+| `registroPatronalId`           | el vínculo validado contra el catálogo  |
+| `condiciones.registroPatronal` | lo que dijo el archivo de nómina, crudo |
+
+Es el mismo reparto que ya existe entre `areas` (el dato modelado) y
+`departamento` (el texto original del archivo, D-46). Borrar el texto perdería el
+único rastro de lo que **no** resuelve —y el plan dice explícitamente que lo que
+no resuelva se reporta y se queda nulo—, además de romper la comparación que el
+importador usa para detectar cambios del archivo.
+
+### El vínculo manda, pero la comparación no cambió
+
+Lo que cambió es **de dónde sale el número**: si la adscripción está vinculada, el
+número viene del catálogo de la empresa —canónico y garantizado a existir—; si no,
+del texto. La comparación de D-71 sigue siendo la misma función sobre dos números.
+
+Esto importa porque la fase es **gradual**: M3 deja en nulo lo que no resuelve, y
+mientras haya adscripciones sin vincular las dos rutas tienen que dar un resultado
+válido. Es la lección de D-68 y D-69 —un cambio de forma deja el sistema en dos
+estados y los dos tienen que responder algo correcto—, aplicada por tercera vez.
+
+Efecto secundario que sí se nota: una adscripción vinculada **siempre** coincide o
+no coincide de forma exacta, porque los dos números salen del mismo arreglo. Los
+falsos avisos por diferencias de tecleo desaparecen conforme se vincula la gente.
+
+### El importador vincula, pero no crea registros patronales
+
+Cruza el número del archivo contra el catálogo de la empresa, normalizado igual
+que la comparación. Lo que no resuelve **se reporta con el número y a cuánta gente
+afecta**, y se queda nulo.
+
+No los crea, a propósito: dar de alta un registro patronal es del administrador de
+plataforma (D-65), y crearlos desde un archivo saltaría ese permiso. La migración
+M2 sí los creó, pero fue una corrida única, con `--dry-run` y una persona
+mirando — no es lo mismo que una ruta que cualquier `rh_admin` puede disparar
+subiendo un archivo.
+
+El aviso dice qué hacer: agregar el registro y volver a importar. Y eso **funciona
+de verdad**, que es la parte que costó: el vínculo se llena en `#aplicar`, junto al
+snapshot, y no en `#aplicarAdscripcion`. Re-subir el mismo archivo produce filas
+`sin_cambios`, que nunca llegan a `#aplicarAdscripcion`; ponerlo ahí habría hecho
+que el aviso prometiera algo que no pasaba. Es exactamente el mismo motivo por el
+que `#refrescarSnapshot` ya vivía ahí (D-57).
+
+### Nunca pisa un vínculo que ya está
+
+Ni el importador ni la migración sobrescriben un `registroPatronalId` existente:
+los dos filtran por nulo. El archivo trae el número como texto, pero el vínculo es
+una decisión que alguien pudo corregir desde `PATCH /adscripciones/:id`, y
+deshacerla en silencio en cada importación sería el peor de los dos mundos.
+
+Por eso tampoco está en `CAMPOS_ADSCRIPCION_AUTORITATIVOS`.
+
+### `PATCH /adscripciones/:id` acepta `registroPatronalId`, y `null` desvincula
+
+Sin una forma de corregirlo a mano, lo que M3 no resolviera se quedaría roto para
+siempre. `null` o `''` desvinculan — el mismo razonamiento que llevó a agregar
+`DELETE /contratos/:id/siroc` en D-70.
+
+Se valida contra la empresa de **esa** adscripción, que no se puede cambiar: no
+hay forma de acabar apuntando al catálogo de otra empresa.
+
+### Sin índice, por ahora
+
+`registroPatronalId` **no se indexó**. Ninguna consulta filtra por él: se escribe,
+y se resuelve en memoria contra la empresa que ya está cargada. Un índice sobre él
+sólo cargaría escrituras en la colección que más escribe el importador —145
+renglones por archivo— a cambio de nada. Cuando exista «quién cotiza en este
+registro patronal», el índice llega con esa consulta y con su
+`npm run db:indices`.
+
+### La regla de «es de esta empresa y está activo» ahora vive en un solo lugar
+
+`companyService.assertRegistroPatronalUsable` la comparten el proyecto (D-67) y la
+adscripción. Estaba duplicada como método privado de `projectService`; dos copias
+habrían derivado —una aceptando un registro dado de baja y la otra no— y nadie lo
+habría notado hasta ver los datos.

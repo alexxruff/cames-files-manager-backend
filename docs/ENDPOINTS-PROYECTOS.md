@@ -1,7 +1,13 @@
 # Carteras, proyectos y asignaciones
 
-Referencia de los **14 endpoints nuevos** para el equipo de front. Ningún endpoint
-anterior cambió.
+Referencia de los **23 endpoints** de este dominio para el equipo de front.
+
+> **Actualizado hasta la Fase 8 (D-70 a D-72).** Trae **contratos y SIROC** (§4,
+> que faltaban en este documento), el endpoint `GET /asignaciones/:id` y **dos
+> campos nuevos** en cada `Asignacion`. Nada de lo anterior cambió de forma: todo
+> es aditivo. Lo único que se comporta distinto es el `message` del alta de
+> asignaciones, que ahora puede traer un aviso — ver «Coherencia del registro
+> patronal» en §3.
 
 Base: `/api/v1`. Envelope, códigos y convenciones generales: ver
 [`INTEGRACION-FRONTEND.md`](./INTEGRACION-FRONTEND.md).
@@ -23,7 +29,16 @@ Base: `/api/v1`. Envelope, códigos y convenciones generales: ver
 | 11  | `POST /proyectos/:id/reabrir`                                              | `rh_admin` · `jefe_area` |
 | 12  | `POST /proyectos/:id/categorias/clonar`                                    | `rh_admin` · `jefe_area` |
 | 13  | `GET /proyectos/:id/asignables` · `GET`/`POST /proyectos/:id/asignaciones` | ver cada uno             |
-| 14  | `PATCH /asignaciones/:id/salida`                                           | asignar a proyectos      |
+| 14  | `GET /asignaciones/:id`                                                    | sesión                   |
+| 15  | `PATCH /asignaciones/:id/salida`                                           | asignar a proyectos      |
+| 16  | `GET /proyectos/:id/contratos`                                             | sesión                   |
+| 17  | `POST /proyectos/:id/contratos`                                            | `rh_admin` · `jefe_area` |
+| 18  | `PATCH /contratos/:id`                                                     | `rh_admin` · `jefe_area` |
+| 19  | `PUT /contratos/:id/siroc`                                                 | `rh_admin` · `jefe_area` |
+| 20  | `DELETE /contratos/:id/siroc`                                              | `rh_admin` · `jefe_area` |
+| 21  | `POST /contratos/:id/finalizar`                                            | `rh_admin` · `jefe_area` |
+| 22  | `POST /contratos/:id/reabrir`                                              | `rh_admin` · `jefe_area` |
+| 23  | `PATCH /contratos/:id/estado`                                              | `rh_admin` · `jefe_area` |
 
 > **Orden obligado para probar.** Un proyecto no se puede crear si su cliente no
 > está antes en la cartera de la empresa:
@@ -277,6 +292,17 @@ interface Asignacion {
   empleadoNombre: string | null
   empleadoTipo: 'administrativo' | 'mano_de_obra' | null
   categoriaNombre: string | null
+
+  /**
+   * Sólo en `GET /proyectos/:id/asignaciones` (D-71).
+   *
+   * El registro patronal de SU adscripción en esa empresa —texto libre, tal como
+   * lo trajo la nómina—, y si es el del proyecto. `null` en `coincide` significa
+   * **no se pudo comparar**, y no es lo mismo que `false`.
+   */
+  registroPatronalEmpleado?: string | null
+  registroPatronalCoincide?: boolean | null
+
   createdAt: string
   updatedAt: string
 }
@@ -322,12 +348,21 @@ Cualquiera con sesión. Query: `?activo=true|false`.
 
 Las activas primero. `404` si el proyecto es ajeno.
 
+Cada renglón trae `registroPatronalEmpleado` y `registroPatronalCoincide` (D-71),
+para poder marcar en la tabla a quien cotiza en otro registro sin abrir uno por
+uno. Los tres estados están en «Coherencia del registro patronal», abajo.
+
 ### `POST /proyectos/:id/asignaciones` → `201`
 
 ```jsonc
 { "empleadoId": "…", "categoriaId": "…", "fechaAsignacion": "2026-09-15" }
-// data: { "asignacion": { … } }
+// data: { "asignacion": { … }, "avisos": string[] }
 ```
+
+**`avisos` es nuevo (D-71) y casi siempre está vacío.** Cuando trae algo, el alta
+**se hizo igual**: son advertencias, no errores — ver «Coherencia del registro
+patronal», abajo. El primer aviso se repite en `message`, así que si ya pintas
+`message` como toast no tienes que hacer nada para que se vea.
 
 | Código | Cuándo                                                                            |
 | ------ | --------------------------------------------------------------------------------- |
@@ -339,6 +374,89 @@ Las activas primero. `404` si el proyecto es ajeno.
 | `409`  | `code: ASIGNACION_DUPLICADA` — ya está asignado                                   |
 | `403`  | Un `jefe_area` asignando gente de otra área; el mensaje dice cuáles son las suyas |
 | `404`  | Proyecto ajeno, o empleado inexistente                                            |
+
+### Coherencia del registro patronal (D-71)
+
+Una persona puede cotizar en un registro patronal **distinto** al del proyecto al
+que se le asigna. Eso **avisa, no bloquea**: Maquinaria CAMES ya tiene 144
+personas repartidas en cuatro registros patronales, y moverlas de registro es un
+trámite ante el IMSS, no un error de captura.
+
+Para el front esto significa una cosa concreta: **el alta sigue siendo `201` y hay
+que tratarla como éxito**, aunque venga con aviso. No es un caso de error.
+
+```jsonc
+{
+  "status": "success",
+  "message": "Ana Ruiz cotiza en el registro patronal R13-77767-10-5 y este proyecto es del H67-29973-10-5. La asignación queda registrada; revisa si hay que moverla de registro.",
+  "data": {
+    "asignacion": {},
+    "avisos": ["…"] //  [] cuando no hay nada que advertir
+  }
+}
+```
+
+#### `registroPatronalCoincide` tiene TRES estados
+
+| Valor   | Significa                                                          | Cómo pintarlo                      |
+| ------- | ------------------------------------------------------------------ | ---------------------------------- |
+| `true`  | coinciden                                                          | nada, es lo normal                 |
+| `false` | la persona cotiza en **otro** registro                             | marca de atención, no de error     |
+| `null`  | **no se pudo comparar**: su adscripción no tiene registro patronal | dato faltante, distinto de `false` |
+
+`null` **no es `false`**. Colapsarlos haría que «falta capturar un dato» se leyera
+como «hay que hacer un trámite», que son acciones distintas. Es la misma
+convención de `rfcCoincide` en la importación.
+
+La comparación ignora guiones, espacios y mayúsculas: `R13-77767-10-5` y
+`r13 77767 10 5` son el mismo registro. No normalices por tu cuenta.
+
+### `GET /asignaciones/:id` — el detalle con la cadena completa
+
+Cualquiera con sesión sobre el proyecto: mirar quién está en la obra no es lo
+mismo que moverlo. `404` si el proyecto es ajeno, `400` si el id no es válido.
+
+```jsonc
+// data
+{
+  "asignacion": {}, // Asignacion, con empleadoNombre / categoriaNombre
+  "trazabilidad": {
+    "empleado": { "_id": "…", "nombre": "Ana Ruiz" },
+    "empresa": { "_id": "…", "nombre": "Maquinaria CAMES" },
+    "adscripcionId": "…", // el eslabón; sirve para enlazar a la adscripción
+    "adscripcionActiva": true,
+    "registroPatronalEmpleado": "R13-77767-10-5", // texto libre, o null
+    "proyecto": { "_id": "…", "nombre": "Torre Andares" },
+    "registroPatronal": {
+      // el DEL PROYECTO, resuelto contra su empresa
+      "_id": "…",
+      "numero": "H67-29973-10-5",
+      "descripcion": null,
+      "activo": true
+    },
+    "cliente": { "_id": "…", "nombre": "Inmobiliaria X" },
+    "registroObra": {
+      // resuelto contra el cliente
+      "_id": "…",
+      "numero": "OB-0012",
+      "descripcion": null,
+      "activo": true
+    },
+    "registroPatronalCoincide": false
+  },
+  "avisos": ["…"]
+}
+```
+
+Es la cadena `empleado → empresa → registro patronal → proyecto → registro de
+obra`, **resuelta al leer**. No hay nada de esto guardado en la asignación, así
+que corregir el registro patronal de una adscripción se refleja de inmediato en
+todas las asignaciones ya hechas: no hace falta re-asignar a nadie ni invalidar
+caché de escritura.
+
+`registroPatronalEmpleado` y `registroPatronal` **no son lo mismo y es fácil
+confundirlos**: el primero es el de la persona (texto libre de la nómina), el
+segundo el del proyecto (subdocumento resuelto de la empresa).
 
 ### `PATCH /asignaciones/:id/salida`
 
@@ -353,3 +471,204 @@ reincorporar.
 
 `400` si la fecha es anterior a la de asignación, o si la asignación ya estaba
 cerrada.
+
+---
+
+## 4. Contratos del proyecto — que son sus fases
+
+**Un contrato ES una fase.** Cada fase de la obra tiene exactamente un contrato, y
+un proyecto de un solo contrato no tiene fases. Por eso no hay entidad «fase» ni
+un campo que las relacione: `nombre` es la etiqueta ('Fase 1', 'Cimentación') y es
+opcional.
+
+### Lo que el contrato NO tiene
+
+Antes de que lo busquen, porque son las tres suposiciones naturales:
+
+- **No tiene `clienteId`.** El cliente es el del proyecto; un contrato no cambia
+  de proyecto ni de cliente.
+- **No tiene monto, importe ni moneda.** El backend no modela dinero en ninguna
+  parte de la obra.
+- **No tiene `empresaId`.** Sale del proyecto.
+
+### `Contrato`
+
+```ts
+interface Contrato {
+  _id: string
+  proyectoId: string
+  numero: number // secuencia dentro del proyecto: 1, 2, 3… LA PONE EL SERVIDOR
+  nombre: string | null // etiqueta de la fase
+  fechaInicio: string // 'YYYY-MM-DD'
+  fechaFin: string // 'YYYY-MM-DD'
+  siroc: Siroc | null // null hasta que se registre
+  estado: 'en_curso' | 'finalizado'
+  activo: boolean // la BAJA, que no es lo mismo que `estado`
+  createdAt: string
+  updatedAt: string
+}
+
+interface Siroc {
+  numero: string // único en TODO el sistema; el servidor lo pasa a MAYÚSCULAS
+  fechaRegistro: string // 'YYYY-MM-DD'
+  vigenciaHasta: string | null // puede no conocerse al registrarlo
+}
+```
+
+### `GET /proyectos/:id/contratos`
+
+Cualquiera con sesión. Query: `?incluirInactivos=true` (por defecto **sólo los
+activos**). Ordenados por `numero` ascendente.
+
+```jsonc
+// data
+{ "contratos": [/* Contrato[] */] }
+```
+
+`404` si el proyecto es ajeno.
+
+### `POST /proyectos/:id/contratos` → `201`
+
+**El cuerpo completo son tres campos, y uno es opcional:**
+
+```jsonc
+{
+  "nombre": "Cimentación", // opcional; null o ausente si el proyecto no tiene fases
+  "fechaInicio": "2026-09-01", // obligatoria
+  "fechaFin": "2026-12-31" // obligatoria
+}
+// data: { "contrato": { … } }
+```
+
+**No mandes `numero`**: es una secuencia dentro del proyecto y la calcula el
+servidor (`max + 1`, contando también los dados de baja). Tampoco `siroc`, que va
+por su propia ruta.
+
+Ojo con la asimetría: **el alta IGNORA los campos de más en silencio** —mandar
+`monto` o `clienteId` devuelve `201` y un contrato sin ellos—, mientras que
+`PATCH /contratos/:id` sí los rechaza con `400`. Verificado contra el servidor.
+
+| Código | Cuándo                                                  |
+| ------ | ------------------------------------------------------- |
+| `400`  | El proyecto está **finalizado**                         |
+| `400`  | Falta `fechaInicio` o `fechaFin`, o no son `AAAA-MM-DD` |
+| `400`  | `fechaFin` anterior a `fechaInicio` (`path: fechaFin`)  |
+| `400`  | `nombre` de más de 120 caracteres                       |
+| `404`  | Proyecto inexistente o ajeno                            |
+
+### `PATCH /contratos/:id`
+
+**Sólo `nombre`, `fechaInicio` y `fechaFin`.** Cualquier otro campo responde `400`
+diciendo por dónde va:
+
+| Si mandas    | El mensaje dice                                  |
+| ------------ | ------------------------------------------------ |
+| `siroc`      | usa `PUT /contratos/:id/siroc`                   |
+| `estado`     | usa `POST /contratos/:id/finalizar` o `/reabrir` |
+| `activo`     | usa `PATCH /contratos/:id/estado`                |
+| `numero`     | el número lo asigna el servidor y no se cambia   |
+| `proyectoId` | un contrato no cambia de proyecto                |
+
+Un cuerpo vacío también es `400` («No hay nada que actualizar»).
+
+### `PUT /contratos/:id/siroc`
+
+**`PUT` y no `PATCH` porque reemplaza el SIROC entero.** Mandar sólo la vigencia y
+dejar el número anterior sería exactamente la mezcla que produce avisos de obra a
+medias. Sirve para registrarlo y para corregirlo.
+
+```jsonc
+{
+  "numero": "SIR-2026-0001", // obligatorio, 3 a 40 caracteres
+  "fechaRegistro": "2026-09-05", // obligatoria
+  "vigenciaHasta": "2027-09-05" // opcional; null si todavía no se sabe
+}
+// data: { "contrato": { … } }   → 200, no 201
+```
+
+El servidor **lo guarda en mayúsculas**: si lo muestras después de capturarlo, usa
+lo que devuelve la respuesta y no lo que se tecleó.
+
+**El número es único en TODO el sistema** — no se repite entre empresas, ni entre
+clientes, ni entre proyectos. Repetirlo responde `409` **diciendo dónde está el
+choque**, que es lo que necesita quien captura:
+
+```jsonc
+{
+  "status": "fail",
+  "message": "El SIROC SIR-2026-0001 ya está registrado en el contrato 1 de Torre Andares",
+  "code": "SIROC_DUPLICADO",
+  "data": {
+    "contratoId": "66f…",
+    "contratoNumero": 1,
+    "proyectoId": "66f…",
+    "proyectoNombre": "Torre Andares"
+  }
+}
+```
+
+Ese `proyectoId` puede ser de un proyecto **que el usuario no ve** (otra empresa).
+Muestra el nombre; no armes un enlace que vaya a dar `404`.
+
+`400` también si `vigenciaHasta` es anterior a `fechaRegistro`.
+
+### `DELETE /contratos/:id/siroc`
+
+Lo quita y **libera el número** para poder registrarlo en el contrato correcto.
+Existe justamente por eso: con el número único global, un SIROC capturado en el
+contrato equivocado dejaría ese número bloqueado para siempre.
+
+```jsonc
+// data: { "contrato": { … } }   // siroc: null
+```
+
+`400` si el contrato no tenía SIROC. Quitarlo **también destraba el
+`registroObraId` del proyecto**, si ningún otro contrato tiene SIROC.
+
+### `POST /contratos/:id/finalizar` · `/reabrir`
+
+Mueven **`estado`**, el ciclo de vida.
+
+```jsonc
+// data: { "contrato": { … } }   // estado: 'finalizado' | 'en_curso'
+```
+
+`400` si ya estaba en ese estado, y `400` al reabrir si **el proyecto** está
+finalizado («Reábrelo antes de reabrir sus contratos»).
+
+### `PATCH /contratos/:id/estado`
+
+Mueve **`activo`**, la baja. Es la única colisión de nombres del contrato de la
+API: `/estado` mueve `activo`, y existe además un campo llamado `estado`.
+
+```jsonc
+{ "activo": false }
+// data: { "contrato": { … } }
+```
+
+### `estado` y `activo` no son lo mismo — y en la interfaz tampoco
+
+|                        | Qué significa                         | Cómo se mueve                   |
+| ---------------------- | ------------------------------------- | ------------------------------- |
+| `estado: 'finalizado'` | el contrato **terminó bien**          | `POST /contratos/:id/finalizar` |
+| `activo: false`        | se capturó **por error** o se canceló | `PATCH /contratos/:id/estado`   |
+
+Confundirlos borraría la diferencia entre una obra completada y una que nunca
+existió. Un contrato dado de baja **sale de la cuenta** que traba al proyecto: si
+era el único, el proyecto vuelve a poder cambiar de cliente y de registro
+patronal.
+
+### Lo que los contratos le traban al proyecto
+
+| Campo del proyecto   | Se bloquea cuando                    |
+| -------------------- | ------------------------------------ |
+| `registroPatronalId` | hay ≥1 contrato **activo**           |
+| `registroObraId`     | hay ≥1 contrato activo **con SIROC** |
+| `clienteId`          | hay ≥1 contrato **activo**           |
+| `empresaId`          | siempre                              |
+
+El registro de obra se traba **antes** que el patronal y con un umbral distinto:
+basta un SIROC, porque el aviso ante el IMSS ya salió con esa obra.
+
+Los candados miran el **cambio**, no la presencia: reenviar el mismo id en el
+formulario completo sigue funcionando.

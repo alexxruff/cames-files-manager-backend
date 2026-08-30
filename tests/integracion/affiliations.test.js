@@ -2,6 +2,7 @@ const request = require('supertest')
 const app = require('../../src/app')
 const Affiliation = require('../../src/api/v1/affiliations/affiliationModel')
 const Record = require('../../src/api/v1/records/recordModel')
+const Company = require('../../src/api/v1/companies/companyModel')
 const {
   ensureBaseChecklistTemplates
 } = require('../../src/services/seedChecklistTemplates')
@@ -12,6 +13,7 @@ const {
   crearEmpleadoConSesion,
   adscribir,
   crearProyecto,
+  crearRegistroPatronal,
   asignar,
   auth
 } = require('../helpers/factories')
@@ -650,5 +652,107 @@ describe('Adscripciones', () => {
         .send({ activo: false, motivo: 'Termina su contrato antes de tiempo' })
       expect(resConsulta.status).toBe(403)
     })
+  })
+})
+
+/**
+ * El vínculo con el registro patronal de la empresa (Fase 7, D-72).
+ *
+ * Convive con `condiciones.registroPatronal`, que es texto: aquí vive el vínculo
+ * validado contra el catálogo; allá, lo que dijo el archivo de nómina.
+ */
+describe('registroPatronalId en la adscripción (D-72)', () => {
+  async function escenario() {
+    const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+    const categoria = await crearCategoria('Albañil', 'mano_de_obra')
+    const persona = await crearEmpleado({
+      tipo: 'mano_de_obra',
+      categoriaId: categoria._id
+    })
+    const adscripcion = await adscribir(sesion.empresa, persona, {
+      areas: ['operaciones_urbanizadora']
+    })
+    const registro = await crearRegistroPatronal(sesion.empresa, 'R13-77767-10-5')
+    return { ...sesion, persona, adscripcion, registro }
+  }
+
+  it('lo vincula y lo devuelve en la respuesta', async () => {
+    const { token, adscripcion, registro } = await escenario()
+
+    const res = await request(app)
+      .patch(`/api/v1/adscripciones/${adscripcion._id}`)
+      .set(auth(token))
+      .send({ registroPatronalId: registro._id.toString() })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.adscripcion.registroPatronalId).toBe(registro._id.toString())
+    const guardada = await Affiliation.findById(adscripcion._id)
+    expect(String(guardada.registroPatronalId)).toBe(registro._id.toString())
+  })
+
+  it('`null` lo desvincula: hay que poder deshacer un vínculo mal puesto', async () => {
+    const { token, adscripcion, registro } = await escenario()
+    await Affiliation.updateOne(
+      { _id: adscripcion._id },
+      { $set: { registroPatronalId: registro._id } }
+    )
+
+    const res = await request(app)
+      .patch(`/api/v1/adscripciones/${adscripcion._id}`)
+      .set(auth(token))
+      .send({ registroPatronalId: null })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.adscripcion.registroPatronalId).toBeNull()
+  })
+
+  it('400 si el registro es de OTRA empresa', async () => {
+    const { token, adscripcion } = await escenario()
+    const otra = await crearEmpresa()
+    const ajeno = await crearRegistroPatronal(otra, 'H67-29973-10-5')
+
+    const res = await request(app)
+      .patch(`/api/v1/adscripciones/${adscripcion._id}`)
+      .set(auth(token))
+      .send({ registroPatronalId: ajeno._id.toString() })
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/no es de/i)
+    expect(res.body.errors[0].path).toBe('registroPatronalId')
+  })
+
+  it('400 si está dado de baja', async () => {
+    const { token, empresa, adscripcion, registro } = await escenario()
+    // Se baja en la base: darlo de baja por su ruta exige admin de plataforma y
+    // aquí lo que se prueba es la adscripción, no ese permiso.
+    await Company.updateOne(
+      { _id: empresa._id, 'registrosPatronales._id': registro._id },
+      { $set: { 'registrosPatronales.$.activo': false } }
+    )
+
+    const res = await request(app)
+      .patch(`/api/v1/adscripciones/${adscripcion._id}`)
+      .set(auth(token))
+      .send({ registroPatronalId: registro._id.toString() })
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/dado de baja/i)
+  })
+
+  it('400 si no es un id, y nace en null si no se manda', async () => {
+    const { token, adscripcion, empresa, persona } = await escenario()
+
+    const invalido = await request(app)
+      .patch(`/api/v1/adscripciones/${adscripcion._id}`)
+      .set(auth(token))
+      .send({ registroPatronalId: 'no-es-un-id' })
+
+    expect(invalido.status).toBe(400)
+    expect(String(persona._id)).toBeTruthy()
+    const nueva = await Affiliation.findOne({
+      empresaId: empresa._id,
+      empleadoId: adscripcion.empleadoId
+    })
+    expect(nueva.registroPatronalId).toBeNull()
   })
 })
