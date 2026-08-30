@@ -126,8 +126,8 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
     (D-72). La cadena deja de depender de comparar cadenas de texto donde hay
     vínculo, y donde no lo hay sigue funcionando con el texto.
 14. ~~**Fase 8 del plan de obra**~~ ✅ migraciones corridas y respaldos borrados en
-    local, `ARQUITECTURA-DATOS.md` al día y el mensaje al front en
-    `CAMBIOS-FRONTEND-OBRA.md`. **Falta correrlas en Fly**, que divergió.
+    **local y en Fly**, `ARQUITECTURA-DATOS.md` al día y el mensaje al front en
+    `CAMBIOS-FRONTEND-OBRA.md`. El plan de obra queda cerrado.
 15. **Métricas y reportes**, y el job diario de vigencias con correos. Lo que
     queda del backlog original. El job puede reusar `deriveAlerts` tal cual.
 
@@ -177,7 +177,7 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
     `datosPendientes` (D-46) y mientras lo estén su documento `contrato` no
     deriva vigencia. Falta capturarlas, y falta decidir si se avisa en el tablero.
 16. ~~¿Se vincula la adscripción a su registro patronal?~~ **Resuelto:** sí,
-    `affiliations.registroPatronalId` (D-72), y M3 ya corrió en local: 144 de 144.
-    **Queda correrla en Fly**, con `--dry-run` primero: si algún número no
-    resuelve hay que agregarlo al catálogo de su empresa a mano, porque el
+    `affiliations.registroPatronalId` (D-72), y M3 corrió en los dos entornos:
+    144 de 144, ninguna sin resolver. Si en el futuro un archivo trae un registro
+    que no está en el catálogo, hay que agregarlo a mano y volver a importar: el
     importador no los crea (eso es del administrador de plataforma).

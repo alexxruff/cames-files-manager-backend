@@ -2,8 +2,8 @@
 
 > **Plan de trabajo, no especificación cerrada.** Se implementa **una fase a la
 > vez**. Al terminar cada una, el sistema queda funcional y consistente.
-> Estado: **las ocho fases hechas** (D-65 a D-72). Queda correr las migraciones
-> en Fly: en local ya están corridas y verificadas.
+> Estado: **cerrado**. Las ocho fases hechas (D-65 a D-72) y las migraciones
+> corridas y verificadas en **los dos entornos**, local y Fly.
 
 ---
 
@@ -412,12 +412,12 @@ administrador de plataforma (D-65)—: lo que no resuelve lo reporta con el núm
 a cuánta gente afecta, y re-importar después de agregarlo enlaza a los que
 quedaron sueltos. Ni él ni M3 pisan un vínculo que ya está.
 
-**Pendiente de operación**, en este orden y por entorno separado —local y Fly
-divergieron—:
+**Corrida en los dos entornos**, en este orden:
 
 1. `npm run migrate:vinculo-rp -- --dry-run`, para ver qué resuelve y qué no.
 2. Agregar a mano los registros patronales que el reporte diga que faltan, con
-   `POST /empresas/:id/registros-patronales`.
+   `POST /empresas/:id/registros-patronales`. **No hizo falta en ninguno de los
+   dos**: los cuatro números resolvieron solos.
 3. `npm run migrate:vinculo-rp` en firme. Es idempotente: se puede repetir.
 
 **No hay índice nuevo que sincronizar**: `registroPatronalId` no se consulta
@@ -451,6 +451,26 @@ potencialmente desactualizados.
 El mensaje para el front es
 [`CAMBIOS-FRONTEND-OBRA.md`](./CAMBIOS-FRONTEND-OBRA.md).
 
-**Falta hacerlo en Fly**, con las mismas tres corridas y el mismo cuidado: las dos
-bases divergieron, así que ahí los números pueden ser otros y puede haber
-registros patronales que agregar antes de M3.
+**En Fly, hecho el 30 de agosto de 2026** (`fly ssh console -a cames-api -C
+"node /app/scripts/…"`; `scripts/` viaja en la imagen):
+
+| Qué                                    | Resultado                             |
+| -------------------------------------- | ------------------------------------- |
+| `linkAffiliationRegistrations.js` (M3) | 144 de 144, ninguna sin resolver      |
+| `checkMigrationBackups.js`             | los dos respaldos, `SEGURO borrar`    |
+| `migrateLaborConditions.js --limpiar`  | respaldo borrado en 146 adscripciones |
+| `migrateEmployeeNumbers.js --limpiar`  | **no hizo falta**: ya estaba en 0     |
+
+Las bases sí divergieron, y se nota en los números —146 contra 148 en el respaldo
+de condiciones, y el de `numeroEmpleado` que en Fly ya no existía—, pero los
+cuatro registros patronales son los mismos y resolvieron igual.
+
+`checkMigrationBackups.js` se escribió justo para esto: los dos `--limpiar` son
+destructivos y no comprueban nada por su cuenta. En local la comprobación se hizo
+a mano; para Fly quedó como script, porque pegar un `node -e` de diez líneas en
+una consola SSH es donde se cuelan los errores.
+
+Cuidado con una trampa de nombres al operar: `migrateLaborConditions.js` **sin
+bandera** copia `nomina` → `condiciones`, y **con `--limpiar`** sólo borra el
+respaldo. El `if (LIMPIAR)` hace `return` inmediato: son ramas excluyentes, así
+que haber corrido la primera no significa que la segunda esté hecha.

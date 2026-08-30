@@ -218,9 +218,9 @@ no, del texto. Se llena con `npm run migrate:vinculo-rp` y con cada importación
 y **nada lo pisa** una vez corregido a mano.
 
 **Pendiente:** métricas, reportes y el job diario de vigencias — ver
-`docs/ESTADO.md` para el detalle y el orden sugerido. Y, de operación, **correr
-las migraciones en Fly**: en local ya están corridas y los respaldos borrados,
-pero las dos bases divergieron.
+`docs/ESTADO.md` para el detalle y el orden sugerido. El plan de obra está
+**cerrado**: las migraciones corrieron y los respaldos se borraron en los dos
+entornos, local y Fly.
 
 **Decisión abierta que bloquea al front:** `affiliations.nomina` guarda salario,
 SBC y cuenta bancaria porque el archivo de nómina los trae, pero **ninguna
