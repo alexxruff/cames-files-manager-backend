@@ -24,31 +24,32 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 
 ## Base del proyecto
 
-| Pieza                                                         | Estado | Dónde                                                      |
-| ------------------------------------------------------------- | ------ | ---------------------------------------------------------- |
-| Esqueleto de capas y convenciones                             | ✅     | `src/`, `CLAUDE.md`                                        |
-| Entorno validado (zod), falla al arrancar                     | ✅     | `src/config/env.js`                                        |
-| Requisitos de entorno legibles sin dispararlos                | ✅     | `src/config/env.schema.js`, `npm run env:requisitos`       |
-| MongoDB **replica set** local (transacciones)                 | ✅     | `docker-compose.yml`, D-29                                 |
-| Conexión con reintentos y diagnóstico de errores              | ✅     | `src/config/database.js`                                   |
-| Registro central de modelos (evita MissingSchemaError)        | ✅     | `src/models/index.js`, D-31                                |
-| Apagado ordenado (SIGTERM/SIGINT)                             | ✅     | `src/server.js`                                            |
-| Envelope de respuesta y `AppError`                            | ✅     | `src/utils/response.js`, `src/middlewares/errorHandler.js` |
-| Validación con `errors[{ msg, path }]`                        | ✅     | `src/middlewares/validateRequest.js`                       |
-| Logger JSON + `X-Request-Id`                                  | ✅     | `src/utils/logger.js`                                      |
-| Rate limit general y de login                                 | ✅     | `src/middlewares/rateLimiters.js`                          |
-| CORS por lista blanca                                         | ✅     | `src/app.js`                                               |
-| Enums del contrato                                            | ✅     | `src/constants/`                                           |
-| Fechas de calendario y aritmética                             | ✅     | `src/utils/dates.js`                                       |
-| Búsqueda insensible a acentos                                 | ✅     | `src/utils/text.js`                                        |
-| Inventario de la API (`GET /api/v1`)                          | ✅     | `src/utils/routeInventory.js`                              |
-| Identidad del release (`GET /version`), horneada al construir | ✅     | `src/api/v1/routes/index.js`, `Dockerfile`, D-74           |
-| Administrador de plataforma inicial                           | ✅     | `src/services/bootstrapAdmin.js`                           |
-| Migración `app_users` → modelo nuevo                          | ✅     | `scripts/migrateUsersToEmployees.js`                       |
-| Dockerfile · ESLint · Prettier                                | ✅     | raíz                                                       |
-| Skills y agentes del proyecto                                 | ✅     | `.claude/`                                                 |
-| Guía e instrucciones para el front                            | ✅     | `docs/INTEGRACION-FRONTEND.md`, `docs/CAMBIOS-FRONTEND.md` |
-| CI                                                            | ⬜     | —                                                          |
+| Pieza                                                           | Estado | Dónde                                                      |
+| --------------------------------------------------------------- | ------ | ---------------------------------------------------------- |
+| Esqueleto de capas y convenciones                               | ✅     | `src/`, `CLAUDE.md`                                        |
+| Entorno validado (zod), falla al arrancar                       | ✅     | `src/config/env.js`                                        |
+| Requisitos de entorno legibles sin dispararlos                  | ✅     | `src/config/env.schema.js`, `npm run env:requisitos`       |
+| MongoDB **replica set** local (transacciones)                   | ✅     | `docker-compose.yml`, D-29                                 |
+| Conexión con reintentos y diagnóstico de errores                | ✅     | `src/config/database.js`                                   |
+| Registro central de modelos (evita MissingSchemaError)          | ✅     | `src/models/index.js`, D-31                                |
+| Apagado ordenado (SIGTERM/SIGINT)                               | ✅     | `src/server.js`                                            |
+| Envelope de respuesta y `AppError`                              | ✅     | `src/utils/response.js`, `src/middlewares/errorHandler.js` |
+| Validación con `errors[{ msg, path }]`                          | ✅     | `src/middlewares/validateRequest.js`                       |
+| Logger JSON + `X-Request-Id`                                    | ✅     | `src/utils/logger.js`                                      |
+| Rate limit general y de login                                   | ✅     | `src/middlewares/rateLimiters.js`                          |
+| CORS por lista blanca                                           | ✅     | `src/app.js`                                               |
+| Enums del contrato                                              | ✅     | `src/constants/`                                           |
+| Fechas de calendario y aritmética                               | ✅     | `src/utils/dates.js`                                       |
+| Búsqueda insensible a acentos                                   | ✅     | `src/utils/text.js`                                        |
+| Inventario de la API (`GET /api/v1`)                            | ✅     | `src/utils/routeInventory.js`                              |
+| Esqueleto real del código (colecciones, campos, índices, rutas) | ✅     | `src/utils/schemaSkeleton.js`, `npm run esqueleto`         |
+| Identidad del release (`GET /version`), horneada al construir   | ✅     | `src/api/v1/routes/index.js`, `Dockerfile`, D-74           |
+| Administrador de plataforma inicial                             | ✅     | `src/services/bootstrapAdmin.js`                           |
+| Migración `app_users` → modelo nuevo                            | ✅     | `scripts/migrateUsersToEmployees.js`                       |
+| Dockerfile · ESLint · Prettier                                  | ✅     | raíz                                                       |
+| Skills y agentes del proyecto                                   | ✅     | `.claude/`                                                 |
+| Guía e instrucciones para el front                              | ✅     | `docs/INTEGRACION-FRONTEND.md`, `docs/CAMBIOS-FRONTEND.md` |
+| CI                                                              | ⬜     | —                                                          |
 
 ## Modelo de datos
 
@@ -138,7 +139,11 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 14. ~~**Fase 8 del plan de obra**~~ ✅ migraciones corridas y respaldos borrados en
     **local y en Fly**, `ARQUITECTURA-DATOS.md` al día y el mensaje al front en
     `CAMBIOS-FRONTEND-OBRA.md`. El plan de obra queda cerrado.
-15. **Métricas y reportes**, y el job diario de vigencias con correos. Lo que
+15. ~~**Extractor del esqueleto real**~~ ✅ `npm run esqueleto` contesta desde el
+    código —esquemas de Mongoose y stack de Express— qué colecciones, campos,
+    índices y rutas existen hoy, sin base de datos y sin `.env`. Es la vara con
+    la que se mide si un documento sigue siendo cierto (plan #1).
+16. **Métricas y reportes**, y el job diario de vigencias con correos. Lo que
     queda del backlog original. El job puede reusar `deriveAlerts` tal cual.
 
 ## Decisiones abiertas

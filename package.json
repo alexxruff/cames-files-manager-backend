@@ -28,6 +28,7 @@
     "db:expedientes": "node scripts/syncRecords.js",
     "r2:check": "node scripts/checkR2.js",
     "env:requisitos": "node scripts/printEnvRequirements.js",
+    "esqueleto": "node scripts/printSchemaSkeleton.js",
     "migrate:usuarios": "node scripts/migrateUsersToEmployees.js",
     "db:status": "docker compose exec mongo mongosh --port 27018 --quiet --eval 'rs.status().members.map(m => m.name + \" \" + m.stateStr)'",
     "migrate:numeros": "node scripts/migrateEmployeeNumbers.js",

@@ -60,7 +60,13 @@ npm run db:up             # MongoDB 8 local (docker), replica set, puerto 27018
 npm run dev               # http://localhost:8080/api/v1/health
 npm test                  # toda la suite, base en memoria (no necesita Mongo)
 npm run lint
+npm run esqueleto         # qué colecciones, campos, índices y rutas existen HOY
 ```
+
+`npm run esqueleto` sale del **código**, no de los documentos: lee los esquemas de
+Mongoose y el stack de Express. Imprime JSON —lo que consume una herramienta— y
+con `-- --texto`, lo mismo para leerlo con los ojos. No se conecta a nada y no
+necesita el `.env`. Úsalo antes de creerle una cifra a un documento.
 
 El proceso **no arranca** si el entorno está incompleto o si no hay base de
 datos: es deliberado (`src/config/env.js`, `src/config/database.js`).
@@ -135,11 +141,12 @@ src/
                         validateRequest · errorHandler · requestContext ·
                         rateLimiters · uploadMiddleware
   utils/                response (envelope) · asyncHandler · dates · text ·
-                        permissions · logger · routeInventory · spreadsheet
+                        permissions · logger · routeInventory · spreadsheet ·
+                        schemaSkeleton (el esqueleto real, derivado del código)
   utils/domain/         reglas PURAS: documentStatus · progress · alerts ·
                         checklist · expiry · employeeImport · registries
   services/             bootstrapAdmin · seedChecklistTemplates
-scripts/                semillas, índices y migración
+scripts/                semillas, índices, migración y el esqueleto
 tests/                  unitarias/ · integracion/ · helpers/
 docs/                   modelo-datos · backend-spec · arquitectura · contrato ·
                         handoff-backend (la conversación con el front) ·
@@ -277,7 +284,7 @@ Cuando se te pida **«implementa la siguiente tarea pendiente»**:
    estado a `propuesta` y **para**. El usuario la aprueba o la corrige. La
    descripción de la tarea está escrita en su idioma, no en el nuestro: traducirla
    es tu primer trabajo, y confirmarla evita implementar lo que no era.
-5. Agress` y trabaja. El `acceptance` es el alcance; nada
+5. Aprobada: estado `in_progress` y trabaja. El `acceptance` es el alcance; nada
    fuera de ahí.
 6. Al cerrar, aplica «Antes de decir listo» de este mismo documento, sin excepción.
 7. Si la tarea tiene `handoff`, escribe `../cames-ops/plan/handoff/<id>.md` con el
@@ -298,24 +305,31 @@ No improvises un rodeo.
 # Tarea #<id> — <título>
 
 ## Rutas
+
 | Método | Ruta | Qué hace |
 
 ## Forma de la respuesta
+
 El envelope y la forma exacta de `data`, con un ejemplo real.
 
 ## Cuerpo de la petición
+
 Campos, tipos, cuáles son obligatorios.
 
 ## Errores
+
 Código, `errors[0].msg` tal cual sale, y qué lo dispara.
 
 ## Permisos
+
 Qué nivel de acceso hace falta y qué pasa fuera de alcance.
 
 ## Documentos que cambiaron
+
 Cuál, qué sección, y qué dice ahora distinto.
 
 ## Lo que NO se hizo
+
 Lo que quedó fuera y por qué.
 ```
 
