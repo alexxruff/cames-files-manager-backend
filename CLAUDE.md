@@ -334,3 +334,24 @@ Lo que quedó fuera y por qué.
 ```
 
 Las rutas sácalas del inventario que deriva el router, no de memoria.
+
+### Cuando descubres que falta trabajo del otro lado
+
+A media tarea puedes toparte con que no puedes terminar sin algo que le toca al
+otro repo, o con que hace falta algo que nadie ha pedido. No lo resuelvas de tu
+lado ni lo dejes pasar.
+
+1. Escribe la propuesta en `../cames-ops/plan/propuestas/<AAAA-MM-DD>-<repo>-<slug>.md`
+   con: qué hace falta, por qué lo descubriste ahora, qué se rompe si no se hace,
+   y qué tarea lo destapó.
+2. Escríbela **en lenguaje de negocio**, como la escribiría el usuario: qué debe
+   ser cierto al terminar, no qué archivo tocar. Quien la apruebe la va a leer sin
+   tu contexto.
+3. Si tu tarea no puede continuar sin eso: estado `blocked` y para. Si sí puede,
+   sigue y entrégala, dejando dicho en el informe qué quedó fuera.
+4. **No escribas en `tareas.json`.** Ese archivo lo edita solo el usuario. Tu
+   propuesta es un archivo suelto que él aprueba, corrige o descarta.
+5. Dilo en tu respuesta final, con la ruta del archivo.
+
+Si lo que falta es una decisión de producto —si algo *debe* existir, no cómo
+hacerlo—, la propuesta es el sitio para plantearla, no para resolverla.
