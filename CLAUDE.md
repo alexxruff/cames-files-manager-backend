@@ -352,8 +352,11 @@ lado ni lo dejes pasar.
    tu contexto.
 3. Si tu tarea no puede continuar sin eso: estado `blocked` y para. Si sí puede,
    sigue y entrégala, dejando dicho en el informe qué quedó fuera.
-4. **No escribas en `tareas.json`.** Ese archivo lo edita solo el usuario. Tu
-   propuesta es un archivo suelto que él aprueba, corrige o descarta.
+4. **No escribas en `tareas.json` por tu cuenta.** Primero muestras la
+   propuesta y esperas. Solo cuando el usuario diga que sí, en esta misma
+   sesión, la insertas tú al final del array `tareas` con el siguiente `id`
+   libre. Si te pide cambios, corriges el bloque y se lo vuelves a mostrar
+   antes de escribir nada.
 5. **Termina tu respuesta con el bloque JSON de la tarea, en un bloque de
    codigo listo para copiar**, ademas de la ruta del archivo. El usuario no
    deberia tener que abrir el .md para enterarse de que propusiste algo.
@@ -377,8 +380,18 @@ Cierra la propuesta con el bloque JSON de la tarea, listo para pegar en
 ```
 
 El `acceptance` sale de tu seccion «que debe ser cierto al terminar», en el mismo
-lenguaje. Escribir el JSON no es aprobarlo: sigue siendo el usuario quien decide
-si la tarea entra al plan.
+lenguaje.
+
+Junto al JSON, di **por que importa** en una o dos frases: que se rompe o que se
+responde mal hoy. El usuario decide con eso, no con el titulo.
+
+Escribir el JSON no es aprobarlo. Espera su respuesta:
+
+- «si» o equivalente → insertas la tarea en `tareas.json` con el siguiente `id`
+  libre y le confirmas el numero que le tocó.
+- pide cambios → corriges y vuelves a mostrar, sin escribir todavia.
+- «no» → no insertas nada. La propuesta se queda como archivo, por si cambia de
+  opinion.
 
 Si lo que falta es una decisión de producto —si algo *debe* existir, no cómo
 hacerlo—, la propuesta es el sitio para plantearla, no para resolverla.
