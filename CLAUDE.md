@@ -356,5 +356,27 @@ lado ni lo dejes pasar.
    propuesta es un archivo suelto que él aprueba, corrige o descarta.
 5. Dilo en tu respuesta final, con la ruta del archivo.
 
+Cierra la propuesta con el bloque JSON de la tarea, listo para pegar en
+`tareas.json`, con `"id": null` para que el usuario le ponga el numero:
+
+```json
+{
+  "id": null,
+  "repo": "backend|frontend",
+  "titulo": "",
+  "descripcion": "... Ver plan/propuestas/<archivo>.md.",
+  "acceptance": [],
+  "handoff": null,
+  "dependsOn": null,
+  "estado": "pending",
+  "propuestaTecnica": null,
+  "commit": null
+}
+```
+
+El `acceptance` sale de tu seccion «que debe ser cierto al terminar», en el mismo
+lenguaje. Escribir el JSON no es aprobarlo: sigue siendo el usuario quien decide
+si la tarea entra al plan.
+
 Si lo que falta es una decisión de producto —si algo *debe* existir, no cómo
 hacerlo—, la propuesta es el sitio para plantearla, no para resolverla.
