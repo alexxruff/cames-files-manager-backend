@@ -1,6 +1,6 @@
 # Carteras, proyectos y asignaciones
 
-Referencia de los **23 endpoints** de este dominio para el equipo de front.
+Referencia de los **25 endpoints** de este dominio para el equipo de front.
 
 > **Actualizado hasta la Fase 8 (D-70 a D-72).** Trae **contratos y SIROC** (§4,
 > que faltaban en este documento), el endpoint `GET /asignaciones/:id` y **dos
@@ -14,31 +14,33 @@ Base: `/api/v1`. Envelope, códigos y convenciones generales: ver
 
 ## Índice
 
-| #   | Endpoint                                                                   | Quién                    |
-| --- | -------------------------------------------------------------------------- | ------------------------ |
-| 1   | `GET /empresas/:id/clientes`                                               | sesión                   |
-| 2   | `POST /empresas/:id/clientes`                                              | `rh_admin` · `jefe_area` |
-| 3   | `PATCH /carteras/:id`                                                      | `rh_admin` · `jefe_area` |
-| 4   | `PATCH /carteras/:id/estado`                                               | `rh_admin` · `jefe_area` |
-| 5   | `GET /proyectos`                                                           | sesión                   |
-| 6   | `GET /proyectos/:id`                                                       | sesión                   |
-| 7   | `POST /proyectos`                                                          | `rh_admin` · `jefe_area` |
-| 8   | `PATCH /proyectos/:id`                                                     | `rh_admin` · `jefe_area` |
-| 9   | `POST /proyectos/:id/aplazar`                                              | `rh_admin` · `jefe_area` |
-| 10  | `POST /proyectos/:id/finalizar`                                            | `rh_admin` · `jefe_area` |
-| 11  | `POST /proyectos/:id/reabrir`                                              | `rh_admin` · `jefe_area` |
-| 12  | `POST /proyectos/:id/categorias/clonar`                                    | `rh_admin` · `jefe_area` |
-| 13  | `GET /proyectos/:id/asignables` · `GET`/`POST /proyectos/:id/asignaciones` | ver cada uno             |
-| 14  | `GET /asignaciones/:id`                                                    | sesión                   |
-| 15  | `PATCH /asignaciones/:id/salida`                                           | asignar a proyectos      |
-| 16  | `GET /proyectos/:id/contratos`                                             | sesión                   |
-| 17  | `POST /proyectos/:id/contratos`                                            | `rh_admin` · `jefe_area` |
-| 18  | `PATCH /contratos/:id`                                                     | `rh_admin` · `jefe_area` |
-| 19  | `PUT /contratos/:id/siroc`                                                 | `rh_admin` · `jefe_area` |
-| 20  | `DELETE /contratos/:id/siroc`                                              | `rh_admin` · `jefe_area` |
-| 21  | `POST /contratos/:id/finalizar`                                            | `rh_admin` · `jefe_area` |
-| 22  | `POST /contratos/:id/reabrir`                                              | `rh_admin` · `jefe_area` |
-| 23  | `PATCH /contratos/:id/estado`                                              | `rh_admin` · `jefe_area` |
+| #   | Endpoint                                | Quién                    |
+| --- | --------------------------------------- | ------------------------ |
+| 1   | `GET /empresas/:id/clientes`            | sesión                   |
+| 2   | `POST /empresas/:id/clientes`           | `rh_admin` · `jefe_area` |
+| 3   | `PATCH /carteras/:id`                   | `rh_admin` · `jefe_area` |
+| 4   | `PATCH /carteras/:id/estado`            | `rh_admin` · `jefe_area` |
+| 5   | `GET /proyectos`                        | sesión                   |
+| 6   | `GET /proyectos/:id`                    | sesión                   |
+| 7   | `POST /proyectos`                       | `rh_admin` · `jefe_area` |
+| 8   | `PATCH /proyectos/:id`                  | `rh_admin` · `jefe_area` |
+| 9   | `POST /proyectos/:id/aplazar`           | `rh_admin` · `jefe_area` |
+| 10  | `POST /proyectos/:id/finalizar`         | `rh_admin` · `jefe_area` |
+| 11  | `POST /proyectos/:id/reabrir`           | `rh_admin` · `jefe_area` |
+| 12  | `POST /proyectos/:id/categorias/clonar` | `rh_admin` · `jefe_area` |
+| 13  | `GET /proyectos/:id/asignables`         | sesión                   |
+| 14  | `GET /proyectos/:id/asignaciones`       | sesión                   |
+| 15  | `POST /proyectos/:id/asignaciones`      | asignar a proyectos      |
+| 16  | `GET /asignaciones/:id`                 | sesión                   |
+| 17  | `PATCH /asignaciones/:id/salida`        | asignar a proyectos      |
+| 18  | `GET /proyectos/:id/contratos`          | sesión                   |
+| 19  | `POST /proyectos/:id/contratos`         | `rh_admin` · `jefe_area` |
+| 20  | `PATCH /contratos/:id`                  | `rh_admin` · `jefe_area` |
+| 21  | `PUT /contratos/:id/siroc`              | `rh_admin` · `jefe_area` |
+| 22  | `DELETE /contratos/:id/siroc`           | `rh_admin` · `jefe_area` |
+| 23  | `POST /contratos/:id/finalizar`         | `rh_admin` · `jefe_area` |
+| 24  | `POST /contratos/:id/reabrir`           | `rh_admin` · `jefe_area` |
+| 25  | `PATCH /contratos/:id/estado`           | `rh_admin` · `jefe_area` |
 
 > **Orden obligado para probar.** Un proyecto no se puede crear si su cliente no
 > está antes en la cartera de la empresa:

@@ -11,6 +11,23 @@
 > Con esos dos archivos hay suficiente para implementar sin volver a preguntar.
 >
 > Stack objetivo: **Node.js + Express + MongoDB (Mongoose)**.
+>
+> **Este archivo es del backend** (29 ago 2026) y se mantiene aquí, en
+> `cames-files-manager-backend/docs/`. El front lo lee de este repo y ya no
+> guarda copia. Cuando cambie una ruta, un código o la forma de una respuesta,
+> se actualiza en el mismo cambio que el código —igual que
+> [`CONTRATO-API.md`](./CONTRATO-API.md), que lleva el detalle petición por
+> petición— y se anota en [`HANDOFF-BACKEND.md`](./HANDOFF-BACKEND.md).
+>
+> ⚠️ **Describe el destino completo, no lo que responde el servidor hoy.** El
+> inventario que no puede desincronizarse se deriva del router en tiempo real:
+>
+> ```bash
+> curl -s http://localhost:8080/api/v1 | jq '.data.implementados, .data.pendientes'
+> ```
+>
+> Y del lado del front, cómo les pega de verdad con sus trampas:
+> `~/Documents/projects/cames-files-manager/docs/backend-actual.md`.
 
 ---
 
@@ -21,21 +38,37 @@ documentos por persona, con carga de archivos, validación, control de vigencias
 alertas y reportes de auditoría. La plataforma aloja **varias empresas** del
 grupo, que comparten catálogos de empleados, clientes y categorías.
 
-El front está construido y funcionando contra una capa de datos simulada. **Toda
-la lógica de dominio —avance, semáforo, vigencias, alertas, checklist— está
-implementada y probada ahí**, y debe replicarse en el servidor: el front sólo
-apaga botones, la autoridad es el backend.
+El front nació contra una capa de datos simulada, que conserva, y ya pega contra
+este servidor en casi todo. **Toda la lógica de dominio —avance, semáforo,
+vigencias, alertas, checklist— está implementada y probada de los dos lados**,
+pero **la autoridad es el backend**: el front sólo apaga botones, y donde las
+dos versiones difieran manda ésta.
 
 ### Qué existe hoy
 
 | Pieza | Estado |
 | --- | --- |
-| `/auth` — login, sesión, cambio de contraseña | **Implementado** |
-| `/usuarios` — CRUD de accesos | **Implementado**, pero se reubica (ver §10) |
-| Empresas, empleados, clientes, categorías | Por construir |
-| Adscripciones, carteras, asignaciones | Por construir |
-| Expedientes, documentos, alertas, reportes | Por construir |
-| Archivos en R2, job de vigencias, correos | Por construir |
+| `/auth` — login, sesión, cambio de contraseña | **Implementado y conectado** |
+| `/empleados` — catálogo, alta, edición, baja y accesos | **Implementado y conectado** |
+| `/usuarios` — el CRUD anterior | **Retirado**: responde `410` |
+| `/empresas` y `/categorias` | **Implementado y conectado** |
+| `/clientes` y las carteras (`/empresas/:id/clientes`) | **Implementado y conectado** |
+| `/proyectos` y sus asignaciones | **Implementado y conectado** |
+| `/empresas/:id/adscripciones` y `/adscripciones/:id[/estado]` | **Implementado y conectado** |
+| `/adscripciones` (listado global, alta, edición y baja) | **Implementado y conectado** |
+| `/areas` — el catálogo, con las temporales de la nómina | **Implementado y conectado** |
+| `/proyectos/:id/contratos` y `/contratos/:id[/siroc]` | **Implementado y conectado** |
+| Importación de colaboradores desde el `.xlsx` de nómina | **Implementado y conectado** |
+| Expedientes, documentos y su revisión | **Implementado y conectado** |
+| Listado paginado de expedientes (`GET /expedientes`) | **Implementado y conectado** |
+| `/alertas` — documentación y cumpleaños, derivadas al leer | **Implementado** |
+| Archivos en R2 | **Implementado** |
+| `GET /empleados/:id/asignaciones` | Por construir. `GET /empleados/:id` ya trae sus adscripciones embebidas, así que ésa no se hará aparte |
+| Plantillas de checklist (administrarlas; la asignación ya está sembrada) | Por construir |
+| Métricas del panel (`/dashboard/metricas`) y reportes | Por construir |
+| Árbol de `/organizacion` | Por construir |
+| Recuperación de contraseña (`/auth/recuperar`) | Por construir |
+| Job diario de vigencias y correos | Por construir |
 
 ### Lo que hay que leer primero
 
@@ -79,6 +112,16 @@ Diez reglas. Romper cualquiera implica tocar el front.
    `409` conflicto · `413` archivo muy grande · `415` tipo no permitido ·
    `429` rate limit.
 
+   **El front cierra la sesión sólo con un `401` real.** Un `500`, un timeout o
+   un error de red significan «el servidor no contestó», no «tu sesión no
+   vale» — tratarlos igual saca a todo el mundo en cuanto el backend tiene un
+   tropiezo momentáneo. Esto ya pasó una vez: `GET /auth/me` al arrancar la app
+   cerraba la sesión guardada ante cualquier fallo, no sólo un `401`
+   (`src/modules/auth/auth-provider.tsx` del front). El resto de su app pasa por
+   el interceptor de `src/lib/api-client.ts`, que ya filtraba bien. Del lado de
+   acá esto obliga a **no responder `401` por errores que no son de sesión**: un
+   fallo de la base es `503`, no `401`.
+
 5. **Identificadores.** Se exponen como `_id` en string. Nunca `id`.
 
 6. **Fechas.** Dos formatos, y no se mezclan:
@@ -111,42 +154,51 @@ Diez reglas. Romper cualquiera implica tocar el front.
 
 ## 3. Convenciones de implementación
 
-Se sigue la estructura de `talentlink-backend` para que ambos proyectos se
-mantengan igual:
+Se siguió la estructura de `talentlink-backend` para que ambos proyectos se
+mantengan igual. Lo que hay hoy —los nombres reales, no los propuestos—:
 
 ```
 src/
   api/v1/
     <recurso>/
       <recurso>Model.js        Esquema de Mongoose
-      <recurso>Service.js      Reglas de negocio
+      <recurso>Service.js      Reglas de negocio, sin HTTP
       <recurso>Controller.js   HTTP: parsea, llama al service, responde
       <recurso>Routes.js       Rutas + validaciones + middlewares
-    routes/index.js            Monta todos los recursos
+    routes/index.js            Monta todos los recursos y expone el inventario
+  models/index.js              Registra TODOS los modelos (D-31)
   middlewares/
-    authMiddleware.js          protect, restrictTo
-    alcanceMiddleware.js       ← Filtro por empresa (modelo-datos.md §8)
-    validateRequest.js
-    errorHandler.js
-  services/                    Correo, almacenamiento, jobs
+    authMiddleware.js          protect, requireCapability
+    scopeMiddleware.js         ← Filtro por empresa (modelo-datos.md §8)
+    passwordMiddleware.js      requirePasswordDefinitiva (D-49)
+    validateRequest.js · errorHandler.js · uploadMiddleware.js
+  constants/                   Los enums del contrato, en un solo lugar
+  services/                    Almacenamiento, semillas, arranque
   utils/
-    dominio/                   ← Lógica de expedientes (modelo-datos.md §6)
-  validations/
+    domain/                    ← Lógica de expedientes (modelo-datos.md §6)
+    permissions.js             La matriz de capacidades
 ```
 
-**Los controladores no llevan lógica de negocio.** Las reglas de dominio
-([`modelo-datos.md` §6](./modelo-datos.md)) viven en `utils/dominio/` y se prueban solas, sin HTTP de por medio. El front ya
-tiene esas mismas funciones probadas en `src/utils/expediente.ts` y
-`src/utils/checklist.ts`: **son la referencia de comportamiento, cópialas.**
+**Cuatro capas por recurso, sin excepciones**, y **los controladores no llevan
+lógica de negocio**: las reglas de dominio ([`modelo-datos.md`
+§6](./modelo-datos.md)) viven en `utils/domain/` como funciones puras y se
+prueban solas, sin HTTP de por medio (`tests/unitarias/domain/`).
 
----
+> **Ojo con el idioma.** La carpeta es `domain`, no `dominio`, y el middleware
+> es `scopeMiddleware.js`, no `alcanceMiddleware.js`: rutas y llaves JSON en
+> español porque son contrato; archivos, funciones y variables en inglés. La
+> tabla completa está en `CLAUDE.md` § Idiomas.
+
+El front tiene esas mismas funciones probadas en `src/utils/expediente.ts` y
+`src/utils/checklist.ts` de su repo: **son la referencia de comportamiento**,
+con una diferencia conocida en `faltantes` (ver `modelo-datos.md` §6.3).
 
 ---
 
 ## 4. Enumeraciones
 
-Valores literales exactos. El front los tiene en `src/enums/` y los compara por
-igualdad estricta.
+Valores literales exactos. Aquí viven en `src/constants/`; el front los tiene en
+`src/enums/` de su repo y los compara por **igualdad estricta**.
 
 ### `DocumentType` — los 12 documentos del checklist
 
@@ -191,10 +243,36 @@ En la base sólo viven los cuatro primeros. Los dos últimos se calculan al leer
 
 `incomplete` · `complete` · `expiring` · `expired`
 
-### `Area`
+### `Area` — catálogo, no un enum (26 ago 2026)
 
-`direccion` · `administracion` · `recursos_humanos` · `contabilidad` · `obra` ·
-`proyectos` · `compras` · `ventas` · `mantenimiento`
+Dejó de ser un conjunto cerrado: el archivo de nómina puede dar de alta áreas
+nuevas. El valor que viaja en `areas[]` (adscripciones, `empresas[].areas`,
+`?area=`) es la `clave` de un renglón de `GET /areas`:
+
+```jsonc
+{ "_id": "…", "clave": "operaciones_urbanizadora", "nombre": "Operaciones (Urbanizadora)",
+  "esBase": true, "temporal": false, "activa": true }
+```
+
+Las nueve del arranque (`esBase: true`): `direccion` · `recursos_humanos` ·
+`finanzas` · `operaciones_maquinaria` · `operaciones_urbanizadora` ·
+`costos_y_presupuestos` · `comercial` · `tesoreria` · `contabilidad`. Durante
+la transición conviven con las viejas del enum que todavía tienen gente
+(`obra`, `administracion`, `proyectos`, `ventas`, `mantenimiento`,
+`esBase: false`); `compras` no sobrevivió, nadie la tenía asignada.
+
+| Método | Ruta | Quién |
+| --- | --- | --- |
+| `GET` | `/areas` (`?activa=true\|false\|todos&temporal=true`) | Sesión |
+| `POST` | `/areas` (`{ nombre }`) | Admin de plataforma |
+| `PATCH` | `/areas/:id` (`{ nombre }`) | Admin de plataforma |
+| `PATCH` | `/areas/:id/estado` (`{ activa }`) | Ver abajo |
+
+`activa` es de tres modos, igual que `activo` en empleados (`true` por
+defecto). La baja: admin de plataforma, cualquiera; `rh_admin`/`rh_consulta`,
+sólo `temporal: true`; `jefe_area`, ninguna. `400` si es base o si alguien la
+tiene asignada. Detalle completo en
+[`ENDPOINTS-AREAS.md`](./ENDPOINTS-AREAS.md) y D-58.
 
 ### `TipoContrato`
 
@@ -231,7 +309,8 @@ desincronizadas. Índice rápido:
 | Necesitas | Sección |
 | --- | --- |
 | La jerarquía y por qué los catálogos son compartidos | §1, §2 |
-| Esquemas de Mongoose de las 12 colecciones | §5 |
+| El mapa de las 14 colecciones que existen hoy | §3 |
+| Esquemas de Mongoose, ocho de ellas | §5 |
 | Las tres colecciones de vínculo: adscripciones, carteras, asignaciones | §5b |
 | Estatus efectivo, avance, semáforo, checklist por unión, alertas | §6 |
 | Índices | §7 |
@@ -284,6 +363,8 @@ En los ejemplos se muestra **sólo el contenido de `data`**.
   /** Empresas donde tiene adscripción activa, con sus áreas en cada una. */
   empresas: { _id: string; nombre: string; areas: Area[] }[];
   active: boolean;
+  /** La contraseña la puso otra persona y su dueño no la ha cambiado. */
+  passwordTemporal: boolean;
   ultimoAccesoEn: string | null;
   createdAt: string;
   updatedAt: string;
@@ -292,12 +373,27 @@ En los ejemplos se muestra **sólo el contenido de `data`**.
 
 Desaparecen `role`, `alcance`, `clienteId` y `area` (que era una sola).
 
+**Contraseña temporal.** Cuando la contraseña la puso un `rh_admin` —al conceder
+el acceso o al reponerla— o es la del administrador de arranque, la sesión abre
+igual pero **todas las rutas salvo `GET /auth/me`, `POST /auth/logout` y
+`POST /auth/cambiar-password` responden `403`**:
+
+```json
+{ "status": "fail", "message": "Tu contraseña es temporal: cámbiala para poder usar la plataforma.", "code": "PASSWORD_TEMPORAL", "data": null }
+```
+
+Se distingue por `code`, no por el mensaje. **Es `403`, no `401`**: el token
+sirve, así que el front manda a `/cambiar-password` en vez de cerrar la sesión.
+`POST /auth/cambiar-password` devuelve un token nuevo en `data.token` e
+invalida el anterior.
+
 > **Cambio incompatible con el front actual.** El front lee hoy `role`, `area` y
 > `alcance`. Avisen cuando lo desplieguen y se ajusta en la misma ventana; son
 > pocas líneas, pero hay que coordinarlo.
 
-`POST /auth/recuperar` y `/restablecer` siguen pendientes: hoy sólo un
-`rh_admin` puede reponer una contraseña.
+`POST /auth/recuperar` y `/restablecer` siguen pendientes (responden `404`): hoy
+sólo un `rh_admin` puede reponer una contraseña, y quien la recibe la cambia en
+su siguiente acceso.
 
 ### 6.2 Catálogos compartidos
 
@@ -309,12 +405,26 @@ filtrados por su alcance donde aplique.
 | Método | Ruta | Nota |
 | --- | --- | --- |
 | `GET` | `/empleados` | Paginado. Ver parámetros abajo |
-| `POST` | `/empleados` | Crea la persona **y su expediente**, en transacción |
-| `GET` `PATCH` | `/empleados/:id` | |
+| `POST` | `/empleados` | Crea la persona **y su expediente**, en transacción. **Ya no lleva `tipo`**: sale de la `categoriaId` (26 ago 2026) |
+| `GET` `PATCH` | `/empleados/:id` | El `PATCH` acepta mandar el `tipo` que la persona **ya tiene** (se ignora); mandar uno **distinto** responde `400` (26 ago 2026). Para cambiarlo se manda la `categoriaId` nueva — cambiar de puesto es lo que cambia el tipo. `tipo` sí sigue **viniendo** en la respuesta |
 | `PATCH` | `/empleados/:id/estado` | `{ activo, motivo }` — baja **del sistema** |
 | `GET` | `/empleados/:id/expediente` | Siempre existe |
 | `GET` | `/empleados/:id/adscripciones` | Sus empresas |
 | `GET` | `/empleados/:id/asignaciones` | Sus proyectos, activos e históricos |
+
+> **`POST /empleados` — `numeroEmpleado` es obligatorio y va en la raíz**
+> (26 ago 2026): string, máximo 30 caracteres, el ID de nómina **de la persona**
+> y único en todo el grupo. Se exige haya o no `adscripcion`, así que un alta
+> sólo al catálogo también lo lleva. Sin él, `400` con
+> `errors[0].path = 'numeroEmpleado'`; repetido, `409` con
+> `code: 'NUMERO_EMPLEADO_DUPLICADO'` y el mismo `path`.
+>
+> **`PATCH /empleados/:id` lo acepta** desde la misma fecha, pero **no admite
+> `null` ni `''`**: para corregirlo se manda el nuevo. `PATCH
+> /adscripciones/:id` responde `400` si lo recibe: el documento de la
+> adscripción ya no tiene ese campo. Editables: `nombre`, `numeroEmpleado`,
+> `curp`, `rfc`, `nss`, `fechaNacimiento`, `email`, `telefono`, `categoriaId`
+> — `tipo` no está en esta lista: ver la fila de arriba.
 
 Parámetros de `GET /empleados`:
 
@@ -324,11 +434,19 @@ Parámetros de `GET /empleados`:
 | `empresaId` | Filtra dentro del alcance; nunca lo amplía |
 | `area` | Áreas de la adscripción, no del empleado |
 | `proyectoId` | Con asignación activa a ese proyecto |
-| ~~`tipo`~~ | **Se fue en D-59**: el filtro lo reemplazan las áreas y el tipo sale del puesto |
+| ~~`tipo`~~ | **Desapareció el 26 ago 2026 (D-59)**: lo reemplazan las áreas y el tipo sale del puesto. Si se manda se ignora —no da `400`, para no dejar la tabla vacía sin explicación— |
+| `categoriaId` | Nuevo (D-51) |
 | `soloConAcceso` | Los que entran a la plataforma |
-| `activo` | `true` (defecto, sólo activos) \| `false` (sólo bajas) \| `todos` (D-51) |
-| `orden` | `nombre_asc` (defecto) \| `nombre_desc` \| `numero_asc` \| `numero_desc` (D-51). `numero_*` no requiere `empresaId` (D-53): ordena por `empleado.numeroEmpleado` —de la persona, uno por renglón desde D-54— y los que no tienen número van al final en los dos sentidos |
+| `activo` | `true` (defecto) sólo activos · `false` sólo bajas · `todos` los dos. Reemplaza a `incluirInactivos` (D-51) |
+| `orden` | `nombre_asc` (defecto) \| `nombre_desc` \| `numero_asc` \| `numero_desc` — los dos últimos, nuevos (D-51), funcionan con o sin `empresaId` (D-53); hay un solo número por persona y quien no lo tiene queda al final en los dos sentidos |
 | `pagina` `porPagina` | Empieza en 1; 25 por defecto |
+
+> **`numeroEmpleado` se lee en `empleado.numeroEmpleado`** del renglón (26 ago
+> 2026, D-54); ya no está en sus `adscripciones[]`, ni en la raíz de los renglones de
+> `GET /empresas/:id/adscripciones`, donde llega dentro de `empleado`. El orden
+> por número compara el valor **como texto**: coincide con el numérico porque el
+> .xlsx de nómina lo rellena con ceros a la izquierda, pero un número capturado
+> a mano sin rellenar (`9`) se iría después de `245`.
 
 ```jsonc
 // data
@@ -357,6 +475,12 @@ Parámetros de `GET /empleados`:
 El orden se calcula **sobre el total y después se corta**; una página más allá
 del final devuelve lista vacía y el `total` real, no un `404`.
 
+> Cada renglón de `adscripciones[]` trae más de lo que muestra el ejemplo de
+> arriba: `dirigeAreas[]`, `departamento`, `datosPendientes[]`, `motivoBaja`,
+> `fechaBaja` y `condiciones` (28 ago 2026) — los mismos campos que
+> `GET /empresas/:id/adscripciones`, ver la sección de adscripciones más abajo
+> y [`ENDPOINTS-ADSCRIPCIONES.md`](./ENDPOINTS-ADSCRIPCIONES.md).
+
 #### Clientes y categorías
 
 | Método | Ruta | Nota |
@@ -364,24 +488,217 @@ del final devuelve lista vacía y el `total` real, no un `404`.
 | `GET` `POST` | `/clientes` | Catálogo global. `?busqueda=` |
 | `GET` `PATCH` | `/clientes/:id` | |
 | `PATCH` | `/clientes/:id/estado` | Falla si tiene proyectos en curso |
-| `GET` `POST` | `/categorias` | `POST` **idempotente por nombre**: si ya existe, devuelve la existente en vez de fallar |
+| `GET` `POST` | `/categorias` | `POST` **idempotente por nombre**: si ya existe, devuelve la existente en vez de fallar. Lleva `tipo`, y `GET` acepta `?tipo=` |
 | `PATCH` | `/categorias/:id/estado` | Falla si hay empleados o proyectos usándola |
+
+> ⚠️ **`categorias.tipo` está de salida (D-73).** Hoy es obligatorio al crear un
+> puesto —es el selector «Aplica a» del front— y filtra el desplegable del alta.
+> **Lo va a sustituir el área**, que dice lo mismo con más grano desde D-58. No
+> se ha quitado porque de él cuelga quién puede gestionar a quién (§8.2 del
+> modelo) y esa matriz hay que redefinirla antes. Mientras tanto sigue vigente
+> tal cual: no lo quiten del front todavía, avisamos aquí y en
+> `HANDOFF-BACKEND.md` cuando cambie.
 
 ### 6.3 Empresas y vínculos
 
 | Método | Ruta | Nota |
 | --- | --- | --- |
-| `GET` | `/empresas` | Las del alcance del usuario |
+| `GET` `POST` | `/empresas` | Las del alcance del usuario. `POST` sólo admin de plataforma: `{ nombre, rfc? }` |
+| `GET` `PATCH` | `/empresas/:id` | El `PATCH` es sólo admin de plataforma: ver abajo |
+| `PATCH` | `/empresas/:id/estado` | `{ activo }` — sólo admin de plataforma, ver abajo |
 | `GET` | `/organizacion` | Árbol empresa → áreas (sólo administrativos) y proyectos |
+
+#### Editar y dar de baja una empresa (28 ago 2026)
+
+Hasta el 28 ago 2026 una empresa sólo se podía crear y consultar.
+
+Campo nuevo en toda respuesta que devuelve una empresa. ⚠️ **Cambió de forma el
+29 ago 2026** — ver «Registros con identidad propia», más abajo:
+
+```jsonc
+{ "registrosPatronales": [
+    { "_id": "…", "numero": "R13-77767-10-5", "descripcion": "Zapopan", "activo": true }
+] }  // [] si no tiene
+```
+
+Puede tener más de uno —por entidad o por clase de riesgo—.
+
+**`PATCH /empresas/:id`** — sólo lo que cambia:
+
+```jsonc
+// petición
+{ "nombre": "Maquinaria Cames", "rfc": "MCA180611HF1",
+  "registrosPatronales": ["R13-77767-10-5", "Y54-12345-10-9"] }
+// data
+{ "empresa": { … }, "conteos": { … } }
+```
+
+Campos aceptados: `nombre`, `rfc`, `branding`, `configuracion`.
+**`registrosPatronales` dejó de aceptarse aquí el 29 ago 2026**: responde `400`
+indicando su ruta.
+
+| Código | Cuándo |
+| --- | --- |
+| `400` | Cuerpo vacío; RFC mal formado; o mandar `activo` (el mensaje dice que use `/estado`) o `registrosPatronales` (dice que use su ruta) |
+| `403` | No es administrador de plataforma |
+| `404` | La empresa no existe |
+| `409` | El nombre o el RFC ya son de otra empresa |
+
+**`PATCH /empresas/:id/estado`** — `{ "activo": false }` para dar de baja,
+`{ "activo": true }` para reactivar. Dar de baja se bloquea si todavía tiene
+gente o proyectos:
+
+```jsonc
+// 400
+{ "status": "fail",
+  "message": "No se puede dar de baja: la empresa todavía tiene 12 personas adscritas y 2 proyectos abiertos. Ciérralos primero." }
+```
+
+El mensaje se muestra tal cual. Primero se cierra lo que cuelga —dar de baja a
+la gente o finalizar los proyectos— y luego la empresa. **Reactivar nunca se
+bloquea.**
+
+⚠️ **Ni `activo` ni `registrosPatronales` se cambian desde
+`PATCH /empresas/:id`.** Son rutas separadas a propósito: corregir un nombre y
+esconder a sesenta personas no deberían costar lo mismo, y los registros pasaron
+a tener `_id` propio.
+
+#### Registros con identidad propia: patronales y de obra (29 ago 2026)
+
+`registrosPatronales` pasó de `string[]` a objetos con `_id`, y llegó su gemelo
+del lado del cliente, `registrosObra`. **El `_id` es el motivo**: un proyecto
+apunta a un registro concreto, y una posición en un arreglo de cadenas no sirve
+de referencia —corregir un dígito la rompería en silencio—.
+
+```jsonc
+{ "_id": "…", "numero": "R13-77767-10-5", "descripcion": "Zapopan", "activo": true }
+```
+
+**Son cosas distintas y de dueños distintos:**
+
+| | Pertenece a | Para qué sirve | Permiso |
+| --- | --- | --- | --- |
+| Registro **patronal** | la **empresa** | El contexto patronal del proyecto | Admin de plataforma |
+| Registro **de obra** | el **cliente** | De él saldrán los SIROC de cada contrato | `rh_admin` y `jefe_area` |
+
+| Método | Ruta | Cuerpo |
+| --- | --- | --- |
+| `POST` | `/empresas/:id/registros-patronales` | `{ numero, descripcion? }` |
+| `PATCH` | `/empresas/:id/registros-patronales/:rpId` | `{ numero?, descripcion? }` |
+| `PATCH` | `/empresas/:id/registros-patronales/:rpId/estado` | `{ activo }` |
+| `POST` | `/clientes/:id/registros-obra` | `{ numero, descripcion? }` |
+| `PATCH` | `/clientes/:id/registros-obra/:roId` | `{ numero?, descripcion? }` |
+| `PATCH` | `/clientes/:id/registros-obra/:roId/estado` | `{ activo }` |
+
+Mismo comportamiento en los dos: `POST` **idempotente por número** (`201` si lo
+creó, `200` si ya existía), el número se guarda **en mayúsculas** y se corrige
+**sin perder el `_id`**, y dar de baja responde `400` si un proyecto **en
+curso** lo usa, diciendo cuántos. Los finalizados no lo impiden.
+
+**No hay `GET` propio**: las listas vienen dentro de `GET /empresas/:id` y
+`GET /clientes/:id`.
+
+El proyecto los referencia con `registroPatronalId`/`registroObraId`, y la
+respuesta los trae **ya resueltos** en `registroPatronal`/`registroObra`
+(`null` si no los tiene). El patronal tiene que ser de la empresa del proyecto y
+el de obra, del cliente; ninguno puede estar dado de baja.
+
+**Obligatorios desde el 29 ago 2026.** `POST /proyectos` rechaza si falta
+cualquiera de los dos, con `errors[0].path` en el campo. Consecuencias:
+
+- ⚠️ **Al cambiar `clienteId` en el `PATCH` hay que mandar `registroObraId`**
+  del cliente nuevo, en la misma petición. El servidor ya no lo limpia solo
+  —el campo no admite vacío— y responde `400`.
+- ⚠️ **El `PATCH` no admite `null`** en ninguno de los dos: se cambian por otro
+  válido, pero no se vacían. Un valor vacío se **omite** del cuerpo.
+
+Los proyectos anteriores al cambio, sin estos campos, siguen siendo válidos: se
+aplazan, finalizan y editan con normalidad.
 
 #### Adscripciones — empresa ↔ empleado
 
 | Método | Ruta | Cuerpo |
 | --- | --- | --- |
-| `GET` | `/empresas/:id/adscripciones` | `?activo=&area=` |
+| `GET` | `/empresas/:id/adscripciones` | `?activo=true\|false\|todos&area=&categoriaId=&orden=numero_asc\|numero_desc` (`numero_asc` y `activo=true` son los valores por defecto, 25 ago 2026: omitir `activo` ya no revuelve activas y bajas. **`?tipo=` desapareció el 26 ago 2026**) |
 | `POST` | `/empresas/:id/adscripciones` | `{ empleadoId, areas[], tipoContrato, fechaIngreso, fechaTerminoContrato? }` |
-| `PATCH` | `/adscripciones/:id` | Mismos campos |
+| `PATCH` | `/adscripciones/:id` | Mismos campos, **más `registroPatronalId`** (`null` desvincula) |
 | `PATCH` | `/adscripciones/:id/estado` | `{ activo, motivo }` — baja **de esa empresa** |
+| `GET` | `/empresas/:id/jefaturas` | Quién dirige cada área. Sólo `rh_admin` |
+| `PATCH` | `/adscripciones/:id/jefaturas` | `{ dirigeAreas[] }` — **lista completa**. Sólo `rh_admin` |
+
+**`registroPatronalId` en la adscripción (29 ago 2026, D-72).** Vincula la
+relación laboral con el catálogo de **su** empresa; tiene que estar activo, o
+`400` con `path: registroPatronalId`. **Convive con
+`condiciones.registroPatronal`, que sigue siendo texto** y no se valida: uno es
+el vínculo confiable y el otro lo que dijo el archivo de nómina. **No asumas que
+el id está** —`null` es lo normal en quien se dio de alta a mano—: para
+*mostrar* el registro de alguien, usa `condiciones.registroPatronal` o el
+`registroPatronalEmpleado` que ya dan resuelto las asignaciones.
+
+#### Jefaturas de área (26 ago 2026)
+
+Trabajar en un área y dirigirla dejaron de ser lo mismo. Antes, poner a alguien
+en Contabilidad porque ahí trabaja le daba visión sobre toda Contabilidad; ahora
+se asigna, y la adscripción lleva los dos campos:
+
+```jsonc
+{
+  "areas": ["direccion"],          // dónde TRABAJA
+  "dirigeAreas": ["contabilidad"]  // qué DIRIGE. Vacío es lo normal
+}
+```
+
+`dirigeAreas` **no tiene que ser subconjunto de `areas`** y es por empresa. No se
+escribe desde `PATCH /adscripciones/:id`.
+
+**Se lee por área y se escribe por persona**, y esa asimetría es la trampa del
+contrato. `GET` devuelve todas las áreas activas, también las que no dirige
+nadie —son justo donde hay que poder asignar—:
+
+```jsonc
+{
+  "jefaturas": [
+    { "area": { "clave": "contabilidad", "nombre": "Contabilidad", "temporal": false },
+      "jefes": [{ "adscripcionId": "…", "empleadoId": "…", "nombre": "…", "numeroEmpleado": "0042" }] },
+    { "area": { "clave": "tesoreria", "nombre": "Tesorería", "temporal": false }, "jefes": [] }
+  ]
+}
+```
+
+El `PATCH` va contra el `adscripcionId` de ahí —**no** contra el empleado— y
+reemplaza la lista entera: `[]` retira todas las jefaturas. Un área puede tener
+varios jefes y un jefe varias áreas. En el front, recomponer esa lista es
+`dirigeAreasTras()` (`modules/organizacion/jefaturas-service.ts`): sin eso,
+asignar una jefatura nueva **borra en silencio** las que la persona ya tenía.
+
+#### Condiciones laborales de la adscripción (28 ago 2026)
+
+Estaban guardadas pero invisibles por compartir subdocumento con los salarios;
+no son datos sensibles y ya se devuelven, en las cuatro rutas que traen una
+adscripción resuelta (`GET /empleados`, `GET /empleados/:id`,
+`GET /empleados/:id/expediente`, `GET /empresas/:id/adscripciones`):
+
+```jsonc
+{
+  "condiciones": {
+    "tipoRegimen": "02 Sueldos",
+    "turno": "Turno diurno",
+    "registroPatronal": "R13-77767-10-5",
+    "baseCotizacion": "Fijo",
+    "zonaSalario": "Resto del país",
+    "tipoPrestacion": "De ley",
+    "periodicidadPago": "Semanal Cames Vales Despensa",
+    "teletrabajador": false
+  }
+}
+```
+
+El objeto **siempre** viene; sus campos son `null` si el archivo no los
+traía, salvo `teletrabajador`, que nunca es `null`. Sigue sin devolverse:
+salario diario, las tres partes del SBC, banco, sucursal y cuenta — eso se
+resuelve con los roles configurables. Si un ambiente devuelve
+`condiciones: {}` vacío, falta correr la migración de datos ahí; no es un bug
+del front.
 
 **Adscribir es el flujo que hace útil el catálogo compartido:** se toma a alguien
 que ya existe y se le vincula, en vez de darlo de alta otra vez. Si ya tuvo
@@ -414,8 +731,14 @@ Sacar un cliente de la cartera falla si la empresa tiene proyectos con él.
 | `POST` | `/proyectos/:id/categorias/clonar` | `{ origenId }` |
 | `GET` | `/proyectos/:id/asignaciones` | `?activo=` |
 | `GET` | `/proyectos/:id/asignables` | Quiénes se pueden asignar. Ver [`modelo-datos.md` §9.3](./modelo-datos.md) |
-| `POST` | `/proyectos/:id/asignaciones` | `{ empleadoId, categoriaId, fechaAsignacion }` |
+| `POST` | `/proyectos/:id/asignaciones` | `{ empleadoId, categoriaId, fechaAsignacion }` → `{ asignacion, avisos[] }` |
+| `GET` | `/asignaciones/:id` | El detalle con la cadena completa en `trazabilidad` |
 | `PATCH` | `/asignaciones/:id/salida` | `{ fechaSalida }` — cierra, no borra |
+| `GET` `POST` | `/proyectos/:id/contratos` | `?incluirInactivos=`; el alta es `{ nombre?, fechaInicio, fechaFin }` |
+| `PATCH` | `/contratos/:id` | **Sólo** `nombre`, `fechaInicio`, `fechaFin` |
+| `PUT` `DELETE` | `/contratos/:id/siroc` | `{ numero, fechaRegistro, vigenciaHasta? }` — reemplaza entero |
+| `POST` | `/contratos/:id/finalizar` · `/reabrir` | Mueven `estado` |
+| `PATCH` | `/contratos/:id/estado` | `{ activo }` — mueve **`activo`**, la baja |
 
 Reglas que el servidor impone:
 
@@ -432,6 +755,49 @@ Reglas que el servidor impone:
 - Clonar categorías **suma sin quitar** y sin duplicar.
 - Un proyecto no se borra: se finaliza. Reabrirlo limpia `fechaFinReal`.
 
+**Contratos — que son las fases del proyecto (29 ago 2026).** `nombre` es la
+etiqueta de la fase y es opcional; **el `numero` lo pone el servidor** (secuencia
+dentro del proyecto) y no se manda ni se corrige. El contrato **no tiene**
+`clienteId`, `empresaId` ni monto: no los busques en la respuesta. Ojo con dos
+cosas verificadas contra el servidor:
+
+- El alta **ignora los campos de más en silencio** (`201` sin ellos), mientras
+  que el `PATCH` sí los rechaza con `400` diciendo por dónde va cada uno.
+- **`estado` y `activo` no son lo mismo.** `finalizado` es un contrato que
+  terminó bien (`/finalizar`); `activo: false` es uno capturado por error
+  (`PATCH /contratos/:id/estado` — la ruta se llama `/estado` pero mueve
+  `activo`, y es la única colisión de nombres del recurso).
+
+**El SIROC es único en TODO el sistema** y se guarda en mayúsculas: si se muestra
+después de capturarlo, hay que usar lo que devuelve la respuesta. Repetirlo es
+`409 SIROC_DUPLICADO` con `data: { contratoId, contratoNumero, proyectoId,
+proyectoNombre }` — se muestra el nombre pero **no se enlaza**: puede ser un
+proyecto de otra empresa y el enlace daría `404`. Quitarlo con `DELETE` libera el
+número.
+
+**Qué le traba cada contrato al proyecto:**
+
+| Campo del proyecto | Se bloquea cuando |
+| --- | --- |
+| `registroPatronalId` | hay ≥1 contrato **activo** |
+| `registroObraId` | hay ≥1 contrato activo **con SIROC** |
+| `clienteId` | hay ≥1 contrato **activo** |
+| `empresaId` | siempre |
+
+Los candados miran el **cambio**, no la presencia: reenviar el mismo id en el
+formulario completo sigue funcionando. Un contrato dado de baja sale de la
+cuenta.
+
+**Coherencia del registro patronal (D-71) — avisa, no bloquea.** Alguien puede
+cotizar en un registro distinto al del proyecto: el alta responde **`201`
+igual**, con el aviso en `data.avisos` y repetido en `message`. **Tratarlo como
+error es el fallo fácil: la asignación se hizo.** Cada renglón de
+`GET /proyectos/:id/asignaciones` trae además `registroPatronalEmpleado` (texto
+de la nómina) y `registroPatronalCoincide`, que tiene **tres estados**: `true`,
+`false` (cotiza en otro) y `null` (**no se pudo comparar**). `null` no es
+`false`. La comparación la hace el servidor, que ya ignora guiones, espacios y
+mayúsculas.
+
 ### 6.5 Expedientes y documentos
 
 | Método | Ruta | Nota |
@@ -439,22 +805,21 @@ Reglas que el servidor impone:
 | `GET` | `/expedientes` | Paginado. Mismos filtros que empleados, más `estatus` |
 | `GET` | `/expedientes/:id` | Con el empleado embebido |
 | `POST` | `/expedientes/:id/documentos/:tipo` | `multipart`: `archivo` + `vigenciaHasta?` |
-| `POST` | `…/:tipo/validar` | Sin cuerpo |
-| `POST` | `…/:tipo/rechazar` | `{ motivo }`, mínimo 10 caracteres |
+| `POST` | `…/:tipo/revisar` | `{ aprobado: true }` para validar, o `{ aprobado: false, motivo }` (mínimo 10 caracteres) para rechazar. Un solo endpoint para las dos acciones. |
 | `GET` | `…/:tipo/versiones/:v/url` | URL firmada, 10 min. Registra en bitácora |
 
 Ciclo del documento:
 
 ```
-pending ──subir──▶ in_review ──validar──▶ validated ──(tiempo)──▶ expiring ──▶ expired
-                        │                     │                       │           │
-                        └──rechazar──▶ rejected                       │           │
-                                          │                           │           │
-                                          └────────── subir (nueva versión) ──────┘
+pending ──subir──▶ in_review ──revisar (aprobado: true)──▶ validated ──(tiempo)──▶ expiring ──▶ expired
+                        │                                       │                       │           │
+                        └──revisar (aprobado: false)──▶ rejected                        │           │
+                                          │                                              │           │
+                                          └───────────────── subir (nueva versión) ──────┘
 ```
 
 - **Subir se permite desde cualquier estatus** (así se reemplaza).
-- **Validar y rechazar sólo desde `in_review`**; desde otro estatus, `400`.
+- **Revisar (aprobar o rechazar) sólo desde `in_review`**; desde otro estatus, `400`.
 - Al subir versión nueva: numerarla, marcar `reemplazadaEn` en la anterior,
   insertarla **al inicio**, poner el documento en `in_review` y **limpiar
   `motivoRechazo`, `revisadoPor` y `revisadoEn`** — el rechazo anterior no debe
@@ -471,7 +836,7 @@ pending ──subir──▶ in_review ──validar──▶ validated ──(t
 
 | Método | Ruta | `data` |
 | --- | --- | --- |
-| `GET` | `/alertas` | `{ alertas }` — `?tipo=&empresaId=&area=&origen=` |
+| `GET` | `/alertas` | `{ alertas }` — `?tipo=&empresaId=&area=&origen=`. Aquí `tipo` es **el de la alerta**, no el de la persona: éste no se tocó |
 | `GET` | `/dashboard/metricas` | `{ metricas }` — `?empresaId=` |
 | `GET` | `/reportes/expedientes` | `{ reporte }` — mismos filtros que expedientes |
 
@@ -635,11 +1000,11 @@ prueba automatizada.
       **limpia el `motivoRechazo` anterior**.
 
 **Permisos**
-- [ ] `rh_consulta` puede subir pero recibe `403` al validar o rechazar.
+- [ ] `rh_consulta` puede subir, y también validar o rechazar (`revisar`).
 - [ ] `jefe_area` recibe `403` al pedir la URL de un documento sensible, y `200`
       con el historial de metadatos del mismo documento.
 - [ ] `jefe_area` sólo ve expedientes de su área.
-- [ ] Validar o rechazar algo que no está `in_review` responde `400`.
+- [ ] Revisar (validar o rechazar) algo que no está `in_review` responde `400`.
 - [ ] Subir a un expediente de un empleado dado de baja del sistema responde
       `400`; una baja de una sola adscripción **no** lo bloquea.
 
@@ -654,6 +1019,11 @@ prueba automatizada.
 ---
 
 ## 10. Migración de lo ya implementado
+
+> **Hecha.** `/usuarios` responde `410` con la ruta que la sustituye
+> (`src/api/v1/users/goneRoutes.js`); se borra cuando el front deje de llamarla.
+> El acceso vive en `empleados.acceso` y la contraseña aparte, en `credentials`
+> (D-27). Se conserva porque explica de dónde viene la forma actual.
 
 `/auth` y `/usuarios` están en pie y **no se tiran**. Cambian de sitio: el
 usuario deja de ser una entidad suelta y pasa a ser el subdocumento `acceso` de
@@ -695,24 +1065,29 @@ No hace falta volver a preguntarlas.
 
 ### Lo que falta decidir
 
-Sólo la primera bloquea algo; las demás son una constante o una lista.
+Las cinco de la entrega original quedaron en cuatro resueltas y una abierta; el
+detalle está en [`modelo-datos.md` §12](./modelo-datos.md).
 
-1. **¿El expediente se comparte entre empresas del grupo?** Este modelo dice que
-   sí: es de la persona. Si Urbacames necesita uno por empresa, cambia el modelo
-   y hay que saberlo **antes** de implementar expedientes.
-   Ver [`modelo-datos.md` §2.1](./modelo-datos.md).
-2. **¿La CURP es obligatoria desde el alta?** Determina si el índice es `unique`
-   o `unique + sparse`. Ver [`modelo-datos.md` §5.2](./modelo-datos.md).
-3. Umbral de vencimiento de documentos: hoy 30 días.
-4. Qué documentos son sensibles: hoy 8 de los 12.
-5. A quién llegan los correos de alerta.
+| Pregunta | Cómo quedó |
+| --- | --- |
+| ¿El expediente se comparte entre empresas del grupo? | **Sí**, es de la persona (§2.1 del modelo) |
+| ¿La CURP es obligatoria desde el alta? | **Sigue abierta.** Hoy es opcional, con índice único parcial (D-28) |
+| Umbral de vencimiento de documentos | **30 días**, inclusivo, `DIAS_ALERTA_VENCIMIENTO` |
+| Qué documentos son sensibles | **8 de los 12** (`SENSITIVE_DOCUMENT_TYPES`) |
+| A quién llegan los correos de alerta | **Abierta.** No hay correos ni job: `GET /alertas` deriva todo al leer (D-47) |
+
+**Y una que bloquea al front:** `affiliations.nomina` guarda salario, SBC y
+cuenta bancaria porque el archivo de nómina los trae, pero **ninguna respuesta
+los devuelve** hasta que se decida quién puede verlos (LFPDPPP). Ver D-46 y
+[`ESTADO.md`](./ESTADO.md) #10.
 
 ---
 
 ## 12. Orden de implementación sugerido
 
-Cada paso deja algo verificable. El front sigue con datos simulados hasta el
-final, así que nada de esto lo bloquea.
+El plan original, que se siguió. **Los pasos 1 a 6 están hechos**, y del 7 sólo
+las alertas; faltan métricas, reportes y el job del 8. Lo vivo, con checkboxes y
+el orden sugerido, está en [`ESTADO.md`](./ESTADO.md).
 
 1. **Colecciones base** — `empresas`, `empleados`, `clientes`, `categorias`, con
    sus índices.
@@ -733,9 +1108,22 @@ final, así que nada de esto lo bloquea.
 | Qué | Dónde |
 | --- | --- |
 | **Modelo de datos completo** | [`modelo-datos.md`](./modelo-datos.md) |
-| Flujo funcional original del cliente | [`flujo-expedientes.md`](./flujo-expedientes.md) |
-| Qué está implementado hoy y cómo probarlo | [`backend-actual.md`](./backend-actual.md) |
-| Capa simulada del front | [`mocks.md`](./mocks.md) |
+| **Qué colecciones hay hoy y qué se rompe al tocarlas** | [`ARQUITECTURA-DATOS.md`](./ARQUITECTURA-DATOS.md) |
+| El detalle petición por petición, con ejemplos | [`CONTRATO-API.md`](./CONTRATO-API.md) |
+| Por qué se desvió del spec, decisión por decisión | [`DECISIONES.md`](./DECISIONES.md) |
+| Lo que el front ya usa y no se puede romper | [`INTEGRACION-FRONTEND.md`](./INTEGRACION-FRONTEND.md) |
+| Por recurso | `ENDPOINTS-PROYECTOS` · `-ADSCRIPCIONES` · `-ALERTAS` · `-AREAS` · `-EXPEDIENTES` · `-IMPORTACION` |
+| Qué falta implementar, en orden | [`ESTADO.md`](./ESTADO.md) |
+| Lógica de dominio ya probada | `src/utils/domain/`, `tests/unitarias/domain/` |
+| Conversación con el front | [`HANDOFF-BACKEND.md`](./HANDOFF-BACKEND.md) |
+
+En el repo del front (`~/Documents/projects/cames-files-manager/docs/`), que se
+lee ahí y no se copia aquí:
+
+| Qué | Dónde |
+| --- | --- |
+| Flujo funcional original del cliente | `flujo-expedientes.md` |
+| Cómo les pega el backend, con sus trampas | `backend-actual.md` |
+| Capa simulada del front | `mocks.md` |
 | Contratos TypeScript y enums | `src/interfaces/`, `src/enums/` |
-| Lógica de dominio ya probada | `src/utils/expediente.ts`, `src/utils/checklist.ts` |
-| Casos borde cubiertos | `src/utils/__tests__/`, `src/mocks/__tests__/` |
+| Su mitad de la conversación | `HANDOFF-FRONTEND.md` |

@@ -1,11 +1,5 @@
 # Modelo de datos — Plataforma de Expedientes (Urbacames)
 
-> **Este es el diseño ORIGINAL y su porqué.** El modelo ha cambiado desde
-> entonces (D-27 en adelante): las áreas son un catálogo, el número de
-> trabajador es de la persona, el tipo se deriva del puesto, y hay jefaturas de
-> área. Para saber **qué existe hoy y cómo se relaciona**, lee
-> `ARQUITECTURA-DATOS.md`; donde los dos discrepen, manda ése.
-
 > **Documento autoritativo del modelo.** Define **qué se guarda y cómo se
 > relaciona**. Su complemento es [`backend-spec.md`](./backend-spec.md), que
 > define **cómo se habla** con el backend: envelope, códigos, errores y rutas.
@@ -15,9 +9,20 @@
 > justifica las decisiones de modelado en vez de sólo listar campos, y señala
 > dónde están los riesgos.
 >
-> Estado del front: la interfaz actual **todavía asume el modelo anterior**
-> (empleados y clientes con `empresaId` propio). La sección 11 lista qué hay que
-> cambiar; **no se ha tocado**, a petición del cliente.
+> Estado del front: **ya migró.** La sección 11 lista lo que asumía del modelo
+> anterior (empleados y clientes con `empresaId` propio) y se conserva porque
+> explica por qué el modelo quedó así, no como trabajo pendiente.
+>
+> **Este archivo es del backend** (29 ago 2026) y se mantiene aquí, en
+> `cames-files-manager-backend/docs/`. El front lo lee de este repo y ya no
+> guarda copia: cuando cambie un esquema, se actualiza en el mismo cambio que
+> el código, como `ARQUITECTURA-DATOS.md`.
+>
+> ⚠️ **Es el diseño y su porqué, no el inventario de lo que existe.** El modelo
+> derivó desde D-27 (las áreas son un catálogo, el número de trabajador es de la
+> persona, el tipo se deriva del puesto, hay jefaturas de área). Para saber
+> **qué hay hoy y qué se rompe al tocarlo**, `ARQUITECTURA-DATOS.md`; donde los
+> dos discrepen, manda ése.
 
 ---
 
@@ -127,19 +132,32 @@ quien administra los catálogos compartidos. Detalle en la sección 8.
 
 ## 3. Mapa de colecciones
 
-| Colección | Naturaleza | Pertenece a |
-| --- | --- | --- |
-| `empresas` | Entidad raíz | — |
-| `empleados` | **Catálogo compartido** | — |
-| `clientes` | **Catálogo compartido** | — |
-| `categorias` | **Catálogo compartido** | — |
-| `plantillas_checklist` | Configuración | — (o empresa, ver 5.7) |
-| `expedientes` | 1 a 1 con empleado | Empleado |
-| `proyectos` | Entidad de la empresa | Empresa + Cliente |
-| `adscripciones` | **Vínculo** empresa ↔ empleado | — |
-| `carteras` | **Vínculo** empresa ↔ cliente | — |
-| `asignaciones` | **Vínculo** proyecto ↔ empleado | — |
-| `bitacora_accesos` | Auditoría | — |
+Las **14 que existen hoy**. Las tres últimas llegaron después de escribir este
+documento y no tienen sección propia en §5: su detalle está en
+[`ARQUITECTURA-DATOS.md`](./ARQUITECTURA-DATOS.md).
+
+| Colección | Naturaleza | Pertenece a | Esquema |
+| --- | --- | --- | --- |
+| `companies` | Entidad raíz | — | §5.1 |
+| `employees` | **Catálogo compartido** | — | §5.2 |
+| `clients` | **Catálogo compartido** | — | §5.3 |
+| `categories` | **Catálogo compartido** | — | §5.4 |
+| `checklist_templates` | Configuración | — (o empresa, ver 5.7) | §5.7 |
+| `records` | 1 a 1 con empleado | Empleado | §5.6 |
+| `projects` | Entidad de la empresa | Empresa + Cliente | §5.5 |
+| `contracts` | Las fases del proyecto | Proyecto | §5.5b |
+| `affiliations` | **Vínculo** empresa ↔ empleado | — | §5b.1 |
+| `portfolios` | **Vínculo** empresa ↔ cliente | — | §5b.2 |
+| `assignments` | **Vínculo** proyecto ↔ empleado | — | §5b.3 |
+| `credentials` | Material secreto, aislado (D-27) | Empleado | — |
+| `areas` | **Catálogo compartido**, dejó de ser enum (D-58) | — | — |
+| `access_logs` | Auditoría | — | — |
+
+> **Los nombres de arriba son los de MongoDB, en inglés**; en el contrato HTTP
+> las rutas y las llaves van en español (`/empresas`, `/expedientes`). La tabla
+> completa de equivalencias está en `CLAUDE.md` § Idiomas. Este documento usa a
+> veces el nombre en español al hablar del concepto; la colección es la de esta
+> tabla.
 
 ### Por qué los vínculos son colecciones y no arreglos embebidos
 
@@ -189,9 +207,26 @@ Aplican a todos los esquemas y no se repiten en cada uno.
 La entidad raíz. Cambia poco y se lee mucho: buen candidato a caché.
 
 ```js
+// Un registro con identidad propia. Lo comparten el patronal de la empresa y el
+// de obra del cliente: misma forma exacta, dueños distintos.
+const registroSchema = new mongoose.Schema({
+  numero:      { type: String, required: true, trim: true, uppercase: true,
+                 minlength: 3, maxlength: 30 },
+  descripcion: { type: String, trim: true, default: null },
+  // Baja lógica: se bloquea si un proyecto EN CURSO lo usa. Los finalizados no.
+  activo:      { type: Boolean, default: true }
+});
+
 const empresaSchema = new mongoose.Schema({
   nombre: { type: String, required: true, trim: true, maxlength: 120, unique: true },
   rfc:    { type: String, trim: true, uppercase: true, maxlength: 13 },
+
+  // Una empresa puede tener registro por entidad o por clase de riesgo.
+  // Subdocumentos con _id propio desde el 29 ago 2026: el proyecto apunta a uno
+  // concreto, y una posición dentro de un arreglo de cadenas no sirve de
+  // referencia — corregir un dígito la rompería en silencio. El número se
+  // guarda en mayúsculas; el alta es idempotente por número.
+  registrosPatronales: [registroSchema],
 
   // Preparados para el día que cada empresa quiera verse distinta.
   branding: {
@@ -221,13 +256,14 @@ const empleadoSchema = new mongoose.Schema({
 
   // Número de trabajador de la nómina. De la PERSONA y único en todo el grupo
   // (D-54): vivía en la adscripción, único por empresa, y se movió cuando se
-  // pidió capturarlo al dar de alta a alguien que aún no se adscribe a ninguna.
-  // Índice único parcial, igual que la CURP.
+  // pidió capturarlo al dar de alta a alguien que aún no se adscribe a ninguna
+  // empresa. Índice único parcial, igual que la CURP.
   numeroEmpleado: { type: String, trim: true, maxlength: 30, default: null },
 
-  // Clave natural. Ver la nota de abajo: es lo que evita duplicar personas.
+  // Clave natural: es lo que evita duplicar personas. OJO, el diseño la pedía
+  // obligatoria y se implementó OPCIONAL — ver la nota de abajo y D-28.
   curp: {
-    type: String, required: true, unique: true, uppercase: true, trim: true,
+    type: String, default: null, uppercase: true, trim: true,
     match: /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/
   },
   rfc:  { type: String, uppercase: true, trim: true, maxlength: 13, sparse: true },
@@ -257,6 +293,10 @@ const empleadoSchema = new mongoose.Schema({
       // los catálogos compartidos.
       alcanceGlobal:  { type: Boolean, default: false },
       activo:         { type: Boolean, default: true },
+      // La contraseña la puso otra persona y su dueño no la ha cambiado. Con
+      // ella se inicia sesión, pero la API responde 403 PASSWORD_TEMPORAL a
+      // todo salvo /auth/me, /auth/logout y /auth/cambiar-password.
+      passwordTemporal: { type: Boolean, default: false },
       ultimoAccesoEn: { type: Date, default: null }
     },
     default: null,
@@ -268,16 +308,21 @@ const empleadoSchema = new mongoose.Schema({
 }, { timestamps: true });
 ```
 
-> **La CURP es obligatoria y es la clave de identidad.** Con un catálogo
+> **La CURP es la clave de identidad.** Con un catálogo
 > compartido, sin clave natural terminas con «Juan Pérez» tres veces y tres
 > expedientes de la misma persona, que es exactamente el problema que este
 > modelo viene a resolver. La CURP es única por persona en México y sirve.
 >
 > Si Urbacames no siempre la tiene al dar de alta —pasa con personal de obra el
 > primer día—, hay dos salidas honestas: permitir un alta provisional con
-> `curp: null` y un índice `unique + sparse`, obligando a completarla antes de
-> validar el expediente; o generar una clave temporal marcada. **Decidirlo antes
-> de implementar**, porque cambia el índice.
+> `curp: null`, obligando a completarla antes de validar el expediente; o generar
+> una clave temporal marcada.
+>
+> **Se implementó la primera, y el párrafo de arriba se quedó viejo:** hoy `curp`
+> es **opcional** (`default: null`, `employeeModel.js`) con índice único
+> **parcial** —`$type: 'string'`, no `sparse`, que indexaría los nulos y haría
+> chocar a la segunda persona sin CURP (D-28)—. **La decisión de exigirla desde
+> el alta sigue abierta**: [`ESTADO.md`](./ESTADO.md) «Decisiones abiertas» #2.
 
 > **El correo de acceso va dentro de `acceso`, no arriba.** El correo personal
 > del empleado y su usuario de la plataforma son cosas distintas y pueden
@@ -293,6 +338,14 @@ const clienteSchema = new mongoose.Schema({
   contactoNombre:   { type: String, trim: true, default: null },
   contactoEmail:    { type: String, lowercase: true, trim: true, default: null },
   contactoTelefono: { type: String, trim: true, default: null },
+
+  // Los registros de obra del cliente (29 ago 2026): de ellos saldrán los SIROC
+  // de cada contrato. Mismo `registroSchema` que los patronales de la empresa —
+  // misma forma, dueño distinto. Ojo: NO son lo mismo. El patronal da el
+  // contexto patronal del proyecto y es de la empresa; éste es del cliente, y
+  // lo administran `rh_admin` y `jefe_area` (el patronal, sólo el admin de
+  // plataforma).
+  registrosObra: [registroSchema],
 
   activo: { type: Boolean, default: true }
 }, { timestamps: true });
@@ -319,6 +372,12 @@ const categoriaSchema = new mongoose.Schema({
 > a dos empresas tendría un puesto ambiguo. Global se resuelve solo, y cada
 > proyecto sigue habilitando el subconjunto que usa.
 
+> ⚠️ **El esquema de arriba se quedó corto: hoy hay además un `tipo`**
+> (`administrativo` / `mano_de_obra`), obligatorio, que llegó con el alta de
+> personal y que **está de salida (D-73)**. Lo sustituye el área, que dice lo
+> mismo con más grano desde D-58. Sigue en pie porque de él cuelga la matriz de
+> permisos (§8.2), que hay que redefinir primero. **No construyas encima.**
+
 ### 5.5 `proyectos`
 
 La única entidad que **sí** pertenece a una empresa.
@@ -344,6 +403,20 @@ const proyectoSchema = new mongoose.Schema({
 
   estado: { type: String, enum: ['en_curso', 'finalizado'], default: 'en_curso' },
 
+  // Los dos registros que contextualizan el proyecto (29 ago 2026). Apuntan a
+  // un subdocumento por su _id: el patronal tiene que ser de `empresaId` y el
+  // de obra de `clienteId`, y ninguno puede estar dado de baja.
+  //
+  // OBLIGATORIOS AL CREAR, y el PATCH no admite vaciarlos. El `default: null`
+  // se queda por los proyectos anteriores al cambio, que siguen siendo válidos
+  // y se editan con normalidad.
+  //
+  // OJO: al cambiar `clienteId` hay que exigir el `registroObraId` del cliente
+  // nuevo en la misma petición. Antes se limpiaba solo; ya no puede, porque el
+  // campo no admite vacío.
+  registroPatronalId: { type: ObjectId, default: null },
+  registroObraId:     { type: ObjectId, default: null },
+
   // Subconjunto del catálogo global habilitado en este proyecto.
   categorias: [{ type: ObjectId, ref: 'Categoria' }],
 
@@ -353,8 +426,75 @@ const proyectoSchema = new mongoose.Schema({
 ```
 
 Se dejó corto a propósito: se acordó arrancar con lo básico. Van a llegar más
-campos (presupuesto, ubicación, responsable, número de contrato) y el esquema
-los admite sin migrar nada.
+campos (presupuesto, ubicación, responsable) y el esquema los admite sin migrar
+nada. El número de contrato **ya no está en esta lista**: los contratos son una
+colección aparte, abajo.
+
+### 5.5b `contratos` — que son las fases del proyecto
+
+Un contrato **es** una fase (29 ago 2026, D-68 a D-70). No hay entidad «fase» ni
+un campo que las relacione: `nombre` es la etiqueta y es opcional, así que un
+proyecto de un solo contrato simplemente no tiene fases.
+
+```js
+const sirocSchema = new mongoose.Schema({
+  // ÚNICO EN TODO EL SISTEMA: no se repite entre empresas, clientes ni
+  // proyectos. Se guarda en mayúsculas.
+  numero:        { type: String, required: true, minlength: 3, maxlength: 40 },
+  fechaRegistro: { type: String, required: true },   // YYYY-MM-DD
+  vigenciaHasta: { type: String, default: null }     // puede no conocerse
+}, { _id: false });
+
+const contratoSchema = new mongoose.Schema({
+  proyectoId: { type: ObjectId, ref: 'Proyecto', required: true },
+
+  // Secuencia dentro del proyecto (max + 1, contando también los dados de
+  // baja). LA PONE EL SERVIDOR: no se manda al crear ni se puede corregir.
+  numero: { type: Number, required: true },
+
+  // La etiqueta de la fase ('Fase 1', 'Cimentación'). Opcional.
+  nombre:      { type: String, default: null, maxlength: 120 },
+  fechaInicio: { type: String, required: true },   // YYYY-MM-DD
+  fechaFin:    { type: String, required: true },   // posterior al inicio
+
+  siroc: { type: sirocSchema, default: null },
+
+  // OJO: `estado` y `activo` NO son lo mismo, y se mueven por rutas distintas.
+  //   estado: 'finalizado' → la fase terminó bien   (POST /contratos/:id/finalizar)
+  //   activo: false        → se capturó por error   (PATCH /contratos/:id/estado)
+  // Confundirlos borra la diferencia entre una obra completada y una que nunca
+  // existió.
+  estado: { type: String, enum: ['en_curso', 'finalizado'], default: 'en_curso' },
+  activo: { type: Boolean, default: true }
+}, { timestamps: true });
+```
+
+**Lo que el contrato NO tiene**, porque son las tres suposiciones naturales: no
+tiene `clienteId` (es el del proyecto), no tiene `empresaId` (sale del proyecto)
+y **no tiene monto, importe ni moneda** — el backend no modela dinero en ninguna
+parte de la obra.
+
+Reglas:
+
+- **Un contrato activo traba el proyecto**: su `clienteId` y su
+  `registroPatronalId` dejan de poder cambiar. Con **un SIROC** se traba además
+  el `registroObraId`, y con un umbral más bajo: basta uno, porque el aviso ante
+  el IMSS ya salió con esa obra.
+- Un contrato **dado de baja sale de esa cuenta**: si era el único, el proyecto
+  vuelve a poder cambiar de cliente y de registro patronal. Su número no se
+  reutiliza.
+- **Quitar el SIROC libera su número.** Existe por eso: con el número único
+  global, uno capturado en el contrato equivocado lo bloquearía para siempre.
+- No se puede crear un contrato en un proyecto **finalizado**, ni reabrir un
+  contrato mientras su proyecto lo esté.
+
+Aquí vive en `src/api/v1/contracts/` y el detalle de la entrega está en
+[`PLAN-OBRA-CONTRATOS.md`](./PLAN-OBRA-CONTRATOS.md) y
+[`ENDPOINTS-PROYECTOS.md`](./ENDPOINTS-PROYECTOS.md) §3 y §4. En el repo del
+front: `src/interfaces/contrato-api.ts`,
+`src/modules/proyectos/contratos-service.ts` y el panel de contratos de la ficha
+del proyecto; la regla de qué traba cada contrato la tienen aislada y con
+pruebas en `candadosDeProyecto` (`src/modules/proyectos/cambios-proyecto.ts`).
 
 ### 5.6 `expedientes`
 
@@ -457,20 +597,69 @@ const adscripcionSchema = new mongoose.Schema({
   empresaId:  { type: ObjectId, ref: 'Empresa',  required: true },
   empleadoId: { type: ObjectId, ref: 'Empleado', required: true },
 
-  // Áreas DENTRO de esta empresa. Un administrativo tiene al menos una.
-  areas: [{ type: String, enum: AREAS }],
+  // Dónde TRABAJA dentro de esta empresa. Un administrativo tiene al menos una.
+  // `AREAS` ya no es un enum cerrado: son claves del catálogo `areas`.
+  areas: [{ type: String }],
+
+  // Qué DIRIGE (26 ago 2026). Vacío es lo normal.
+  // Trabajar en un área y dirigirla dejaron de ser lo mismo: antes, estar en
+  // Contabilidad porque ahí trabajas te daba visión sobre toda Contabilidad.
+  // NO tiene que ser subconjunto de `areas`, y se escribe sólo desde
+  // PATCH /adscripciones/:id/jefaturas, nunca desde PATCH /adscripciones/:id.
+  dirigeAreas: [{ type: String, default: [] }],
+
+  // El departamento TAL CUAL lo dice la nómina, sin traducir (24 ago 2026). No
+  // es lo mismo que `areas`: puede traer el nombre de una obra («Kulkana»), y
+  // entonces es la única información real de dónde está la persona.
+  departamento: { type: String, default: null },
+
+  // El registro patronal de ESTA relación laboral (29 ago 2026, D-72). Apunta
+  // a un subdocumento de `empresa.registrosPatronales`, tiene que ser de la
+  // empresa de la adscripción y estar activo; `null` desvincula.
+  //
+  // CONVIVE con `condiciones.registroPatronal`, que sigue siendo texto: este es
+  // el vínculo validado, aquél lo que dijo la nómina, crudo. Mismo reparto que
+  // entre `areas` (modelado) y `departamento` (texto original).
+  //
+  // `null` es lo normal todavía: la migración vinculó lo que resolvió por
+  // número, y quien se da de alta a mano sin él se queda en nulo. Para MOSTRAR
+  // el registro de alguien conviene `condiciones.registroPatronal`, o el
+  // `registroPatronalEmpleado` que ya dan resuelto las asignaciones.
+  registroPatronalId: { type: ObjectId, default: null },
 
   tipoContrato:         { type: String, enum: TIPOS_CONTRATO, required: true },
   fechaIngreso:         { type: String, required: true },  // YYYY-MM-DD
   fechaTerminoContrato: { type: String, default: null },   // sólo temporales
 
+  // Qué dejó sin capturar el importador (24 ago 2026): 'fechaTerminoContrato'
+  // (el archivo no la trae) o 'areas' (la fila no traía departamento). Se
+  // borra solo al mandar el dato por PATCH; no se puede escribir a mano.
+  datosPendientes: [{ type: String, enum: ['fechaTerminoContrato', 'areas'] }],
+
   // Baja de ESTA empresa. No implica baja del sistema.
   activo:     { type: Boolean, default: true },
   motivoBaja: { type: String, default: null },
-  fechaBaja:  { type: String, default: null }
+  fechaBaja:  { type: String, default: null },
+
+  // Condiciones laborales del archivo de nómina (28 ago 2026). Estaban
+  // guardadas pero invisibles por compartir subdocumento con los salarios; no
+  // son datos sensibles. El objeto siempre existe; sus campos son `null` si el
+  // archivo no los traía, salvo `teletrabajador`, que nunca es `null`.
+  condiciones: {
+    tipoRegimen:       { type: String, default: null },
+    turno:             { type: String, default: null },
+    registroPatronal:  { type: String, default: null },
+    baseCotizacion:    { type: String, default: null },
+    zonaSalario:       { type: String, default: null },
+    tipoPrestacion:    { type: String, default: null },
+    periodicidadPago:  { type: String, default: null },
+    teletrabajador:    { type: Boolean, default: false }
+  }
 }, { timestamps: true });
 
 adscripcionSchema.index({ empresaId: 1, empleadoId: 1 }, { unique: true });
+// «quién dirige esta área en esta empresa» — la lectura de la pantalla de jefaturas
+adscripcionSchema.index({ empresaId: 1, dirigeAreas: 1 });
 ```
 
 Reglas:
@@ -557,6 +746,39 @@ Reglas:
 > cerradas del mismo par) e impide el duplicado activo. Un `unique` simple
 > bloquearía la reincorporación.
 
+**Coherencia del registro patronal (29 ago 2026, D-71).** Una persona puede
+cotizar en un registro patronal **distinto** al del proyecto al que se le
+asigna. Eso **avisa, no bloquea**: Maquinaria CAMES tiene 144 personas
+repartidas en cuatro registros, y moverlas es un trámite ante el IMSS, no un
+error de captura.
+
+Nada de esto se guarda: son dos campos **derivados** que el listado calcula al
+leer.
+
+| Campo                       | Qué es                                                     |
+| --------------------------- | ---------------------------------------------------------- |
+| `registroPatronalEmpleado`  | El de **su adscripción**, texto libre tal como vino de la nómina |
+| `registroPatronalCoincide`  | Si es el del proyecto. **Tres estados**                     |
+
+`registroPatronalCoincide` es `true` (coinciden), `false` (cotiza en otro) o
+`null` (**no se pudo comparar**: su adscripción no tiene registro). **`null` no
+es `false`** — colapsarlos haría que «falta capturar un dato» se leyera como
+«hay que hacer un trámite», que son acciones distintas. Misma convención que
+`rfcCoincide` en la importación.
+
+La comparación **la hace el servidor**, que ya ignora guiones, espacios y
+mayúsculas. El front no normaliza nada por su cuenta.
+
+El alta responde `201` **con avisos**, no un error: `POST
+/proyectos/:id/asignaciones` devuelve `{ asignacion, avisos: string[] }` y el
+primer aviso se repite en el `message`. En el front esto vive en
+`ResultadoAsignacion` y se pinta como éxito con descripción, nunca como fallo.
+
+**La cadena completa** —`empleado → empresa → registro patronal → proyecto →
+registro de obra`— la resuelve `GET /asignaciones/:id` en `trazabilidad`, también
+al leer. Por eso corregir el registro patronal de una adscripción se refleja de
+inmediato en todas sus asignaciones, sin re-asignar a nadie.
+
 ---
 
 ## 6. Lógica derivada
@@ -624,6 +846,15 @@ sin subir no puede impedir el 100 %—, y los contadores de vigencia miran todo
 —un opcional vencido también exige que alguien actúe—. Un documento **por vencer
 sigue contando como entregado**.
 
+> ⚠️ **`faltantes` y los rechazados: el backend y el front no cuentan igual.**
+> Aquí `faltantes` son sólo los `pending` (`src/utils/domain/progress.js`, con
+> prueba); el front suma también los `rejected` (`src/utils/expediente.ts` de su
+> repo). **El número que ve el usuario es el del backend** —el `avance` viaja en
+> la respuesta—, así que la diferencia sólo se nota en la capa simulada. No
+> cambia el semáforo: un rechazado no está entregado, `entregados < requeridos`
+> y el expediente sale `incomplete` en las dos versiones. **Sin decidir**:
+> anotado en [`HANDOFF-BACKEND.md`](./HANDOFF-BACKEND.md).
+
 Semáforo, en este orden exacto:
 
 ```
@@ -673,6 +904,7 @@ Los vínculos son las colecciones calientes: se cruzan en casi toda consulta.
 ```js
 // empleados
 { curp: 1 }                                    // unique
+{ numeroEmpleado: 1 }                          // unique parcial, $type: 'string' (D-54)
 { 'acceso.email': 1 }                          // unique, sparse
 { nombre: 'text' }                             // búsqueda, default_language: 'spanish'
 { nombreNormalizado: 1 }                       // alternativa a $text, ver nota
@@ -704,15 +936,26 @@ Los vínculos son las colecciones calientes: se cruzan en casi toda consulta.
 { clienteId: 1 }
 { empresaId: 1, fechaFinEstimada: 1 }          // job de cierres próximos
 
+// contratos
+{ proyectoId: 1, numero: 1 }                   // unique — la secuencia de la fase
+{ proyectoId: 1, estado: 1 }
+{ 'siroc.numero': 1 }                          // unique parcial, $type: 'string'
+
 // expedientes
 { empleadoId: 1 }                              // unique
 { 'documentos.vigenciaHasta': 1 }              // job de vigencias
 { 'documentos.estatus': 1 }
 
-// bitacora_accesos
+// access_logs
 { expedienteId: 1, createdAt: -1 }
 { usuarioId: 1, createdAt: -1 }
 ```
+
+> **Los únicos opcionales van con `partialFilterExpression`, nunca con
+> `sparse`.** `numeroEmpleado`, `siroc.numero` y `rfc` nacen en `null`: el campo
+> existe valiendo nulo, así que `sparse` lo indexa igual y el segundo registro
+> sin dato choca con el primero. `{ $type: 'string' }` es lo que deja fuera a los
+> nulos de verdad.
 
 > **Sobre la búsqueda por nombre.** El front busca ignorando acentos y
 > mayúsculas: «gomez» tiene que encontrar «Gómez». Un `$regex` con `$options:'i'`
@@ -914,6 +1157,13 @@ error `E11000` y traducirlo a un `400` legible, no dejarlo salir como `500`.
 
 ## 11. Qué cambia respecto a lo entregado
 
+> **Historia, ya ocurrida.** La migración de abajo se hizo: `usuarios` responde
+> `410` (`src/api/v1/users/goneRoutes.js`, se borra cuando el front deje de
+> llamarla) y el acceso vive en `empleados.acceso` con la contraseña aparte, en
+> `credentials` (D-27). Del lado del front, sus cinco cambios y sus cinco
+> pantallas nuevas también están. Se conserva porque explica **por qué** el
+> modelo quedó así.
+
 ### En el backend
 
 Lo implementado hasta hoy es `/auth` y `/usuarios`. **No se tira**, pero cambia
@@ -969,26 +1219,31 @@ hoy asume el modelo anterior y habrá que corregir:
 
 ## 12. Decisiones que faltan
 
-Ninguna bloquea empezar por las colecciones y los vínculos, pero **la primera sí
-bloquea el expediente** y conviene resolverla pronto.
+Las seis preguntas con las que nació este documento, y en qué quedaron. Sólo la
+última sigue abierta; se les sumó una séptima.
 
-1. **¿El expediente se comparte entre empresas del grupo?** Este modelo dice que
-   sí: es de la persona. Si Urbacames necesita que cada empresa tenga su propio
-   expediente de la misma persona, el modelo cambia a un expediente por
-   adscripción y hay que decidirlo **antes** de implementar. Ver 2.1.
-2. **¿La CURP es obligatoria desde el alta?** Determina si el índice es `unique`
-   o `unique + sparse`. Ver 5.2.
-3. **Umbral de vencimiento de documentos:** hoy 30 días.
-4. **Umbral de aviso de proyecto:** hoy 7 días, como se pidió.
-5. **Qué documentos son sensibles:** hoy 8 de los 12.
-6. **A quién llegan los correos de alerta** y con cuánta anticipación.
+| # | Pregunta | Cómo quedó |
+| --- | --- | --- |
+| 1 | ¿El expediente se comparte entre empresas del grupo? | **Sí**, es de la persona, como decía §2.1. Implementado así |
+| 2 | ¿La CURP es obligatoria desde el alta? | **Sigue abierta.** Implementada como **opcional** con único parcial (D-28); falta confirmarlo con Urbacames |
+| 3 | Umbral de vencimiento de documentos | **30 días**, inclusivo, configurable con `DIAS_ALERTA_VENCIMIENTO` |
+| 4 | Umbral de aviso de proyecto | **7 días** |
+| 5 | Qué documentos son sensibles | **8 de los 12** (`SENSITIVE_DOCUMENT_TYPES`) |
+| 6 | A quién llegan los correos de alerta | **Abierta.** No hay correos todavía: las alertas se derivan al consultar `GET /alertas` (D-47) y no hay job |
+
+**La séptima, y es la que bloquea al front:** `affiliations.nomina` guarda
+salario, SBC y cuenta bancaria porque el archivo de nómina los trae, pero
+**ninguna respuesta los devuelve** hasta que se decida quién puede verlos
+(LFPDPPP). No se arregla agregándolos al `toJSON`: ver D-46 y
+[`ESTADO.md`](./ESTADO.md) #10.
 
 ---
 
 ## 13. Orden de implementación sugerido
 
-Cada paso deja algo verificable y no bloquea al front, que sigue con datos
-simulados hasta el final.
+El plan original, que se siguió. **Los pasos 1 a 6 están hechos**, y del 7 sólo
+las alertas; faltan métricas, reportes y el job del 8 — el detalle vivo, con
+checkboxes, está en [`ESTADO.md`](./ESTADO.md).
 
 1. **Colecciones base**: `empresas`, `empleados`, `clientes`, `categorias`, con
    sus índices. Sin vínculos todavía.
@@ -1010,8 +1265,19 @@ simulados hasta el final.
 
 | Qué | Dónde |
 | --- | --- |
-| Flujo funcional original del cliente | [`flujo-expedientes.md`](./flujo-expedientes.md) |
 | Contrato de API, códigos y catálogo de rutas | [`backend-spec.md`](./backend-spec.md) |
-| Qué está implementado hoy y cómo probarlo | [`backend-actual.md`](./backend-actual.md) |
-| Capa simulada del front | [`mocks.md`](./mocks.md) |
-| Lógica de expedientes ya probada | `src/utils/expediente.ts`, `src/utils/checklist.ts` |
+| **Qué colecciones hay HOY y qué se rompe al tocarlas** | [`ARQUITECTURA-DATOS.md`](./ARQUITECTURA-DATOS.md) |
+| Por qué el modelo se desvió de este documento | [`DECISIONES.md`](./DECISIONES.md) |
+| Qué falta implementar, en orden | [`ESTADO.md`](./ESTADO.md) |
+| Lógica de expedientes ya probada | `src/utils/domain/` (`progress`, `documentStatus`, `checklist`, `expiry`) |
+| Conversación con el front | [`HANDOFF-BACKEND.md`](./HANDOFF-BACKEND.md) |
+
+En el repo del front (`~/Documents/projects/cames-files-manager/docs/`), que se
+lee ahí y no se copia aquí:
+
+| Qué | Dónde |
+| --- | --- |
+| Flujo funcional original del cliente | `flujo-expedientes.md` |
+| Cómo les pega el backend, con sus trampas | `backend-actual.md` |
+| Capa simulada del front | `mocks.md` |
+| Su mitad de la conversación | `HANDOFF-FRONTEND.md` |

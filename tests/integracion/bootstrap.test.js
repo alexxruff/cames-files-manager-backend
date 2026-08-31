@@ -29,6 +29,13 @@ describe('Administrador de plataforma inicial (bootstrap)', () => {
     await ensureBootstrapAdmin()
     const categoria = await Category.findOne({ nombre: 'Administración' })
     expect(categoria.esBase).toBe(true)
+    /*
+     * Con `tipo`, y no es un detalle: es obligatorio en el esquema, y una
+     * categoría sin él dejaba el desplegable de administrativos vacío en una
+     * base recién sembrada — el front no podía dar de alta a nadie
+     * (SOLICITUD-BACKEND-ALTAS.md del front, 21 ago 2026).
+     */
+    expect(categoria.tipo).toBe('administrativo')
   })
 
   it('deja entrar con la contraseña de arranque y devuelve alcanceGlobal', async () => {

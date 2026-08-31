@@ -4,49 +4,46 @@ Cómo conectar el front de Expedientes Urbacames con este backend, con el **mode
 nuevo** (empresas como entidad raíz, empleados y clientes como catálogos
 compartidos, vínculos en sus propias colecciones).
 
-Cubre lo que está implementado y probado: **sesión** y **administración de
-accesos**. Todo lo demás sigue en `src/mocks/` con `VITE_USE_MOCKS=true`.
+Cubre el **envelope, las convenciones y la sesión** con todo detalle, más el
+catálogo de personas y accesos. El resto de los recursos —proyectos,
+expedientes, adscripciones, alertas, importación, áreas— tienen su propio
+`ENDPOINTS-*.md`, que es donde se mantiene su detalle.
 
-> Verificado con 389 pruebas automatizadas. Si algo no coincide con lo que ves, es
-> un bug del backend: repórtalo con el `X-Request-Id` de la respuesta.
+> Verificado con la suite completa de pruebas automatizadas. Si algo no coincide
+> con lo que ves, es un bug del backend: repórtalo con el `X-Request-Id` de la
+> respuesta.
 >
 > Esta guía **reemplaza** la versión anterior: el CRUD de `/usuarios`, el campo
 > `role` y el eje `clienteId` ya no existen.
 
 ---
 
-## 0. Qué existe hoy — la lista completa
+## 0. Qué existe hoy
 
-**Estos 22 endpoints son TODO lo que responde el servidor.** Cualquier otra ruta
-devuelve `404`.
-
-| Método   | Ruta                                                | Sesión                     |
-| -------- | --------------------------------------------------- | -------------------------- |
-| `GET`    | `/api/v1`                                           | — (inventario)             |
-| `GET`    | `/api/v1/health`                                    | —                          |
-| `GET`    | `/api/v1/ready`                                     | —                          |
-| `POST`   | `/api/v1/auth/login`                                | —                          |
-| `GET`    | `/api/v1/auth/me`                                   | ✓                          |
-| `POST`   | `/api/v1/auth/logout`                               | ✓                          |
-| `POST`   | `/api/v1/auth/cambiar-password`                     | ✓                          |
-| `GET`    | `/api/v1/empleados`                                 | ✓ ver empleados            |
-| `GET`    | `/api/v1/empleados/:id`                             | ✓ ver empleados            |
-| `PATCH`  | `/api/v1/empleados/:id`                             | ✓ quien crea ese `tipo`    |
-| `PATCH`  | `/api/v1/empleados/:id/estado`                      | ✓ `rh_admin`               |
-| `POST`   | `/api/v1/empleados/:id/acceso`                      | ✓ `rh_admin`               |
-| `PATCH`  | `/api/v1/empleados/:id/acceso`                      | ✓ `rh_admin`               |
-| `DELETE` | `/api/v1/empleados/:id/acceso`                      | ✓ `rh_admin`               |
-| `POST`   | `/api/v1/empleados/:id/acceso/restablecer-password` | ✓ `rh_admin`               |
-| `ALL`    | `/api/v1/usuarios*`                                 | responde **410**: se movió |
-
-### Verifícalo sin creerle a este documento
+**No hay lista de rutas escrita a mano en este documento, a propósito**: es lo
+que se desfasa. El inventario vive en el servidor y **se deriva del router en
+tiempo de ejecución**, así que no puede mentir:
 
 ```bash
 curl -s http://localhost:8080/api/v1 | jq '.data.implementados, .data.pendientes'
 ```
 
-`GET /api/v1` es público y **se deriva del router en tiempo de ejecución**: no
-puede desincronizarse del código.
+`GET /api/v1` es público. Hoy son **79 rutas** en pie y 6 anunciadas como
+pendientes. Dónde está el detalle de cada familia:
+
+| Familia                                      | Detalle en                                            |
+| -------------------------------------------- | ----------------------------------------------------- |
+| `/auth` — sesión y contraseñas               | **Este documento**, §5                                |
+| `/empleados` — catálogo, alta, edición, baja | **Este documento**, §5                                |
+| `/empleados/:id/acceso` — quién entra        | **Este documento**, §5                                |
+| `/empleados/importar` — el `.xlsx` de nómina | `ENDPOINTS-IMPORTACION.md`                            |
+| `/empresas`, `/adscripciones`, `/carteras`   | `ENDPOINTS-ADSCRIPCIONES.md`                          |
+| `/proyectos`, `/asignaciones`, `/contratos`  | `ENDPOINTS-PROYECTOS.md`                              |
+| `/expedientes` y sus documentos              | `ENDPOINTS-EXPEDIENTES.md`                            |
+| `/alertas`                                   | `ENDPOINTS-ALERTAS.md`                                |
+| `/areas`                                     | `ENDPOINTS-AREAS.md`                                  |
+| `/clientes`, `/categorias`                   | `CONTRATO-API.md`                                     |
+| `/usuarios*`                                 | Responde **410**: se movió, y el mensaje dice a dónde |
 
 > **`data.empleado` significa siempre lo mismo:** el **RenglonEmpleado**
 > (`{ empleado, categoriaNombre, adscripciones, asignaciones, avanceExpediente,
@@ -902,27 +899,40 @@ copia tal cual. Ya está probado con los usuarios que existían.
 
 ## 9. Lo que todavía no existe
 
-| Ruta                                                         | Para qué                         | Spec |
-| ------------------------------------------------------------ | -------------------------------- | ---- |
-| `POST/PATCH /empleados`, `PATCH /empleados/:id/estado`       | Alta, edición y baja de personas | 6.2  |
-| `GET /empleados/:id/{expediente,adscripciones,asignaciones}` | Detalle de la persona            | 6.2  |
-| `GET/POST /clientes`, `/categorias`                          | Catálogos compartidos            | 6.2  |
-| `GET/POST /empresas`                                         | Empresas                         | 6.3  |
-| `GET/POST /adscripciones`, `/carteras`                       | Vínculos                         | 6.3  |
-| `GET/POST /proyectos`, `/asignaciones`                       | Proyectos y su personal          | 6.4  |
-| `/expedientes/…`                                             | Expedientes y documentos         | 6.5  |
-| `/alertas`, `/dashboard/metricas`, `/reportes/…`             | Derivados                        | 6.6  |
-| `POST /auth/recuperar`, `/restablecer`                       | Olvidé mi contraseña             | 6.1  |
+Lo que el servidor anuncia en `data.pendientes` de `GET /api/v1`, que es la
+lista que manda:
+
+| Ruta                                | Para qué                                                                                                                  | Spec |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---- |
+| `GET /dashboard/metricas`           | Las tarjetas del panel                                                                                                    | 6.6  |
+| `GET /reportes/expedientes`         | El reporte de auditoría                                                                                                   | 6.6  |
+| `GET`/`PATCH /plantillas-checklist` | Administrarlas. La resolución por unión ya está y viene sembrada                                                          | 6.5  |
+| `GET /organizacion`                 | El árbol empresa → áreas → proyectos                                                                                      | 6.3  |
+| `POST /auth/recuperar`              | «Olvidé mi contraseña». Hoy la repone un `rh_admin` y queda temporal (D-49)                                               | 6.1  |
+| `POST /auth/restablecer`            | El segundo paso de lo anterior                                                                                            | 6.1  |
+| `GET /empleados/:id/adscripciones`  | Sus empresas. **Probablemente no se haga**: `GET /empleados/:id` ya las trae embebidas. Dígannos si les hace falta suelta | 6.2  |
+| `GET /empleados/:id/asignaciones`   | Sus proyectos, activos e históricos                                                                                       | 6.2  |
+
+Y sin ruta: el **job diario de vigencias** y los correos (spec 8).
 
 ### Lo que necesitamos que decidan
 
-1. **¿El expediente se comparte entre empresas del grupo?** El modelo dice que sí
-   (es de la persona). Si tiene que ser uno por empresa, **cambia el modelo** y hay
-   que saberlo antes de implementar expedientes.
-2. **¿La CURP es obligatoria desde el alta?** Está implementada como opcional, con
-   la regla de que no se puede validar el expediente de alguien sin ella.
-3. **¿El empleado sube sus propios documentos?** Añadiría un cuarto nivel de acceso
-   y un flujo de invitación por token.
+**Sólo queda una viva**, y es la que les bloquea una pantalla:
+
+1. **¿Quién puede ver los datos de nómina?** `affiliations.nomina` guarda
+   salario, SBC y cuenta bancaria porque el archivo los trae, pero **ninguna
+   respuesta los devuelve** hasta que se decida quién los ve (LFPDPPP). Ver D-46
+   y [`ESTADO.md`](./ESTADO.md) #10.
+
+Resueltas desde que se escribió esto: el expediente **se comparte** entre
+empresas del grupo (es de la persona); la **CURP es obligatoria** desde el alta,
+`unique` a secas; y el empleado **no** sube sus propios documentos —siempre RH,
+tres niveles y son definitivos—.
+
+Y una diferencia conocida entre los dos lados, sin decidir: **`faltantes` no se
+cuenta igual**. Aquí son sólo los `pending`; su `src/utils/expediente.ts` suma
+también los `rejected`. Manda el número del backend, que viaja en el `avance`.
+Ver [`modelo-datos.md` §6.3](./modelo-datos.md) y `HANDOFF-BACKEND.md`.
 
 ---
 
@@ -955,16 +965,19 @@ curl -s -X POST $BASE/empleados/$ID/acceso -H "Authorization: Bearer $TOKEN" \
 
 ## Referencias
 
-| Qué                                               | Dónde                             |
-| ------------------------------------------------- | --------------------------------- |
-| **Ajustes concretos que debe hacer el front**     | `docs/CAMBIOS-FRONTEND.md`        |
-| Carteras, proyectos y asignaciones                | `docs/ENDPOINTS-PROYECTOS.md`     |
-| Expedientes: listado, consulta, subida y revisión | `docs/ENDPOINTS-EXPEDIENTES.md`   |
-| Adscripciones: vincular a alguien que ya existe   | `docs/ENDPOINTS-ADSCRIPCIONES.md` |
-| Importar colaboradores desde el .xlsx de nómina   | `docs/ENDPOINTS-IMPORTACION.md`   |
-| Alertas: la bandeja de pendientes                 | `docs/ENDPOINTS-ALERTAS.md`       |
-| Modelo de datos autoritativo                      | `docs/modelo-datos.md`            |
-| Contrato de API y catálogo de rutas               | `docs/backend-spec.md`            |
-| Endpoints implementados, al detalle               | `docs/CONTRATO-API.md`            |
-| Decisiones y por qué de cada regla                | `docs/DECISIONES.md`              |
-| Qué está hecho y qué falta                        | `docs/ESTADO.md`                  |
+| Qué                                                | Dónde                                                       |
+| -------------------------------------------------- | ----------------------------------------------------------- |
+| **Ajustes concretos que debe hacer el front**      | `docs/CAMBIOS-FRONTEND.md`, `docs/CAMBIOS-FRONTEND-OBRA.md` |
+| Áreas: el catálogo administrable                   | `docs/ENDPOINTS-AREAS.md`                                   |
+| Carteras, proyectos y asignaciones                 | `docs/ENDPOINTS-PROYECTOS.md`                               |
+| Expedientes: listado, consulta, subida y revisión  | `docs/ENDPOINTS-EXPEDIENTES.md`                             |
+| Adscripciones: vincular a alguien que ya existe    | `docs/ENDPOINTS-ADSCRIPCIONES.md`                           |
+| Importar colaboradores desde el .xlsx de nómina    | `docs/ENDPOINTS-IMPORTACION.md`                             |
+| Alertas: la bandeja de pendientes                  | `docs/ENDPOINTS-ALERTAS.md`                                 |
+| Modelo de datos autoritativo                       | `docs/modelo-datos.md`                                      |
+| Contrato de API y catálogo de rutas                | `docs/backend-spec.md`                                      |
+| Endpoints implementados, al detalle                | `docs/CONTRATO-API.md`                                      |
+| Decisiones y por qué de cada regla                 | `docs/DECISIONES.md`                                        |
+| Qué está hecho y qué falta                         | `docs/ESTADO.md`                                            |
+| Qué colecciones hay hoy y qué se rompe al tocarlas | `docs/ARQUITECTURA-DATOS.md`                                |
+| La conversación con el front                       | `docs/HANDOFF-BACKEND.md`                                   |

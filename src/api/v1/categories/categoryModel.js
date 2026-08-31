@@ -21,7 +21,18 @@ const categorySchema = new mongoose.Schema(
       trim: true,
       maxlength: [80, 'El nombre no puede exceder 80 caracteres']
     },
-    /** Para qué tipo de persona aplica este puesto. */
+    /**
+     * Para qué tipo de persona aplica este puesto.
+     *
+     * ⚠️ **DE SALIDA (D-73).** El área lo sustituye: «administrativo» y «mano de
+     * obra» son dos cajones para lo que las áreas ya dicen con más grano desde
+     * D-58. No construyas encima de este campo.
+     *
+     * Todavía no se quita porque de él cuelga `canManageEmployeeType`, que
+     * decide quién puede gestionar a quién (modelo-datos §8.2), y esa matriz
+     * hay que redefinirla primero — ver D-73 «Lo que hay que resolver antes de
+     * tocar código».
+     */
     tipo: {
       type: String,
       enum: { values: EMPLOYEE_TYPES, message: 'Selecciona un tipo válido' },

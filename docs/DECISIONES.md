@@ -3080,3 +3080,67 @@ registro patronal», el índice llega con esa consulta y con su
 adscripción. Estaba duplicada como método privado de `projectService`; dos copias
 habrían derivado —una aceptando un registro dado de baja y la otra no— y nadie lo
 habría notado hasta ver los datos.
+
+---
+
+## D-73 · `tipo` sale del puesto y lo sustituye el área — DECIDIDO, SIN IMPLEMENTAR
+
+> ⚠️ **Nada de esto está en el código todavía.** Se registra ahora para que
+> nadie construya encima de `categorias.tipo` creyendo que se queda, y para que
+> el front sepa que su selector «Aplica a» va de salida. Mientras no se
+> implemente, **manda lo que dice D-59**: el campo existe, es obligatorio y el
+> alta lo usa.
+
+**Decisión.** `categorias.tipo` (`administrativo` / `mano_de_obra`) **deja de
+existir**. Lo que hoy expresa el tipo pasa a expresarlo el **área**, que ya es un
+catálogo administrable desde D-58.
+
+### Qué lo destapó
+
+El alta de un puesto en el front sigue pidiendo «Aplica a: Mano de obra /
+Administrativo», y ese desplegable ya no debería estar: cuando las áreas dejaron
+de ser un enum cerrado (D-58) y absorbieron el filtro de la tabla (D-59), el tipo
+se quedó como el resto de una división que las áreas ya hacen mejor y con más
+grano. «Administrativo» y «mano de obra» son dos cajones para nueve áreas.
+
+### Esto revierte la mitad de D-59
+
+D-59 **decidió conservar el campo**, y conviene ser explícito sobre qué de
+aquel razonamiento sigue en pie y qué no:
+
+| Argumento de D-59 para conservarlo                                 | Sigue valiendo                                                                     |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Filtra el desplegable de puestos (`GET /categorias?tipo=`)         | **No.** Lo hará el área: «Auxiliar contable» se ofrece en Contabilidad, no en Obra |
+| **Decide quién puede gestionar a quién** (`canManageEmployeeType`) | **Sí, y es el problema sin resolver**                                              |
+
+### Lo que hay que resolver antes de tocar código
+
+`tipo` no es una etiqueta: es lo que hoy decide el permiso.
+`canManageEmployeeType` (`src/utils/permissions.js`) manda a
+`MANAGE_ADMIN_EMPLOYEES` o a `MANAGE_FIELD_EMPLOYEES` según el tipo del
+empleado, y de ahí cuelga que `rh_consulta` y `jefe_area` den de alta personal de
+obra pero no administrativos (modelo-datos §8.2). Con nueve áreas en lugar de dos
+tipos, **la matriz de permisos hay que redefinirla**, y hay dos caminos:
+
+1. **Marcar las áreas.** Cada área dice si su gente la gestiona cualquiera o sólo
+   `rh_admin`. Es un campo nuevo en `areas` y conserva la matriz tal cual.
+2. **Permisos por área.** El nivel de acceso declara qué áreas puede gestionar.
+   Más fino y más cercano a `RUMBO.md`, pero rehace la matriz entera.
+
+**No está decidido cuál**, y hasta que lo esté el cambio no se puede empezar: es
+la parte que rompe seguridad si se improvisa.
+
+### Alcance del cambio, para dimensionarlo
+
+- `categorias.tipo`: fuera del esquema, del alta, de la edición y de `?tipo=`.
+- `empleados.tipo`: se deriva de la categoría (D-59), así que se va con ella.
+- `canManageEmployeeType` y la matriz de §8.2: rehacerlas según lo que se decida.
+- El front: quitar «Aplica a» del alta de puestos, y el `tipo` de los renglones.
+- Datos: las categorías existentes se quedan sin tipo; hay que decidir a qué área
+  se mapea cada una, o si el puesto pasa a no declarar nada y el área la pone la
+  adscripción.
+
+### Lo que NO cambia
+
+`tipoContrato` de la adscripción (`obra_determinada`, `indeterminado`…) no tiene
+nada que ver con esto, pese al nombre parecido. Se queda igual.

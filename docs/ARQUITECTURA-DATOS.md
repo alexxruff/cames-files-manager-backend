@@ -6,13 +6,16 @@ cambiar cualquier esquema.
 
 **Cómo se relaciona con los otros documentos:**
 
-| Documento         | Qué manda                                                                   |
-| ----------------- | --------------------------------------------------------------------------- |
-| **Este**          | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas             |
-| `modelo-datos.md` | El diseño **original** y su porqué. Ha derivado; donde discrepe, manda éste |
-| `DECISIONES.md`   | Por qué cada cosa es como es (D-01 … D-60)                                  |
-| `CONTRATO-API.md` | La forma de las respuestas HTTP                                             |
-| `ARQUITECTURA.md` | Las capas del código (modelo → servicio → controlador → ruta)               |
+| Documento            | Qué manda                                                       |
+| -------------------- | --------------------------------------------------------------- |
+| **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
+| `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
+| `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-73)                      |
+| `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
+| `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
+| `ESTADO.md`          | Qué está hecho y qué falta                                      |
+| `HANDOFF-BACKEND.md` | La conversación con el front                                    |
 
 > **Mantener esto al día es parte de cambiar el esquema, no un extra.** Si
 > agregas o quitas una colección, un campo que relacione datos, un índice único o

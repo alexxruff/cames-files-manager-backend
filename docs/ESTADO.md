@@ -3,7 +3,12 @@
 Mapa de qué está hecho y qué falta. **Actualízalo al cerrar cada módulo**: es lo
 primero que lee quien llega, humano o agente.
 
-Última actualización: **2026-08-24** · 472 pruebas en verde.
+Última actualización: **2026-08-30** · toda la suite en verde.
+
+> **No se anota aquí cuántas pruebas son.** El número se queda viejo a la
+> primera prueba que alguien agregue —pasó tres veces— y no dice nada que
+> `npm test` no diga mejor. Lo que sí se verifica solo es el resto de las cifras
+> de la documentación: `tests/unitarias/docs.test.js`.
 
 El modelo autoritativo es [`modelo-datos.md`](./modelo-datos.md) (jerarquía de
 empresas, catálogos compartidos y vínculos) y el contrato es
@@ -63,35 +68,38 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
 
 ## API
 
-| Módulo                            | Spec      | Estado | Notas                                                                                                                                                                                                                         |
-| --------------------------------- | --------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sesión (`/auth`)                  | 6.1       | ✅     | login, me, logout, cambiar-password con `AuthUser` nuevo                                                                                                                                                                      |
-| Contraseñas temporales            | 6.1       | ✅     | La que puso un admin (o el bootstrap) bloquea la API hasta cambiarla (D-49)                                                                                                                                                   |
-| Recuperar por correo              | 6.1       | ⬜     | La repone un `rh_admin` y queda temporal (D-49); falta el flujo por correo, que necesita mailer                                                                                                                               |
-| Jefaturas de área                 | —         | ✅     | `dirigeAreas` explícito: trabajar en un área ya no es dirigirla (D-60)                                                                                                                                                        |
-| Alcance por empresa               | 8.1       | ✅     | `applyScope` deriva de adscripciones activas                                                                                                                                                                                  |
-| Matriz de permisos                | 8.2       | ✅     | Capacidades + `alcanceGlobal`                                                                                                                                                                                                 |
-| Accesos (`/empleados/:id/acceso`) | 6.2       | ✅     | Dar, editar, quitar, restablecer (D-30)                                                                                                                                                                                       |
-| Empleados — listado y detalle     | 6.2       | ✅     | Agregación con alcance, filtros, orden y paginación; orden por número con o sin `empresaId` (D-51, D-53); `activo` en tres estados y `busqueda` por número (D-52)                                                             |
-| Empleados — **alta**              | 6.2       | ✅     | Persona + adscripción en transacción, permisos por tipo, duplicados (D-32 a D-34); `numeroEmpleado` obligatorio (D-50, D-54); `tipo` derivado del puesto (D-59)                                                               |
-| **Áreas** (`/areas`)              | —         | ✅     | Catálogo administrable: 9 base, temporales desde el archivo, baja y reactivación (D-58)                                                                                                                                       |
-| Categorías                        | 6.2       | ✅     | CRUD con `tipo`, alta idempotente por nombre                                                                                                                                                                                  |
-| Empleados — edición y baja        | 6.2       | ✅     | Editar: quien puede crear ese tipo. Baja: `rh_admin`. El acceso y las adscripciones tienen su propia ruta                                                                                                                     |
-| Clientes                          | 6.2       | ✅     | CRUD, baja lógica y **acotado por cartera** (D-40)                                                                                                                                                                            |
-| Empresas                          | 6.3       | ✅     | Alta sólo admin de plataforma, listado con conteos                                                                                                                                                                            |
-| Adscripciones                     | 6.3       | ✅     | Alta, edición y baja de esa empresa; baja cierra sus asignaciones ahí (D-45); filtros y orden (D-51); `activo` con default excluyente (D-52); **vínculo con el registro patronal** de su empresa (D-72)                       |
-| Carteras                          | 6.3       | ✅     | Bajo la empresa; reactiva en vez de duplicar (D-37)                                                                                                                                                                           |
-| Proyectos                         | 6.4       | ✅     | CRUD, aplazar, finalizar, reabrir, clonar categorías (D-38)                                                                                                                                                                   |
-| Asignaciones                      | 6.4       | ✅     | Con `asignables` (§9.3), cierre con fecha de salida, y el **aviso de registro patronal** más `GET /asignaciones/:id` con la cadena resuelta (D-71)                                                                            |
-| Contratos y SIROC                 | 6.7       | ✅     | Contrato = fase; SIROC embebido y único global; traba los cambios del proyecto (D-70)                                                                                                                                         |
-| Expedientes y documentos          | 6.5       | ✅     | Listado paginado, consulta, subida y **revisar** (valida y rechaza) (D-42, D-43, D-45); mismos filtros nuevos que `/empleados` (D-52)                                                                                         |
-| Lógica de dominio                 | modelo §6 | ✅     | Estatus, avance, semáforo, vigencias y la **unión** de plantillas, listos y probados                                                                                                                                          |
-| Importar colaboradores (.xlsx)    | —         | ✅     | Previsualizar y aplicar; idempotente al re-subir; crea puestos y adscripciones (D-46); el `Estatus` da de baja también del sistema a quien se queda sin empresa (D-55); no pisa lo corregido a mano y lo reporta (D-56, D-57) |
-| Alertas (`GET /alertas`)          | 6.6       | ✅     | Derivadas y sin estado (D-47); **agrupadas por empleado y paginadas** (D-48)                                                                                                                                                  |
-| Métricas y reportes               | 6.6       | ⬜     | Derivados                                                                                                                                                                                                                     |
-| Almacenamiento R2                 | 7         | ✅     | Bucket `cames-files/employes-files`, probado de punta a punta; `npm run r2:check` (D-41)                                                                                                                                      |
-| Job diario de vigencias           | 8         | ⬜     | Un correo por persona, idempotente                                                                                                                                                                                            |
-| `/usuarios` (modelo anterior)     | —         | ✅     | Responde **410** con las rutas nuevas                                                                                                                                                                                         |
+| Módulo                             | Spec      | Estado | Notas                                                                                                                                                                                                                         |
+| ---------------------------------- | --------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sesión (`/auth`)                   | 6.1       | ✅     | login, me, logout, cambiar-password con `AuthUser` nuevo                                                                                                                                                                      |
+| Contraseñas temporales             | 6.1       | ✅     | La que puso un admin (o el bootstrap) bloquea la API hasta cambiarla (D-49)                                                                                                                                                   |
+| Recuperar por correo               | 6.1       | ⬜     | La repone un `rh_admin` y queda temporal (D-49); falta el flujo por correo, que necesita mailer                                                                                                                               |
+| Jefaturas de área                  | —         | ✅     | `dirigeAreas` explícito: trabajar en un área ya no es dirigirla (D-60)                                                                                                                                                        |
+| Alcance por empresa                | 8.1       | ✅     | `applyScope` deriva de adscripciones activas                                                                                                                                                                                  |
+| Matriz de permisos                 | 8.2       | ✅     | Capacidades + `alcanceGlobal`                                                                                                                                                                                                 |
+| Accesos (`/empleados/:id/acceso`)  | 6.2       | ✅     | Dar, editar, quitar, restablecer (D-30)                                                                                                                                                                                       |
+| Empleados — listado y detalle      | 6.2       | ✅     | Agregación con alcance, filtros, orden y paginación; orden por número con o sin `empresaId` (D-51, D-53); `activo` en tres estados y `busqueda` por número (D-52)                                                             |
+| Empleados — **alta**               | 6.2       | ✅     | Persona + adscripción en transacción, permisos por tipo, duplicados (D-32 a D-34); `numeroEmpleado` obligatorio (D-50, D-54); `tipo` derivado del puesto (D-59)                                                               |
+| **Áreas** (`/areas`)               | —         | ✅     | Catálogo administrable: 9 base, temporales desde el archivo, baja y reactivación (D-58)                                                                                                                                       |
+| Categorías                         | 6.2       | ✅     | CRUD con `tipo`, alta idempotente por nombre                                                                                                                                                                                  |
+| Empleados — edición y baja         | 6.2       | ✅     | Editar: quien puede crear ese tipo. Baja: `rh_admin`. El acceso y las adscripciones tienen su propia ruta                                                                                                                     |
+| Clientes                           | 6.2       | ✅     | CRUD, baja lógica y **acotado por cartera** (D-40)                                                                                                                                                                            |
+| Empresas                           | 6.3       | ✅     | Alta sólo admin de plataforma, listado con conteos                                                                                                                                                                            |
+| Adscripciones                      | 6.3       | ✅     | Alta, edición y baja de esa empresa; baja cierra sus asignaciones ahí (D-45); filtros y orden (D-51); `activo` con default excluyente (D-52); **vínculo con el registro patronal** de su empresa (D-72)                       |
+| Carteras                           | 6.3       | ✅     | Bajo la empresa; reactiva en vez de duplicar (D-37)                                                                                                                                                                           |
+| Proyectos                          | 6.4       | ✅     | CRUD, aplazar, finalizar, reabrir, clonar categorías (D-38)                                                                                                                                                                   |
+| Asignaciones                       | 6.4       | ✅     | Con `asignables` (§9.3), cierre con fecha de salida, y el **aviso de registro patronal** más `GET /asignaciones/:id` con la cadena resuelta (D-71)                                                                            |
+| Contratos y SIROC                  | 6.7       | ✅     | Contrato = fase; SIROC embebido y único global; traba los cambios del proyecto (D-70)                                                                                                                                         |
+| Expedientes y documentos           | 6.5       | ✅     | Listado paginado, consulta, subida y **revisar** (valida y rechaza) (D-42, D-43, D-45); mismos filtros nuevos que `/empleados` (D-52)                                                                                         |
+| Lógica de dominio                  | modelo §6 | ✅     | Estatus, avance, semáforo, vigencias y la **unión** de plantillas, listos y probados                                                                                                                                          |
+| Importar colaboradores (.xlsx)     | —         | ✅     | Previsualizar y aplicar; idempotente al re-subir; crea puestos y adscripciones (D-46); el `Estatus` da de baja también del sistema a quien se queda sin empresa (D-55); no pisa lo corregido a mano y lo reporta (D-56, D-57) |
+| Alertas (`GET /alertas`)           | 6.6       | ✅     | Derivadas y sin estado (D-47); **agrupadas por empleado y paginadas** (D-48)                                                                                                                                                  |
+| **`tipo` fuera del puesto** (D-73) | —         | 🔒     | **Decidido, sin implementar y bloqueado**: el área sustituye a `categorias.tipo`, pero primero hay que redefinir la matriz de permisos, que hoy cuelga de él (`canManageEmployeeType`). Ver D-73                              |
+| Métricas y reportes                | 6.6       | ⬜     | Derivados. `/dashboard/metricas` y `/reportes/expedientes`                                                                                                                                                                    |
+| Plantillas de checklist            | 6.5       | 🟡     | La resolución por unión está y sembrada; falta **administrarlas** (`GET`/`PATCH /plantillas-checklist`) y mudar el eje a `empresaId`                                                                                          |
+| Árbol de `/organizacion`           | 6.3       | ⬜     | Empresa → áreas → proyectos (modelo §9.2)                                                                                                                                                                                     |
+| Almacenamiento R2                  | 7         | ✅     | Bucket `cames-files/employes-files`, probado de punta a punta; `npm run r2:check` (D-41)                                                                                                                                      |
+| Job diario de vigencias            | 8         | ⬜     | Un correo por persona, idempotente                                                                                                                                                                                            |
+| `/usuarios` (modelo anterior)      | —         | ✅     | Responde **410** con las rutas nuevas                                                                                                                                                                                         |
 
 ## Orden sugerido
 
@@ -132,6 +140,11 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
     queda del backlog original. El job puede reusar `deriveAlerts` tal cual.
 
 ## Decisiones abiertas
+
+> **Las dos que bloquean trabajo hoy son la #10** (quién ve la nómina, traba una
+> pantalla del front) **y la #18** (la matriz de permisos, traba D-73). El resto
+> son confirmaciones o constantes: se pueden dejar correr sin que se detenga
+> nada. Las tachadas ya se resolvieron y se dejan para no repetir la discusión.
 
 1. ~~¿El expediente se comparte entre empresas del grupo?~~ **Resuelto:** es de la
    persona, uno por `empleadoId`, y el checklist es la unión de las plantillas de
@@ -204,3 +217,19 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
     `registroPatronalId: null` ya no se da en los datos, pero el contrato lo
     sigue permitiendo y `GET /proyectos` puede devolverlo si alguien vuelve a
     dejar un proyecto a medias por la base.
+
+18. **¿Cómo queda la matriz de permisos cuando `tipo` salga del puesto?**
+    **BLOQUEA a D-73**, que ya está decidido: `categorias.tipo` desaparece y lo
+    sustituye el área. Lo que falta es que hoy `canManageEmployeeType`
+    (`utils/permissions.js`) decide con `tipo` quién gestiona a quién —
+    `rh_consulta` y `jefe_area` dan de alta personal de obra pero no
+    administrativos— y con nueve áreas en vez de dos tipos hay que rehacerla.
+    Dos caminos:
+
+    | Camino                                       | Qué implica                                                 |
+    | -------------------------------------------- | ----------------------------------------------------------- |
+    | Marcar cada área con quién puede gestionarla | Un campo nuevo en `areas`; la matriz de §8.2 se queda igual |
+    | Permisos por área en el nivel de acceso      | Más fino y más cerca de `RUMBO.md`; rehace la matriz entera |
+
+    **Hasta que se elija, D-73 no se empieza**: es la parte que rompe seguridad
+    si se improvisa. El alcance completo del cambio está en D-73.

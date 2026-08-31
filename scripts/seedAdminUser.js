@@ -55,11 +55,15 @@ async function main() {
     await sesion.withTransaction(async () => {
       let categoria = await Category.findOne({ nombre: 'Administración' }).session(sesion)
       if (!categoria) {
+        /*
+         * `tipo` es obligatorio en el esquema: sin él, `create` revienta con un
+         * ValidationError y el script no siembra nada. El bootstrap automático
+         * ya lo pasaba; éste no, y nadie lo notó porque sólo falla con la base
+         * vacía.
+         */
         ;[categoria] = await Category.create(
-          [{ nombre: 'Administración', esBase: true }],
-          {
-            session: sesion
-          }
+          [{ nombre: 'Administración', tipo: 'administrativo', esBase: true }],
+          { session: sesion }
         )
       }
       ;[empleado] = await Employee.create(

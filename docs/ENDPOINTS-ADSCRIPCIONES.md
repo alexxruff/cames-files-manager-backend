@@ -1,16 +1,18 @@
 # Adscripciones: vincular a alguien que ya existe a una empresa
 
-Referencia de los **4 endpoints nuevos**. Nada más cambió.
+Referencia de los **6 endpoints** de este dominio.
 
 Base: `/api/v1`. Envelope, códigos y convenciones generales:
 [`INTEGRACION-FRONTEND.md`](./INTEGRACION-FRONTEND.md).
 
-| #   | Endpoint                           | Quién              |
-| --- | ---------------------------------- | ------------------ |
-| 1   | `GET /empresas/:id/adscripciones`  | quien ve empleados |
-| 2   | `POST /empresas/:id/adscripciones` | `rh_admin`         |
-| 3   | `PATCH /adscripciones/:id`         | `rh_admin`         |
-| 4   | `PATCH /adscripciones/:id/estado`  | `rh_admin`         |
+| #   | Endpoint                             | Quién              |
+| --- | ------------------------------------ | ------------------ |
+| 1   | `GET /empresas/:id/adscripciones`    | quien ve empleados |
+| 2   | `POST /empresas/:id/adscripciones`   | `rh_admin`         |
+| 3   | `PATCH /adscripciones/:id`           | `rh_admin`         |
+| 4   | `PATCH /adscripciones/:id/estado`    | `rh_admin`         |
+| 5   | `PATCH /adscripciones/:id/jefaturas` | `rh_admin`         |
+| 6   | `GET /empresas/:id/jefaturas`        | `rh_admin`         |
 
 > **Adscribir ≠ dar de alta.** `POST /empleados` crea a la persona y su primera
 > adscripción, en un solo paso. Estos 4 endpoints son para lo que viene

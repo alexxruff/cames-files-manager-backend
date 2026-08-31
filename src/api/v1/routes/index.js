@@ -81,6 +81,9 @@ const RUTAS_PENDIENTES = Object.freeze([
   { metodos: ['GET'], ruta: '/api/v1/dashboard/metricas', spec: '6.6' },
   { metodos: ['GET'], ruta: '/api/v1/reportes/expedientes', spec: '6.6' },
   { metodos: ['GET', 'PATCH'], ruta: '/api/v1/plantillas-checklist', spec: '6.5' },
+  // Árbol empresa → áreas → proyectos (modelo §9.2). Estaba especificada y sin
+  // anunciar: el front no tenía cómo saber que falta.
+  { metodos: ['GET'], ruta: '/api/v1/organizacion', spec: '6.3' },
   { metodos: ['POST'], ruta: '/api/v1/auth/recuperar', spec: '6.1' },
   { metodos: ['POST'], ruta: '/api/v1/auth/restablecer', spec: '6.1' }
 ])
@@ -134,4 +137,10 @@ router.use('/usuarios', goneRoutes)
 //   router.use('/dashboard', dashboardRoutes)
 //   router.use('/organizacion', organizationRoutes)
 
+/*
+ * El router es una función, así que la lista viaja colgada de él. Se expone para
+ * que `tests/unitarias/docs.test.js` compruebe que la documentación la refleja:
+ * es el único lugar donde se declara qué falta, y se desfasaba en silencio.
+ */
 module.exports = router
+module.exports.RUTAS_PENDIENTES = RUTAS_PENDIENTES

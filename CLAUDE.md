@@ -9,16 +9,22 @@ API de la plataforma de **expedientes laborales de Urbacames**: checklist de
 documentos por colaborador, carga de archivos, validación por RH, control de
 vigencias, alertas y reportes de auditoría.
 
-- El **front ya está construido** contra una capa simulada, pero **todavía asume
-  el modelo anterior**: su interfaz se ajusta después (ver `modelo-datos.md` §11).
+- El **front ya está construido** y ya pega contra este servidor en casi todo;
+  la capa simulada la conserva para desarrollar. Donde su lógica y la nuestra
+  difieran, **manda ésta**.
 - Documentos autoritativos, los tres en `docs/`:
-  - **`ARQUITECTURA-DATOS.md`** — el mapa de lo que HAY: las 13 colecciones, cómo
+  - **`ARQUITECTURA-DATOS.md`** — el mapa de lo que HAY: las 14 colecciones, cómo
     se relacionan y qué se rompe al tocar cada una. **Léelo antes de cambiar
     cualquier esquema, y actualízalo en el mismo cambio.**
-  - **`modelo-datos.md`** — el diseño original y su porqué. Ha derivado; donde
-    discrepe con el anterior, manda el anterior.
+  - **`modelo-datos.md`** — el diseño y su porqué. Ha derivado; donde discrepe
+    con el anterior, manda el anterior.
   - **`backend-spec.md`** — cómo se habla con el backend: envelope, códigos,
     errores y catálogo de rutas.
+
+  Los dos últimos **son de este repo desde el 29 ago 2026**: el front los lee
+  aquí y ya no guarda copia, así que se actualizan en el mismo cambio que el
+  código, igual que los `ENDPOINTS-*.md`.
+
 - `backend-spec.md` en la raíz es la versión **anterior** de la especificación, de
   cuando el eje era el cliente. Se conserva como referencia histórica; **no la
   sigas**.
@@ -29,6 +35,22 @@ vigencias, alertas y reportes de auditoría.
   las convenciones**, no un repo del que se copie sin revisar: lo que se mejoró
   respecto a él está en `docs/DECISIONES.md`.
 
+## Hablar con el front
+
+El front vive en `~/Documents/projects/cames-files-manager`. **Nadie edita ni
+copia los documentos del otro**: copiarlos fue lo que hizo implementar dos veces
+contra versiones desfasadas.
+
+- Escribe en **`docs/HANDOFF-BACKEND.md`** al cerrar una tarea que les afecte, o
+  al encontrarles un bug. Encabezado `AAAA-MM-DD HH:MM:SS · backend · título`,
+  la más reciente arriba, y **la hora sácala con `date`, no de memoria**: los dos
+  lados escriben el mismo día sobre las mismas cosas.
+- Lee **`~/Documents/projects/cames-files-manager/docs/HANDOFF-FRONTEND.md`**
+  antes de empezar: ahí está lo que ya aplicaron y lo que necesitan.
+- Se mantienen cortas. Al cerrar algo grande, sus entradas se colapsan a un
+  renglón en «Cerrado», el detalle baja a su documento, y **se le avisa al otro
+  que se recortó**.
+
 ## Arrancar
 
 ```bash
@@ -36,7 +58,7 @@ npm install
 cp .env.example .env      # y llena MONGODB_URI y JWT_SECRET
 npm run db:up             # MongoDB 8 local (docker), replica set, puerto 27018
 npm run dev               # http://localhost:8080/api/v1/health
-npm test                  # 79 pruebas, base en memoria (no necesita Mongo)
+npm test                  # toda la suite, base en memoria (no necesita Mongo)
 npm run lint
 ```
 
@@ -120,6 +142,7 @@ src/
 scripts/                semillas, índices y migración
 tests/                  unitarias/ · integracion/ · helpers/
 docs/                   modelo-datos · backend-spec · arquitectura · contrato ·
+                        handoff-backend (la conversación con el front) ·
                         decisiones · estado · integración y cambios del front
 ```
 
@@ -172,6 +195,8 @@ imposible acabar con dos registros de la misma persona.
 ## Antes de decir "listo"
 
 - [ ] `npm test` y `npm run lint` en verde; `npx prettier --write` en lo tocado.
+      `tests/unitarias/docs.test.js` compara las cifras de los documentos contra
+      el código: si falla, el número del documento es el que está mal.
 - [ ] Prueba de integración del camino feliz, 401, 403, **404 por alcance** y 400.
 - [ ] `docs/CONTRATO-API.md` con la forma exacta de la respuesta nueva, y
       `docs/INTEGRACION-FRONTEND.md` si el cambio afecta a lo que el front ya usa.
@@ -217,8 +242,14 @@ reemplazarlo: donde hay vínculo, el número sale del catálogo de la empresa; d
 no, del texto. Se llena con `npm run migrate:vinculo-rp` y con cada importación,
 y **nada lo pisa** una vez corregido a mano.
 
-**Pendiente:** métricas, reportes y el job diario de vigencias — ver
-`docs/ESTADO.md` para el detalle y el orden sugerido. El plan de obra está
+**Pendiente:** métricas, reportes, plantillas de checklist, el árbol de
+`/organizacion` y el job diario de vigencias — ver `docs/ESTADO.md` para el
+detalle y el orden sugerido.
+
+**Al reportar pendientes, las decisiones abiertas van primero**, no sólo los
+módulos por construir: un módulo se empieza cuando hay hueco, una decisión
+bloquea y sólo la resuelve el cliente. Están en `docs/ESTADO.md` § «Decisiones
+abiertas», con un aviso al inicio que dice cuáles bloquean hoy. El plan de obra está
 **cerrado**: las migraciones corrieron y los respaldos se borraron en los dos
 entornos, local y Fly.
 
