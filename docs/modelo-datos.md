@@ -1051,21 +1051,68 @@ Reglas que no se negocian:
 
 ### 8.2 Matriz de permisos
 
-| Capacidad | `rh_admin` | `rh_consulta` | `jefe_area` |
-| --- | :---: | :---: | :---: |
-| Ver empleados y expedientes | ✓ | ✓ | Sólo sus áreas |
-| Alta y baja de empleados | ✓ | | |
-| Adscribir empleados a su empresa | ✓ | | |
-| Subir / reemplazar documentos | ✓ | ✓ | |
-| Validar o rechazar documentos | ✓ | | |
-| Abrir documentos sensibles | ✓ | ✓ | |
-| Crear y cerrar proyectos | ✓ | | ✓ |
-| Asignar empleados a proyectos | ✓ | | ✓ |
-| Gestionar la cartera de clientes | ✓ | | |
-| Configurar plantillas y categorías | ✓ | | |
-| Generar reportes | ✓ | ✓ | |
-| Administrar accesos | ✓ | | |
-| Alta en los catálogos compartidos | Sólo con `alcanceGlobal` | | |
+**Ésta es la única tabla de permisos del proyecto.** Sale de
+`src/utils/permissions.js` (`PERMISSION_MATRIX`), que es lo que el servidor
+aplica de verdad, y una prueba la compara **celda por celda** contra el código:
+si las dos dejan de coincidir, `npm test` falla y **la que está mal es esta
+tabla**, no el código.
+
+Antes hubo dos —ésta y la de D-32— y no decían lo mismo: ésta dejaba la edición
+de personal sólo en `rh_admin` diez días después de que Urbacames confirmara lo
+contrario. Por eso ahora hay una sola y una prueba que la sostiene.
+
+Cómo se lee cada celda:
+
+| Celda               | Qué significa                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------ |
+| ✓                   | Permitido                                                                                              |
+| —                   | No permitido                                                                                           |
+| sus áreas           | Permitido, pero acotado a las áreas que dirige en cada empresa (`req.areasPorEmpresa`)                 |
+| + alcance global    | Permitido **sólo** si además tiene `acceso.alcanceGlobal` (administrador de plataforma)                |
+
+| Capacidad                | Qué permite                                                             |    `rh_admin`    | `rh_consulta` | `jefe_area` |
+| ------------------------ | ----------------------------------------------------------------------- | :--------------: | :-----------: | :---------: |
+| `viewEmployees`          | Ver empleados y expedientes                                             |        ✓         |       ✓       |  sus áreas  |
+| `deactivateEmployees`    | Dar de baja del sistema y reactivar                                     |        ✓         |       —       |      —      |
+| `manageFieldEmployees`   | Alta **y edición** de personal de obra (`mano_de_obra`)                 |        ✓         |       ✓       |      ✓      |
+| `manageAdminEmployees`   | Alta **y edición** de personal administrativo                           |        ✓         |       —       |      —      |
+| `manageAffiliations`     | Adscribir a una empresa, editar la adscripción y darla de baja          |        ✓         |       —       |      —      |
+| `uploadDocuments`        | Subir y reemplazar documentos del expediente                            |        ✓         |       ✓       |      —      |
+| `reviewDocuments`        | Validar o rechazar un documento (D-44)                                  |        ✓         |       ✓       |      —      |
+| `openSensitiveDocuments` | Abrir documentos sensibles                                              |        ✓         |       ✓       |      —      |
+| `manageProjects`         | Crear, aplazar, finalizar y reabrir proyectos, y sus contratos          |        ✓         |       —       |      ✓      |
+| `assignToProjects`       | Asignar personal a un proyecto y darle salida                           |        ✓         |       —       |      ✓      |
+| `manageClients`          | Alta, edición y baja de clientes del catálogo global                    |        ✓         |       —       |      ✓      |
+| `manageClientPortfolio`  | Vincular un cliente a la cartera de una empresa propia                  |        ✓         |       —       |      ✓      |
+| `manageTemplates`        | Configurar las plantillas de checklist                                  |        ✓         |       —       |      —      |
+| `generateReports`        | Generar reportes                                                        |        ✓         |       ✓       |      —      |
+| `manageAccess`           | Conceder, editar y quitar el acceso a la plataforma                     |        ✓         |       —       |      —      |
+| `manageAreaLeadership`   | Decir quién dirige cada área en cada empresa (D-60)                     |        ✓         |       —       |      —      |
+| `manageCompanies`        | Crear y editar empresas y sus registros patronales                      | + alcance global |       —       |      —      |
+| `manageCategories`       | Crear categorías y darlas de baja                                       | + alcance global |       —       |      —      |
+| `manageAreas`            | Crear, renombrar y dar de baja áreas del catálogo (D-58)                | + alcance global |       —       |      —      |
+| `closeTemporaryAreas`    | Cerrar las áreas **temporales** que deja el archivo de nómina (D-58)    |        ✓         |       ✓       |      —      |
+
+**El personal se decide por tipo, no por una sola capacidad.** `POST /empleados`
+y `PATCH /empleados/:id` no llevan un `requireCapability` fijo: el servicio
+pregunta `canManageEmployeeType(acceso, tipo)`, que va a
+`manageFieldEmployees` o a `manageAdminEmployees` según el `tipo` de la persona
+—que sale de su categoría (D-59)—. Un middleware fijo le daría `403` a un
+`rh_consulta` que sí puede dar de alta a un trabajador de obra.
+
+De ahí salen tres consecuencias que se preguntan seguido:
+
+- **Un `jefe_area` puede corregir a la gente de obra que él mismo capturó**, y un
+  `rh_consulta` también. Sin eso, un dígito mal en una CURP obligaba a pedirle la
+  corrección a un administrador (D-32).
+- **Cambiar el `tipo` a `administrativo` exige poder crear administrativos.** Si
+  no, un `jefe_area` daría de alta a un peón y después lo «ascendería».
+- **La baja del sistema sigue siendo de `rh_admin`** (`deactivateEmployees`):
+  corregir datos y sacar a alguien del sistema no son la misma decisión.
+
+Y el alcance no cambia con ninguna de estas capacidades: un `jefe_area` sólo
+alcanza a la gente de **sus áreas**, así que editar a alguien de otra área
+responde `404`, igual que el listado.
 
 El front sólo apaga botones. **La autorización real es del servidor.**
 

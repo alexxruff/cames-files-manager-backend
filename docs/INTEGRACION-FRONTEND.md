@@ -863,12 +863,21 @@ global a alguien más. Puede tener `empresas: []` y aun así verlo todo: **no us
 
 ## 7. Validaciones para replicar en los formularios
 
-| Campo            | Regla                                                     | Mensaje del servidor                                                                                 |
-| ---------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `email` (acceso) | correo válido, único entre todos los accesos              | `'Escribe un correo válido'` / `'Ya existe un acceso con ese correo'`                                |
-| `password`       | ≥ 8, con mayúscula, minúscula, dígito y uno de `!@#$%^&*` | `'La contraseña necesita una mayúscula, una minúscula, un número y uno de estos símbolos: !@#$%^&*'` |
-| `nivelAcceso`    | `rh_admin` \| `rh_consulta` \| `jefe_area`                | `'Selecciona un nivel de acceso válido'`                                                             |
-| `alcanceGlobal`  | sólo con `nivelAcceso: 'rh_admin'`                        | `'El alcance global sólo se puede dar a un administrador de RH'`                                     |
+| Campo               | Regla                                                                                                                              | Mensaje del servidor                                                                                 |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `email` (acceso)    | correo válido, único entre todos los accesos                                                                                       | `'Escribe un correo válido'` / `'Ya existe un acceso con ese correo'`                                |
+| `password`          | ≥ 8, con mayúscula, minúscula, dígito y uno de `!@#$%^&*`                                                                          | `'La contraseña necesita una mayúscula, una minúscula, un número y uno de estos símbolos: !@#$%^&*'` |
+| `nombre` (empleado) | entre **3 y 120** caracteres, con los espacios recortados. **No hay filtro de caracteres**: acentos, ñ, apóstrofos y guiones pasan | `'El nombre es requerido'` / `'El nombre debe tener entre 3 y 120 caracteres'`                       |
+| `nivelAcceso`       | `rh_admin` \| `rh_consulta` \| `jefe_area`                                                                                         | `'Selecciona un nivel de acceso válido'`                                                             |
+| `alcanceGlobal`     | sólo con `nivelAcceso: 'rh_admin'`                                                                                                 | `'El alcance global sólo se puede dar a un administrador de RH'`                                     |
+
+> **Revisen su regla del nombre.** Si el formulario valida 2-50 caracteres o un
+> patrón de letras, hoy está **rechazando altas que el servidor aceptaría**: el
+> límite real es 3-120 y no hay patrón. Quien lo sufre es quien captura, y del
+> lado del servidor no queda rastro —la petición nunca llega—. La regla vive en
+> `src/validations/employeeValidation.js`; D-16 y D-17 cuentan por qué no se
+> filtran caracteres: el patrón heredado rechazaba a quien se llama Muñoz, y la
+> sanitización que traía el proyecto base guardaba «Muoz».
 
 ```ts
 const PATRON_PASSWORD = /^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&*]).*$/

@@ -207,6 +207,13 @@ una limitación del backend prestado, no un requisito.
 **Pendiente.** Avisar al front para que relaje su validación
 (`src/utils/user-validation.ts`); hoy es el lado más estricto.
 
+> **Al día de hoy (31 ago 2026) ni siquiera hay patrón.** Aquel `nombre` era el
+> del usuario del backend prestado, y esa colección desapareció (D-27). Lo que
+> valida el servidor es el **nombre del empleado**, y sólo mide su largo: entre
+> 3 y 120 caracteres, recortado, sin filtrar un solo carácter
+> (`src/validations/employeeValidation.js`). La regla, escrita donde se busca,
+> está en `INTEGRACION-FRONTEND.md` §7.
+
 ---
 
 ## D-17 · Sin sanitización destructiva del nombre
@@ -568,23 +575,23 @@ fábricas, comprueba que todos los modelos quedaron registrados y recorre cada
 
 ## D-32 · La matriz de permisos del alta se corrige, y el alta se decide por tipo
 
-**Decisión.** Se aplica la corrección que Urbacames confirmó al front:
+**Decisión.** Se aplica la corrección que Urbacames confirmó al front: dar de
+alta personal de obra no es exclusivo de `rh_admin` —lo hacen también
+`rh_consulta` y el `jefe_area`—, y dar de alta clientes tampoco.
 
-| Recurso                              | admin de plataforma |   `rh_admin`   | `rh_consulta` |  `jefe_area`   |
-| ------------------------------------ | :-----------------: | :------------: | :-----------: | :------------: |
-| `POST /empresas`                     |          ✓          |                |               |                |
-| `POST /categorias`                   |          ✓          |                |               |                |
-| `POST /clientes`                     |          ✓          |       ✓        |               |       ✓        |
-| `POST /carteras`                     |       ✓ todas       | ✓ sus empresas |               | ✓ sus empresas |
-| `POST /empleados` · `mano_de_obra`   |          ✓          |       ✓        |       ✓       |       ✓        |
-| `POST /empleados` · `administrativo` |          ✓          |       ✓        |               |                |
-| `POST /adscripciones`                |          ✓          |       ✓        |               |                |
+> **Aquí había una tabla, y sobraba.** Era la segunda del proyecto y contradecía
+> a la de `modelo-datos.md` §8.2: cuando esta decisión amplió la edición (abajo),
+> §8.2 no se actualizó, y quedó diciendo durante meses que sólo `rh_admin` podía
+> editar personal. Se quitó el 31 ago 2026: **la tabla vigente es la de §8.2**,
+> es la única, y una prueba de `tests/unitarias/docs.test.js` la compara celda
+> por celda contra `PERMISSION_MATRIX`. Lo que sigue aquí es el porqué, que es
+> lo que le toca a una decisión.
 
 **Lo que implica en el código.** El alta de personal **no se puede autorizar con
 un middleware fijo** en la ruta: depende del `tipo` que viene en el cuerpo. Un
 `requireCapability` en `POST /empleados` daría 403 a un `rh_consulta` que sí puede
 dar de alta personal de obra. Por eso la ruta no lleva capacidad y el servicio
-decide con `canCreateEmployee(acceso, tipo)`, donde el tipo ya está validado.
+decide con `canManageEmployeeType(acceso, tipo)`, donde el tipo ya está validado.
 
 `MANAGE_SHARED_CATALOGS` se partió en `MANAGE_COMPANIES` y `MANAGE_CATEGORIES`
 (las dos exigen `alcanceGlobal`) y apareció `CREATE_CLIENTS`, porque clientes ya
@@ -1018,9 +1025,11 @@ acciones distintas, y el front tiene un solo lugar del que colgar el botón de
 "Aprobar/Rechazar" en vez de pegarle a dos rutas según el caso. **Desviación
 del spec, documentada aquí como pide `CLAUDE.md`.**
 
-`REVIEW_DOCUMENTS` ya existía en la matriz (§8.2) y sólo la tiene `rh_admin` —
-quien sube (`rh_consulta` también puede) no es necesariamente quien revisa. La
-ruta reutiliza esa capacidad tal cual, sin negociar nada nuevo.
+`REVIEW_DOCUMENTS` ya existía en la matriz (§8.2) y entonces sólo la tenía
+`rh_admin` —quien sube (`rh_consulta` también puede) no es necesariamente quien
+revisa—. La ruta reutiliza esa capacidad tal cual, sin negociar nada nuevo.
+**Doce días después D-44 la amplió a `rh_consulta`**; la matriz vigente es la de
+`modelo-datos.md` §8.2, no este renglón.
 
 Revisa `versiones[0]` (la última subida), no un número de versión explícito: no
 tiene sentido revisar una versión vieja que ya fue reemplazada, y pedir el número

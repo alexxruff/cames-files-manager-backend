@@ -58,6 +58,19 @@ un documento y aquí queda el enlace.
 
 ## Pendientes para el front
 
+- [ ] **Revisen la validación del nombre en el formulario de alta: puede estar
+      bloqueando altas legítimas.** El servidor acepta **entre 3 y 120
+      caracteres y no filtra ningún carácter** —acentos, ñ, apóstrofos y guiones
+      pasan—. Si su formulario valida 2-50 caracteres o un patrón de letras,
+      **hoy está rechazando gente que el servidor daría de alta**, y lo sufre
+      quien captura: la petición nunca sale del navegador, así que de nuestro
+      lado no queda rastro y nadie se entera. No es una corrección de
+      documentación: es revisar si la interfaz está tirando altas buenas. La
+      regla, en [`INTEGRACION-FRONTEND.md`](./INTEGRACION-FRONTEND.md) §7.
+- [ ] **Borren el aviso de «no abrir modelo-datos §8.2» de su `backend-actual.md`.**
+      Ya no hay nada de qué avisar: §8.2 es la única tabla de permisos, dice lo
+      que el servidor hace y una prueba la sostiene. Es el parche que pusieron
+      mientras las dos tablas se contradecían.
 - [ ] **Borren sus `modelo-datos.md` y `backend-spec.md`.** Ya están adoptados
       aquí, con lo suyo dentro — ver la entrada de las 23:27:05, y la
       reconciliación completa del 31 ago en
@@ -95,6 +108,40 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 ---
 
 ## Bitácora
+
+### 2026-08-31 15:18:20 · backend · Una sola matriz de permisos, y su regla del nombre está de más
+
+**Qué se hizo.** Había **dos tablas de permisos** que no decían lo mismo, y la
+que se cita como oficial era la equivocada: `modelo-datos.md` §8.2 dejaba la
+edición de personal sólo en `rh_admin` diez días después de que Urbacames
+confirmara lo contrario. Ahora hay **una sola**, la de §8.2, sacada de
+`src/utils/permissions.js`, y `tests/unitarias/docs.test.js` la compara **celda
+por celda** contra el código: si vuelven a separarse, `npm test` falla. La tabla
+de D-32 se quitó; ahí quedó el porqué. Ninguna respuesta del servidor cambia.
+
+Lo que la tabla decía mal y ahora dice bien: **un `jefe_area` y un `rh_consulta`
+pueden corregir a la gente de obra que ellos mismos capturaron** (no sólo darla
+de alta), `rh_consulta` **revisa** documentos (D-44) y `jefe_area` **gestiona
+clientes y su cartera**. Dar de baja del sistema sigue siendo de `rh_admin`.
+
+De paso, `CONTRATO-API.md` §«Implementado hoy» gana una columna **«llave de
+`data`»**: bajo qué nombre viene la carga útil de cada ruta, que hasta hoy sólo
+estaba en los ejemplos de los `ENDPOINTS-*.md`.
+
+**Qué necesita el front.** Dos cosas, las dos arriba en «Pendientes»:
+
+1. **Revisen su validación del nombre — esto no es documentación, es un posible
+   bug de su lado.** El servidor acepta 3-120 caracteres **sin patrón**; si su
+   formulario valida 2-50 o exige un patrón de letras, hoy está **rechazando
+   altas que el servidor aceptaría**, sin que a nosotros nos llegue nada. La
+   regla real quedó en `INTEGRACION-FRONTEND.md` §7, que es donde se busca; el
+   `/^[\p{L}\s'-]+$/u` de D-16 era del usuario del backend prestado y **ya no
+   existe en el código**.
+2. **Borren el aviso de «no abrir §8.2» de `backend-actual.md`.** Era el parche
+   correcto mientras las dos tablas se contradecían; ya no hace falta.
+
+**Qué se leyó suyo.** `HANDOFF-FRONTEND.md` del 31 ago 2026 (el cierre del
+traspaso de `modelo-datos.md` y `backend-spec.md`).
 
 ### 2026-08-31 13:05:14 · backend · Una sola versión de `modelo-datos.md` y `backend-spec.md`
 

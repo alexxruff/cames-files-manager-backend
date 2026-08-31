@@ -216,8 +216,13 @@ export function empresasDe(user: AuthUser | null | undefined): EmpresaDeUsuario[
 
 ## 3. `src/utils/permisos.ts`
 
-La matriz sigue siendo la fuente única del front, pero cambia en tres puntos
-(modelo-datos §8.2):
+La matriz sigue siendo la fuente única del front, pero cambia en tres puntos.
+
+> **Ojo con la fecha.** Esta lista es del 21 ago 2026 y describe el delta de
+> aquella entrega, no el estado de hoy: después `jefe_area` ganó la cartera de
+> clientes y `rh_consulta` la revisión de documentos (D-44). **La tabla vigente,
+> y la única, es `modelo-datos.md` §8.2**, que una prueba compara celda por celda
+> contra `src/utils/permissions.js`.
 
 | Cambio                                | Detalle                                                                                                    |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------- |

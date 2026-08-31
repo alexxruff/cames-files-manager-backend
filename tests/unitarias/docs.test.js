@@ -248,6 +248,88 @@ describe('La documentación no se desfasó del código', () => {
     })
   })
 
+  describe('la matriz de permisos dice lo que el servidor hace', () => {
+    /*
+     * El otro modo de mentir de un documento, y el más caro: no una cifra ni una
+     * ruta, sino un permiso. `modelo-datos.md` §8.2 estuvo diez días diciendo que
+     * sólo `rh_admin` podía editar personal, cuando el servidor ya dejaba también
+     * a `rh_consulta` y al `jefe_area` corregir a la gente de obra que ellos
+     * mismos capturaron (D-32). Nadie se enteró porque la corrección se escribió
+     * en la decisión, no en la tabla que se cita como oficial.
+     *
+     * Esta prueba lee la tabla de §8.2 y la compara **celda por celda** con
+     * `PERMISSION_MATRIX`. Si falla, el que está mal es el documento.
+     */
+    const { CAPABILITIES, PERMISSION_MATRIX } = require('../../src/utils/permissions')
+
+    const NIVELES = ['rh_admin', 'rh_consulta', 'jefe_area']
+
+    /** Los cuatro símbolos de la tabla, y lo que valen en la matriz del código. */
+    const SIMBOLOS = {
+      '✓': true,
+      '—': false,
+      'sus áreas': 'own_area',
+      '+ alcance global': 'global'
+    }
+
+    /** La sección §8.2, sin lo que venga después. */
+    function seccion82() {
+      const documento = leer('docs/modelo-datos.md')
+      const desde = documento.indexOf('### 8.2 Matriz de permisos')
+      expect(desde).toBeGreaterThan(-1)
+
+      const hasta = documento.indexOf('\n## ', desde)
+      return documento.slice(desde, hasta === -1 ? undefined : hasta)
+    }
+
+    /**
+     * La tabla de §8.2 como la matriz del código: `{ nivel: { capacidad: valor } }`.
+     *
+     * Se reconoce un renglón por su primera celda —el nombre de la capacidad
+     * entre comillas invertidas—, así que la tabla de símbolos de arriba y
+     * cualquier prosa con tuberías no estorban.
+     */
+    function matrizDelDocumento() {
+      const matriz = Object.fromEntries(NIVELES.map((n) => [n, {}]))
+
+      seccion82()
+        .split('\n')
+        .forEach((linea) => {
+          const celdas = linea.match(
+            /^\|\s*`(\w+)`\s*\|[^|]*\|([^|]*)\|([^|]*)\|([^|]*)\|\s*$/
+          )
+          if (!celdas) return
+
+          const [, capacidad, ...valores] = celdas
+          NIVELES.forEach((nivel, i) => {
+            const simbolo = valores[i].trim()
+            /*
+             * Un símbolo que no está en la leyenda es un renglón que nadie puede
+             * leer bien: falla aquí y no se cuela como `undefined`.
+             */
+            expect(Object.keys(SIMBOLOS)).toContain(simbolo)
+            matriz[nivel][capacidad] = SIMBOLOS[simbolo]
+          })
+        })
+
+      return matriz
+    }
+
+    it('§8.2 lista exactamente las capacidades que existen', () => {
+      const documentadas = Object.keys(matrizDelDocumento().rh_admin).sort()
+      expect(documentadas).toEqual(Object.values(CAPABILITIES).sort())
+    })
+
+    it.each(NIVELES)('§8.2 dice lo mismo que el código para %s', (nivel) => {
+      /*
+       * `toEqual` sobre el renglón entero y no celda por celda a propósito: así
+       * el fallo enseña las dos filas completas y se ve de un vistazo cuál es la
+       * celda que cambió.
+       */
+      expect(matrizDelDocumento()[nivel]).toEqual({ ...PERMISSION_MATRIX[nivel] })
+    })
+  })
+
   describe('cuántas decisiones hay', () => {
     it('ARQUITECTURA-DATOS.md cita el rango completo de DECISIONES.md', () => {
       const ultima = leer('docs/DECISIONES.md')
