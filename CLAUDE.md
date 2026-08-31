@@ -354,7 +354,9 @@ lado ni lo dejes pasar.
    sigue y entrégala, dejando dicho en el informe qué quedó fuera.
 4. **No escribas en `tareas.json`.** Ese archivo lo edita solo el usuario. Tu
    propuesta es un archivo suelto que él aprueba, corrige o descarta.
-5. Dilo en tu respuesta final, con la ruta del archivo.
+5. **Termina tu respuesta con el bloque JSON de la tarea, en un bloque de
+   codigo listo para copiar**, ademas de la ruta del archivo. El usuario no
+   deberia tener que abrir el .md para enterarse de que propusiste algo.
 
 Cierra la propuesta con el bloque JSON de la tarea, listo para pegar en
 `tareas.json`, con `"id": null` para que el usuario le ponga el numero:
