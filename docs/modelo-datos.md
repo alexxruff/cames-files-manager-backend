@@ -14,9 +14,12 @@
 > explica por qué el modelo quedó así, no como trabajo pendiente.
 >
 > **Este archivo es del backend** (29 ago 2026) y se mantiene aquí, en
-> `cames-files-manager-backend/docs/`. El front lo lee de este repo y ya no
-> guarda copia: cuando cambie un esquema, se actualiza en el mismo cambio que
-> el código, como `ARQUITECTURA-DATOS.md`.
+> `cames-files-manager-backend/docs/`. **Es la única versión**: la copia que el
+> front tenía se reconcilió contra ésta y contra el código el 31 ago 2026 —cada
+> diferencia y qué se decidió, en
+> [`RECONCILIACION-DOCS.md`](./RECONCILIACION-DOCS.md)—. Cuando cambie un
+> esquema, se actualiza en el mismo cambio que el código, como
+> `ARQUITECTURA-DATOS.md`.
 >
 > ⚠️ **Es el diseño y su porqué, no el inventario de lo que existe.** El modelo
 > derivó desde D-27 (las áreas son un catálogo, el número de trabajador es de la
@@ -280,10 +283,11 @@ const empleadoSchema = new mongoose.Schema({
   tipo: { type: String, enum: ['administrativo', 'mano_de_obra'], required: true },
 
   // Acceso a la plataforma. Ausente en la mayoría: casi nadie entra.
+  // OJO, la contraseña NO está aquí: vive en `credentials`, aparte (D-27). Este
+  // subdocumento sólo lleva quién es y qué puede.
   acceso: {
     type: {
       email:    { type: String, required: true, lowercase: true, trim: true },
-      password: { type: String, required: true, minlength: 8, select: false },
       nivelAcceso: {
         type: String,
         enum: ['rh_admin', 'rh_consulta', 'jefe_area'],
@@ -297,14 +301,22 @@ const empleadoSchema = new mongoose.Schema({
       // ella se inicia sesión, pero la API responde 403 PASSWORD_TEMPORAL a
       // todo salvo /auth/me, /auth/logout y /auth/cambiar-password.
       passwordTemporal: { type: Boolean, default: false },
-      ultimoAccesoEn: { type: Date, default: null }
+      // Cuándo se cambió la contraseña. Invalida los tokens anteriores. El
+      // ÚLTIMO ACCESO no está aquí: lo lleva la credencial, con el resto del
+      // material de sesión.
+      passwordActualizadaEn: { type: Date, default: null }
     },
     default: null,
     _id: false
   },
 
   // Baja del sistema completo. Distinta de la baja de una empresa concreta.
-  activo: { type: Boolean, default: true }
+  activo:     { type: Boolean, default: true },
+  motivoBaja: { type: String, default: null },
+  fechaBaja:  { type: String, default: null },   // YYYY-MM-DD
+
+  // Interno: búsqueda parcial insensible a acentos. No se serializa.
+  nombreNormalizado: { type: String, select: false, default: '' }
 }, { timestamps: true });
 ```
 
@@ -361,6 +373,8 @@ alvarado» no convivan.
 ```js
 const categoriaSchema = new mongoose.Schema({
   nombre: { type: String, required: true, trim: true, maxlength: 80, unique: true },
+  // A quién aplica el puesto. Obligatorio, y DE SALIDA: ver la nota de abajo.
+  tipo:   { type: String, enum: ['administrativo', 'mano_de_obra'], required: true },
   // Las sembradas no se pueden desactivar.
   esBase: { type: Boolean, default: false },
   activo: { type: Boolean, default: true }
@@ -372,11 +386,11 @@ const categoriaSchema = new mongoose.Schema({
 > a dos empresas tendría un puesto ambiguo. Global se resuelve solo, y cada
 > proyecto sigue habilitando el subconjunto que usa.
 
-> ⚠️ **El esquema de arriba se quedó corto: hoy hay además un `tipo`**
-> (`administrativo` / `mano_de_obra`), obligatorio, que llegó con el alta de
-> personal y que **está de salida (D-73)**. Lo sustituye el área, que dice lo
-> mismo con más grano desde D-58. Sigue en pie porque de él cuelga la matriz de
-> permisos (§8.2), que hay que redefinir primero. **No construyas encima.**
+> ⚠️ **`tipo` está de salida (D-73).** Llegó con el alta de personal, hoy es
+> obligatorio —es el selector «Aplica a» del front— y filtra el desplegable del
+> alta. Lo sustituye el área, que dice lo mismo con más grano desde D-58. Sigue
+> en pie porque de él cuelga la matriz de permisos (§8.2), que hay que redefinir
+> primero. **No construyas encima.**
 
 ### 5.5 `proyectos`
 
@@ -559,12 +573,17 @@ const expedienteSchema = new mongoose.Schema({
 
 ```js
 const plantillaSchema = new mongoose.Schema({
+  // Identificador estable entre ambientes (D-24). El sembrado necesita ser
+  // idempotente y la resolución necesita una red de seguridad que se pueda
+  // nombrar (`plantilla-general`); un `_id` de Mongo no sirve para eso.
+  clave:       { type: String, lowercase: true, trim: true, default: null },
+
   nombre:      { type: String, required: true, trim: true },
   descripcion: { type: String, default: '' },
 
   tiposContrato: [{ type: String, enum: TIPOS_CONTRATO, required: true }],
-  // null = todas las áreas.
-  areas:         { type: [String], enum: AREAS, default: null },
+  // null = todas las áreas. Sin `enum`: las áreas son una colección desde D-58.
+  areas:         { type: [String], default: null },
   // null = todas las empresas. Permite que una empresa pida documentos extra.
   empresaId:     { type: ObjectId, ref: 'Empresa', default: null },
 
@@ -654,7 +673,18 @@ const adscripcionSchema = new mongoose.Schema({
     tipoPrestacion:    { type: String, default: null },
     periodicidadPago:  { type: String, default: null },
     teletrabajador:    { type: Boolean, default: false }
-  }
+  },
+
+  // Salario, SBC y cuenta bancaria del archivo de nómina. `select: false` y
+  // fuera del `toJSON`: se guardan y NINGUNA respuesta los devuelve, hasta que
+  // se decida quién puede verlos (§12).
+  nomina: { /* salarioDiario, sbcParteFija, sbcParteVariable, sbcTopeUMA,
+               banco, sucursal, cuenta */ },
+
+  // Qué traía la fila del .xlsx la última vez que se importó, para saber qué
+  // cambió sin volver a abrir el archivo. Contabilidad interna del importador:
+  // en inglés, `select: false`, no es contrato (D-46).
+  payrollSnapshot: { /* active, contractType, hireDate, areas[], importedAt */ }
 }, { timestamps: true });
 
 adscripcionSchema.index({ empresaId: 1, empleadoId: 1 }, { unique: true });

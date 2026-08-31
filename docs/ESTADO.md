@@ -3,7 +3,7 @@
 Mapa de qué está hecho y qué falta. **Actualízalo al cerrar cada módulo**: es lo
 primero que lee quien llega, humano o agente.
 
-Última actualización: **2026-08-30** · toda la suite en verde.
+Última actualización: **2026-08-31** · toda la suite en verde.
 
 > **No se anota aquí cuántas pruebas son.** El número se queda viejo a la
 > primera prueba que alguien agregue —pasó tres veces— y no dice nada que
@@ -143,7 +143,16 @@ anterior (usuarios con `clienteId`) **ya se migró**: ver D-27 a D-31 en
     código —esquemas de Mongoose y stack de Express— qué colecciones, campos,
     índices y rutas existen hoy, sin base de datos y sin `.env`. Es la vara con
     la que se mide si un documento sigue siendo cierto (plan #1).
-16. **Métricas y reportes**, y el job diario de vigencias con correos. Lo que
+16. ~~**Reconciliar la documentación del modelo y del contrato**~~ ✅ una sola
+    versión de `modelo-datos.md` y `backend-spec.md`, la de este repo,
+    contrastada contra el extractor: se corrigieron cuatro afirmaciones falsas
+    sobre rutas y seis sobre campos —entre ellas la contraseña embebida en
+    `empleados.acceso`, que D-27 movió a `credentials`—. Cada diferencia con la
+    copia del front y qué se decidió, en
+    [`RECONCILIACION-DOCS.md`](./RECONCILIACION-DOCS.md). El candado nuevo de
+    `docs.test.js` falla si un documento cita una ruta que no existe ni está
+    declarada pendiente (plan #2).
+17. **Métricas y reportes**, y el job diario de vigencias con correos. Lo que
     queda del backlog original. El job puede reusar `deriveAlerts` tal cual.
 
 ## Decisiones abiertas

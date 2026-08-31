@@ -59,8 +59,18 @@ un documento y aquí queda el enlace.
 ## Pendientes para el front
 
 - [ ] **Borren sus `modelo-datos.md` y `backend-spec.md`.** Ya están adoptados
-      aquí, con lo suyo dentro — ver la entrada de las 23:27:05. A partir de
-      ahora se leen en `cames-files-manager-backend/docs/`.
+      aquí, con lo suyo dentro — ver la entrada de las 23:27:05, y la
+      reconciliación completa del 31 ago en
+      [`RECONCILIACION-DOCS.md`](./RECONCILIACION-DOCS.md). A partir de ahora se
+      leen en `cames-files-manager-backend/docs/`.
+- [ ] **Corrijan su `CLAUDE.md`, en dos lugares.** Dice «el traspaso está a
+      medias … **la copia buena es la de aquí** —la suya no tiene nada de D-68 a
+      D-72—», y antes remite a sus `docs/modelo-datos.md` y `docs/backend-spec.md`
+      como los autoritativos. **Ya no es cierto:** su copia es la foto del 28 ago
+      —12 colecciones, sin D-73, con las alertas y R2 como «por construir»— y
+      quien la lea creyéndole va a implementar contra el modelo viejo. Su propio
+      texto dice que esto se corrige «hasta que backend avise en su bitácora que
+      adoptó la nuestra»: **este aviso es ése**. Háganlo antes de borrar nada.
 - [ ] **`faltantes` no se cuenta igual de los dos lados.** Aquí son sólo los
       `pending`; su `src/utils/expediente.ts` suma también los `rejected`. **El
       número que ve el usuario es el nuestro** —el `avance` viaja en la
@@ -85,6 +95,44 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 ---
 
 ## Bitácora
+
+### 2026-08-31 13:05:14 · backend · Una sola versión de `modelo-datos.md` y `backend-spec.md`
+
+**Qué se hizo.** Se reconciliaron las dos copias contra ésta y contra el código.
+**La copia que ustedes tienen era la vieja**, no la buena: es la foto del 28 ago
+—dice «el front todavía asume el modelo anterior», habla de 12 colecciones y
+lista las alertas, R2, las áreas, los contratos y la importación como «por
+construir»—. De ella se rescató una sola cosa, el renglón que dice dónde están
+sus casos borde probados (`src/utils/__tests__/`, `src/mocks/__tests__/`), que
+ahora está en las referencias del spec.
+
+Y se corrigió lo que la nuestra decía de más. Lo que les afecta directo:
+
+- **`GET /adscripciones` no existe** y no está pedido. La tabla «qué existe hoy»
+  decía que sí. Se listan y se dan de alta por empresa
+  (`/empresas/:id/adscripciones`); lo suelto es editar, dar de baja y jefaturas
+  (`PATCH /adscripciones/:id`, `/estado`, `/jefaturas`).
+- **Cinco rutas del catálogo estaban sin marcar y no responden**:
+  `GET /empleados/:id/adscripciones`, `GET /empleados/:id/asignaciones`,
+  `GET /organizacion`, `GET /dashboard/metricas` y `GET /reportes/expedientes`.
+  Ahora dicen «Por construir» en su renglón.
+- **`GET`/`PATCH /plantillas-checklist` faltaba en el spec.** Estaba declarada
+  pendiente en el router y ustedes no tenían cómo enterarse. Ya tiene renglón.
+
+Nada de esto cambia una sola respuesta del servidor: son documentos. Pero si
+alguien de su lado programó contra el listado global de adscripciones, **no va a
+existir**. El detalle, diferencia por diferencia y con lo que se descartó y por
+qué, en [`RECONCILIACION-DOCS.md`](./RECONCILIACION-DOCS.md).
+
+Para que no vuelva a pasar: `tests/unitarias/docs.test.js` ahora falla si un
+documento cita una ruta que ni existe en el router ni está declarada pendiente
+**y marcada como tal** en su renglón.
+
+**Qué necesitan.** Las dos casillas de arriba: borrar sus copias y **corregir su
+`CLAUDE.md`**, que todavía manda leer la suya.
+
+**Qué se leyó suyo.** `HANDOFF-FRONTEND.md` al 2026-08-30, y sus copias de
+`modelo-datos.md` y `backend-spec.md` del 2026-08-30 21:18.
 
 ### 2026-08-30 22:49:04 · backend · `GET /api/v1/version`: qué commit está corriendo
 

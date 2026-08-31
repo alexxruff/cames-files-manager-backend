@@ -13,9 +13,12 @@
 > Stack objetivo: **Node.js + Express + MongoDB (Mongoose)**.
 >
 > **Este archivo es del backend** (29 ago 2026) y se mantiene aquí, en
-> `cames-files-manager-backend/docs/`. El front lo lee de este repo y ya no
-> guarda copia. Cuando cambie una ruta, un código o la forma de una respuesta,
-> se actualiza en el mismo cambio que el código —igual que
+> `cames-files-manager-backend/docs/`. **Es la única versión**: la copia que el
+> front tenía se reconcilió contra ésta y contra el código el 31 ago 2026 —cada
+> diferencia y qué se decidió, en
+> [`RECONCILIACION-DOCS.md`](./RECONCILIACION-DOCS.md)—. Cuando cambie una ruta,
+> un código o la forma de una respuesta, se actualiza en el mismo cambio que el
+> código —igual que
 > [`CONTRATO-API.md`](./CONTRATO-API.md), que lleva el detalle petición por
 > petición— y se anota en [`HANDOFF-BACKEND.md`](./HANDOFF-BACKEND.md).
 >
@@ -54,8 +57,8 @@ dos versiones difieran manda ésta.
 | `/empresas` y `/categorias` | **Implementado y conectado** |
 | `/clientes` y las carteras (`/empresas/:id/clientes`) | **Implementado y conectado** |
 | `/proyectos` y sus asignaciones | **Implementado y conectado** |
-| `/empresas/:id/adscripciones` y `/adscripciones/:id[/estado]` | **Implementado y conectado** |
-| `/adscripciones` (listado global, alta, edición y baja) | **Implementado y conectado** |
+| Adscripciones: alta y listado por empresa (`/empresas/:id/adscripciones`), edición, baja y jefaturas (`/adscripciones/:id`, `/estado`, `/jefaturas`) | **Implementado y conectado** |
+| `GET /adscripciones` — listado global, de todas las empresas de un tirón | **No existe**, y no está pedido: se listan por empresa |
 | `/areas` — el catálogo, con las temporales de la nómina | **Implementado y conectado** |
 | `/proyectos/:id/contratos` y `/contratos/:id[/siroc]` | **Implementado y conectado** |
 | Importación de colaboradores desde el `.xlsx` de nómina | **Implementado y conectado** |
@@ -63,7 +66,7 @@ dos versiones difieran manda ésta.
 | Listado paginado de expedientes (`GET /expedientes`) | **Implementado y conectado** |
 | `/alertas` — documentación y cumpleaños, derivadas al leer | **Implementado** |
 | Archivos en R2 | **Implementado** |
-| `GET /empleados/:id/asignaciones` | Por construir. `GET /empleados/:id` ya trae sus adscripciones embebidas, así que ésa no se hará aparte |
+| `GET /empleados/:id/asignaciones` y `GET /empleados/:id/adscripciones` | Por construir. La segunda **no se hará aparte**: `GET /empleados/:id` ya trae sus adscripciones embebidas |
 | Plantillas de checklist (administrarlas; la asignación ya está sembrada) | Por construir |
 | Métricas del panel (`/dashboard/metricas`) y reportes | Por construir |
 | Árbol de `/organizacion` | Por construir |
@@ -391,9 +394,9 @@ invalida el anterior.
 > `alcance`. Avisen cuando lo desplieguen y se ajusta en la misma ventana; son
 > pocas líneas, pero hay que coordinarlo.
 
-`POST /auth/recuperar` y `/restablecer` siguen pendientes (responden `404`): hoy
-sólo un `rh_admin` puede reponer una contraseña, y quien la recibe la cambia en
-su siguiente acceso.
+`POST /auth/recuperar` y `POST /auth/restablecer` siguen pendientes (responden
+`404`): hoy sólo un `rh_admin` puede reponer una contraseña, y quien la recibe
+la cambia en su siguiente acceso.
 
 ### 6.2 Catálogos compartidos
 
@@ -409,8 +412,8 @@ filtrados por su alcance donde aplique.
 | `GET` `PATCH` | `/empleados/:id` | El `PATCH` acepta mandar el `tipo` que la persona **ya tiene** (se ignora); mandar uno **distinto** responde `400` (26 ago 2026). Para cambiarlo se manda la `categoriaId` nueva — cambiar de puesto es lo que cambia el tipo. `tipo` sí sigue **viniendo** en la respuesta |
 | `PATCH` | `/empleados/:id/estado` | `{ activo, motivo }` — baja **del sistema** |
 | `GET` | `/empleados/:id/expediente` | Siempre existe |
-| `GET` | `/empleados/:id/adscripciones` | Sus empresas |
-| `GET` | `/empleados/:id/asignaciones` | Sus proyectos, activos e históricos |
+| `GET` | `/empleados/:id/adscripciones` | **Por construir**, y no se hará aparte: `GET /empleados/:id` ya las trae embebidas |
+| `GET` | `/empleados/:id/asignaciones` | **Por construir.** Sus proyectos, activos e históricos |
 
 > **`POST /empleados` — `numeroEmpleado` es obligatorio y va en la raíz**
 > (26 ago 2026): string, máximo 30 caracteres, el ID de nómina **de la persona**
@@ -506,7 +509,7 @@ del final devuelve lista vacía y el `total` real, no un `404`.
 | `GET` `POST` | `/empresas` | Las del alcance del usuario. `POST` sólo admin de plataforma: `{ nombre, rfc? }` |
 | `GET` `PATCH` | `/empresas/:id` | El `PATCH` es sólo admin de plataforma: ver abajo |
 | `PATCH` | `/empresas/:id/estado` | `{ activo }` — sólo admin de plataforma, ver abajo |
-| `GET` | `/organizacion` | Árbol empresa → áreas (sólo administrativos) y proyectos |
+| `GET` | `/organizacion` | **Por construir.** Árbol empresa → áreas (sólo administrativos) y proyectos |
 
 #### Editar y dar de baja una empresa (28 ago 2026)
 
@@ -807,6 +810,7 @@ mayúsculas.
 | `POST` | `/expedientes/:id/documentos/:tipo` | `multipart`: `archivo` + `vigenciaHasta?` |
 | `POST` | `…/:tipo/revisar` | `{ aprobado: true }` para validar, o `{ aprobado: false, motivo }` (mínimo 10 caracteres) para rechazar. Un solo endpoint para las dos acciones. |
 | `GET` | `…/:tipo/versiones/:v/url` | URL firmada, 10 min. Registra en bitácora |
+| `GET` `PATCH` | `/plantillas-checklist` | **Por construir.** Administrar las plantillas. La resolución por unión y el sembrado ya están (§6.2 del modelo); lo que falta es editarlas |
 
 Ciclo del documento:
 
@@ -837,8 +841,8 @@ pending ──subir──▶ in_review ──revisar (aprobado: true)──▶ v
 | Método | Ruta | `data` |
 | --- | --- | --- |
 | `GET` | `/alertas` | `{ alertas }` — `?tipo=&empresaId=&area=&origen=`. Aquí `tipo` es **el de la alerta**, no el de la persona: éste no se tocó |
-| `GET` | `/dashboard/metricas` | `{ metricas }` — `?empresaId=` |
-| `GET` | `/reportes/expedientes` | `{ reporte }` — mismos filtros que expedientes |
+| `GET` | `/dashboard/metricas` | **Por construir.** `{ metricas }` — `?empresaId=` |
+| `GET` | `/reportes/expedientes` | **Por construir.** `{ reporte }` — mismos filtros que expedientes |
 
 `Alerta` es una **unión discriminada por `origen`**:
 
@@ -1126,4 +1130,5 @@ lee ahí y no se copia aquí:
 | Cómo les pega el backend, con sus trampas | `backend-actual.md` |
 | Capa simulada del front | `mocks.md` |
 | Contratos TypeScript y enums | `src/interfaces/`, `src/enums/` |
+| Casos borde ya cubiertos de su lado | `src/utils/__tests__/`, `src/mocks/__tests__/` |
 | Su mitad de la conversación | `HANDOFF-FRONTEND.md` |
