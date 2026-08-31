@@ -292,6 +292,9 @@ Cuando se te pida **«implementa la siguiente tarea pendiente»**:
    para ellos no existe.
 8. Estado `done`, y escribe en `commit` el mensaje que el usuario debe usar:
    `feat(#<id>): <título>` más el cuerpo y la línea `Plan: #<id>`.
+9. **Termina tu respuesta con el mensaje de commit completo, en un bloque de
+   código listo para copiar.** No basta con dejarlo en `tareas.json`: el usuario
+   commitea desde la terminal y no deberia tener que ir a buscarlo al archivo.
 
 **Nunca hagas `git add`, `git commit` ni `git push`.** El usuario revisa el diff y
 commitea. Deja el árbol como está.
