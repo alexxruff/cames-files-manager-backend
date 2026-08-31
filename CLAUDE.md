@@ -259,3 +259,64 @@ respuesta los devuelve** hasta que se decida quién puede verlos (LFPDPPP). No
 "arregles" esto agregándolos al `toJSON`: ver D-46 y `ESTADO.md` #10.
 
 El detalle, con checkboxes y el orden sugerido, está en `docs/ESTADO.md`.
+
+## El plan de tareas
+
+Las tareas viven en `~/Documents/projects/cames-ops/plan/tareas.json`, compartido
+con el front. Ahí está el estado de cada una y qué falta.
+
+Cuando se te pida **«implementa la siguiente tarea pendiente»**:
+
+1. Lee `../cames-ops/plan/tareas.json`.
+2. Toma la primera con `"repo": "backend"`, estado `pending`, y cuyo `dependsOn`
+   —si lo tiene— esté en `done`. Si no hay ninguna, dilo y para.
+3. Si tiene `dependsOn`, lee `../cames-ops/plan/handoff/<id>.md`: ahí está lo que
+   el otro lado dejó escrito.
+4. **Antes de tocar código**, escribe tu traducción técnica en `propuestaTecnica`
+   —qué archivos y campos concretos vas a tocar, en 3-5 renglones—, cambia el
+   estado a `propuesta` y **para**. El usuario la aprueba o la corrige. La
+   descripción de la tarea está escrita en su idioma, no en el nuestro: traducirla
+   es tu primer trabajo, y confirmarla evita implementar lo que no era.
+5. Agress` y trabaja. El `acceptance` es el alcance; nada
+   fuera de ahí.
+6. Al cerrar, aplica «Antes de decir listo» de este mismo documento, sin excepción.
+7. Si la tarea tiene `handoff`, escribe `../cames-ops/plan/handoff/<id>.md` con el
+   formato de abajo. Es lo único que el otro lado va a leer: si algo no está ahí,
+   para ellos no existe.
+8. Estado `done`, y escribe en `commit` el mensaje que el usuario debe usar:
+   `feat(#<id>): <título>` más el cuerpo y la línea `Plan: #<id>`.
+
+**Nunca hagas `git add`, `git commit` ni `git push`.** El usuario revisa el diff y
+commitea. Deja el árbol como está.
+
+Si te bloqueas: estado `blocked`, escribe el porqué en `propuestaTecnica` y para.
+No improvises un rodeo.
+
+### Formato de `handoff/<id>.md`
+
+```markdown
+# Tarea #<id> — <título>
+
+## Rutas
+| Método | Ruta | Qué hace |
+
+## Forma de la respuesta
+El envelope y la forma exacta de `data`, con un ejemplo real.
+
+## Cuerpo de la petición
+Campos, tipos, cuáles son obligatorios.
+
+## Errores
+Código, `errors[0].msg` tal cual sale, y qué lo dispara.
+
+## Permisos
+Qué nivel de acceso hace falta y qué pasa fuera de alcance.
+
+## Documentos que cambiaron
+Cuál, qué sección, y qué dice ahora distinto.
+
+## Lo que NO se hizo
+Lo que quedó fuera y por qué.
+```
+
+Las rutas sácalas del inventario que deriva el router, no de memoria.
