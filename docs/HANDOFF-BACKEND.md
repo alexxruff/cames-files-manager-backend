@@ -86,6 +86,34 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
+### 2026-08-30 22:49:04 · backend · `GET /api/v1/version`: qué commit está corriendo
+
+**Qué se hizo.** Ruta nueva, **pública** y sin caché
+(`Cache-Control: no-store`), que dice qué release está desplegado:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "schemaVersion": 1,
+    "service": "cames-api",
+    "commit": "…40 hex",
+    "builtAt": "2026-08-30T12:34:56Z"
+  }
+}
+```
+
+Cuatro campos y nada más: **no es un endpoint de diagnóstico** y no va a crecer
+con `NODE_ENV` ni con nada del entorno (D-74). Los dos valores se hornean en la
+imagen y la construcción falla si faltan, así que **nunca verán `"unknown"`**;
+fuera de un contenedor —desarrollo— llegan en `null`.
+
+**Qué necesitan.** Nada obligatorio. Si les sirve para el pie de página o para
+un reporte de error, pídanla sin sesión y sin caché propia; el valor de `commit`
+es lo que hay que pegar cuando reporten algo raro después de un despliegue.
+
+**Qué se leyó suyo.** `HANDOFF-FRONTEND.md` al 2026-08-30.
+
 ### 2026-08-30 01:00:41 · backend · Aviso: `tipo` sale del puesto y lo sustituye el área (D-73)
 
 **Nada cambió todavía. Es un aviso para que no construyan encima.**

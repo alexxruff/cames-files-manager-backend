@@ -3144,3 +3144,63 @@ la parte que rompe seguridad si se improvisa.
 
 `tipoContrato` de la adscripción (`obra_determinada`, `indeterminado`…) no tiene
 nada que ver con esto, pese al nombre parecido. Se queda igual.
+
+## D-74 · `GET /version` es pública, y sólo dice qué commit corre
+
+**Decisión.** Hay una ruta sin sesión que contesta qué versión está desplegada:
+
+```json
+{ "schemaVersion": 1, "service": "cames-api", "commit": "…40 hex", "builtAt": "…Z" }
+```
+
+Cuatro campos, y la construcción de la imagen **falla** si `CAMES_GIT_COMMIT` o
+`CAMES_BUILD_TIME` faltan o vienen malformados.
+
+**Por qué pública.** El momento en que hace falta es exactamente el momento en
+que no hay sesión: acaba de desplegarse algo, el front ve un comportamiento
+raro, y la pregunta es «¿qué quedó arriba?». Detrás de un login, la respuesta
+llega tarde y por el canal equivocado. Es la misma razón por la que `/health`,
+`/ready` y el inventario son públicos.
+
+**Por qué sólo cuatro campos.** Una ruta de versión sin límite escrito se
+convierte en un volcado de diagnóstico: primero `NODE_ENV`, luego la versión de
+Node, luego «nada más el nombre del bucket». El límite es _identidad de release_:
+qué código corre y desde cuándo. Nada de entorno, configuración, dependencias,
+nombres de máquina ni valores de `env`. Hay una prueba que lo sostiene
+(`tests/integracion/version.test.js`).
+
+**Por qué `no-store`.** Es lo único que la ruta no puede permitirse: una
+respuesta cacheada de esto afirma con toda seriedad que corre un commit que ya
+no corre.
+
+**El invariante, y hasta dónde llega.** En un **release** —cualquier imagen
+construida, cualquier entorno desplegado— `commit` y `builtAt` nunca están
+ausentes, malformados, en `"unknown"` ni en `null`. Los dos se hornean en la
+imagen y el `Dockerfile` los valida con `grep -Eq`, así que una imagen sin ellos
+no llega a existir.
+
+**Fuera de un release, `null` es la respuesta correcta.** Correr `npm run dev` o
+la suite sin metadatos de construcción es legítimo y nada lo impide: el
+invariante es del artefacto desplegado, no del entorno de trabajo. Quien
+desarrolla nunca tiene que fabricarse un commit para arrancar.
+
+**Por qué se valida al construir y no al arrancar.** Validar al arrancar
+convertiría un dato ausente en un ciclo de reinicios en producción; validar al
+construir convierte el mismo error en una construcción que no sale.
+
+**Por qué `null` y no `"unknown"`.** `null` dice «aquí no hay release», y sólo
+puede verse fuera de uno. `"unknown"` se vería igual en un release mal
+construido que en uno bien construido. Y dejar el campo en `undefined` lo
+borraría del JSON: cambiaría la forma de la respuesta en vez de su valor, que es
+el fallo más difícil de notar del lado de quien la consume.
+
+**Efecto de lado.** El esquema de entorno se movió a `src/config/env.schema.js`,
+sin efectos —ni dotenv, ni `process.env`, ni validación, ni `process.exit`— para
+que se pueda LEER qué exige el backend sin dispararlo (`npm run env:requisitos`,
+`scripts/printEnvRequirements.js`). `src/config/env.js` sigue haciendo todo lo
+que hacía; sólo dejó de ser el único que sabe la forma.
+
+**Estado.** La ruta existe y funciona. El `Dockerfile` que exige e inyecta
+`CAMES_GIT_COMMIT` y `CAMES_BUILD_TIME` todavía no está commiteado, así que hoy
+en producción los dos campos son `null`. Se activan cuando se adopte el camino
+de despliegue guiado que vive en `cames-ops`.

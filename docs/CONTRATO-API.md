@@ -30,8 +30,31 @@ Base: `/api/v1`.
 
 ## Rutas públicas
 
-Sólo estas cuatro: `POST /auth/login`, `GET /api/v1` (inventario), `GET /health`,
-`GET /ready`. Todo lo demás exige sesión y pasa por el middleware de alcance.
+Sólo estas cinco: `POST /auth/login`, `GET /api/v1` (inventario), `GET /health`,
+`GET /ready` y `GET /version`. Todo lo demás exige sesión y pasa por el
+middleware de alcance.
+
+`GET /version` es pública **a propósito**: quien despliega necesita saber qué
+commit quedó arriba antes de tener sesión. Devuelve identidad de release y nada
+más —cuatro campos, sin entorno, sin configuración, sin dependencias— y viaja con
+`Cache-Control: no-store`, porque una respuesta cacheada mentiría sobre lo que
+está corriendo:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "schemaVersion": 1,
+    "service": "cames-api",
+    "commit": "0f3c1b…40 hex",
+    "builtAt": "2026-08-30T12:34:56Z"
+  }
+}
+```
+
+`commit` y `builtAt` se hornean en la imagen (`Dockerfile`); la construcción
+falla si faltan o vienen malformados, así que **nunca dicen `"unknown"`**. Fuera
+de un contenedor construido así llegan en `null`.
 
 ## Implementado hoy
 
@@ -39,6 +62,7 @@ Sólo estas cuatro: `POST /auth/login`, `GET /api/v1` (inventario), `GET /health
 | ------ | ---------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/`                                                        | —                            | Inventario: `implementados` se deriva del router, `pendientes` del spec                                                                 |
 | GET    | `/health` · `/ready`                                       | —                            | Liveness y readiness (el segundo verifica Mongo)                                                                                        |
+| GET    | `/version`                                                 | —                            | Identidad del release: `schemaVersion`, `service`, `commit`, `builtAt`. `no-store`                                                      |
 | POST   | `/auth/login`                                              | —                            | `data: { user, token }` con el `AuthUser` nuevo                                                                                         |
 | GET    | `/auth/me`                                                 | sesión                       | Revalida; 401 si cambió la contraseña o le quitaron el acceso                                                                           |
 | POST   | `/auth/logout`                                             | sesión                       | `data: null`                                                                                                                            |

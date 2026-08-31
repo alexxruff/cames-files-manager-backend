@@ -6,6 +6,7 @@ const express = require('express')
  */
 const database = require('../../../config/database')
 const asyncHandler = require('../../../utils/asyncHandler')
+const { ok } = require('../../../utils/response')
 const { listRoutes } = require('../../../utils/routeInventory')
 const authRoutes = require('../auth/authRoutes')
 const employeeRoutes = require('../employees/employeeRoutes')
@@ -64,6 +65,28 @@ router.get(
     })
   })
 )
+
+/**
+ * Identidad de la versión desplegada. Pública y a propósito: contesta «qué
+ * commit está corriendo aquí» sin sesión, que es justo lo que hace falta cuando
+ * algo se despliega y nadie sabe qué quedó arriba.
+ *
+ * Devuelve SÓLO identidad de release —commit y hora de construcción, ambos
+ * horneados en la imagen (ver Dockerfile)—: ni `NODE_ENV`, ni configuración, ni
+ * dependencias, ni nada del entorno. No es un volcado de diagnóstico.
+ *
+ * `no-store` porque una respuesta cacheada de esto miente sobre lo que corre.
+ */
+router.get('/version', (req, res) => {
+  res.set('Cache-Control', 'no-store')
+
+  return ok(res, {
+    schemaVersion: 1,
+    service: 'cames-api',
+    commit: process.env.CAMES_GIT_COMMIT ?? null,
+    builtAt: process.env.CAMES_BUILD_TIME ?? null
+  })
+})
 
 /**
  * Rutas especificadas y todavía NO implementadas (spec 9.3 a 9.8). Están

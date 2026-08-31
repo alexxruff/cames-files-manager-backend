@@ -264,16 +264,19 @@ describe('Contraseñas temporales', () => {
    * EL CANDADO. `requirePasswordDefinitiva` se aplica router por router, así que
    * se puede olvidar en un recurso nuevo. Esta prueba no depende de una lista
    * escrita a mano: recorre el inventario que `GET /api/v1` **deriva del router**
-   * y exige el 403 en todas las rutas, salvo las tres que son la salida.
+   * y exige el 403 en todas las rutas, salvo las públicas y las de la salida.
    */
   it('TODAS las rutas de la API quedan bloqueadas, salvo la salida', async () => {
     const { token, empresa } = await conPasswordTemporal()
     const { body } = await request(app).get('/api/v1')
 
     const permitidas = [
+      // Las públicas: no hay sesión que bloquear en ellas (`/version`, D-74).
       '/api/v1',
       '/api/v1/health',
       '/api/v1/ready',
+      '/api/v1/version',
+      // Y la salida: entrar, saber quién eres, salir y cambiar la contraseña.
       '/api/v1/auth/login',
       '/api/v1/auth/me',
       '/api/v1/auth/logout',
