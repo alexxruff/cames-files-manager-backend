@@ -90,6 +90,21 @@ con `POST /auth/cambiar-password` (D-49). Ya no hace falta acordarse. Lo que sig
 siendo manual es apagar el bootstrap (`BOOTSTRAP_ADMIN_ENABLED=false`) antes de
 exponer el backend.
 
+### Cadencia de las pruebas
+
+La suite completa tarda ~11 minutos. Correrla de mas es el mayor desperdicio de
+tiempo en una tarea, asi que:
+
+- **Mientras trabajas:** solo los archivos afectados (`npx jest <archivo>`).
+- **Al terminar:** la suite completa, UNA vez.
+- **Si esa corrida falla en algo acotado** —una cifra de un documento, un caso
+  suelto— corrige y vuelve a correr SOLO la suite afectada. No repitas la
+  completa: ya sabes que el resto pasaba.
+- **Nunca lances dos corridas a la vez**, ni dejes una en segundo plano mientras
+  arrancas otra: comparten la misma base y se pisan. Antes de la completa,
+  `pgrep -f jest` debe salir vacio (ojo con el watch de la extension de Jest del
+  editor).
+
 ## Idiomas — la regla que más se equivoca
 
 | Qué                                                                   | Idioma                               |
