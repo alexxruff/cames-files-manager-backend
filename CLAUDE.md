@@ -353,6 +353,33 @@ Lo que quedó fuera y por qué.
 
 Las rutas sácalas del inventario que deriva el router, no de memoria.
 
+### Si la tarea necesita una migracion
+
+Una tarea necesita migracion cuando el cambio deja datos que ya existen en un
+estado que el codigo nuevo no entiende: un campo que cambia de forma o de
+significado, datos que se mueven de una coleccion a otra, un indice unico nuevo
+sobre datos que pueden tener duplicados, o un valor obligatorio donde antes no lo
+habia.
+
+Cuando sea el caso, dilo en la propuesta tecnica ANTES de implementar, y al
+cerrar llena el campo `migracion` de la tarea:
+
+```json
+"migracion": {
+  "script": "scripts/migrateAlgo.js",
+  "queHace": "en una frase, que le pasa a los datos que ya existen",
+  "aplicadaEn": []
+}
+```
+
+`aplicadaEn` se queda vacio: la corre el usuario, en local y en produccion, y es
+el quien lo marca. Tu no la ejecutas ni la das por aplicada.
+
+Si la tarea no necesita migracion, el campo se queda en `null`.
+
+El script sigue las convenciones de `scripts/`: idempotente, con `--dry-run` que
+reporta sin escribir, y lo destructivo detras de una bandera aparte.
+
 ### Cuando descubres que falta trabajo del otro lado
 
 A media tarea puedes toparte con que no puedes terminar sin algo que le toca al
