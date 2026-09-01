@@ -301,6 +301,10 @@ Cuando se te pida **«implementa la siguiente tarea pendiente»**:
    es tu primer trabajo, y confirmarla evita implementar lo que no era.
 5. Aprobada: estado `in_progress` y trabaja. El `acceptance` es el alcance; nada
    fuera de ahí.
+   Si la tarea traia `revisiones`, lo que dice la ultima entrada entra en el
+   alcance junto con el `acceptance`.
+   Si la tarea traia `revisiones`, lo que dice la ultima entrada entra en el
+   alcance junto con el `acceptance`.
 6. Al cerrar, aplica «Antes de decir listo» de este mismo documento, sin excepción.
 7. Si la tarea tiene `handoff`, escribe `../cames-ops/plan/handoff/<id>.md` con el
    formato de abajo. Es lo único que el otro lado va a leer: si algo no está ahí,
@@ -318,6 +322,36 @@ por buena hasta que el front la consuma.
 
 Una tarea cuyo `dependsOn` este en `in_review` SI se puede empezar: el trabajo
 esta hecho y su handoff escrito; lo unico que falta es el visto bueno del usuario.
+
+**Si una tarea vuelve, vuelve con el motivo escrito.** Cuando el usuario la
+devuelve de `in_review` a `in_progress`, el porque queda en el campo
+`revisiones` de la tarea: una lista que crece, con `fecha` y `motivo` en cada
+entrada.
+
+- **Antes de retomar una tarea, lee `revisiones`.** Si tiene entradas, la ultima
+  es lo que fallo al probarla, y arreglarlo es parte del alcance igual que el
+  `acceptance`. Si hay varias, leelas todas: son los intentos anteriores, y
+  repetir un error ya senalado es el fallo mas caro de esta lista.
+- **No las borres ni las reescribas.** Son del usuario, no tuyas, y se acumulan a
+  proposito. Tu `propuestaTecnica` si la reescribes al retomar —por eso el motivo
+  no vive ahi—, y en ella di como atacas lo que te devolvieron.
+- **Una tarea que nunca se devolvio no lleva el campo.** No lo agregues vacio.
+
+
+**Si una tarea vuelve, vuelve con el motivo escrito.** Cuando el usuario la
+devuelve de `in_review` a `in_progress`, el porque queda en el campo
+`revisiones` de la tarea: una lista que crece, con `fecha` y `motivo` en cada
+entrada.
+
+- **Antes de retomar una tarea, lee `revisiones`.** Si tiene entradas, la ultima
+  es lo que fallo al probarla, y arreglarlo es parte del alcance igual que el
+  `acceptance`. Si hay varias, leelas todas: son los intentos anteriores, y
+  repetir un error ya senalado es el fallo mas caro de esta lista.
+- **No las borres ni las reescribas.** Son del usuario, no tuyas, y se acumulan a
+  proposito. Tu `propuestaTecnica` si la reescribes al retomar —por eso el motivo
+  no vive ahi—, y en ella di como atacas lo que te devolvieron.
+- **Una tarea que nunca se devolvio no lleva el campo.** No lo agregues vacio.
+
 
 **Nunca hagas `git add`, `git commit` ni `git push`.** El usuario revisa el diff y
 commitea. Deja el árbol como está.
@@ -425,7 +459,9 @@ Cierra la propuesta con el bloque JSON de la tarea, listo para pegar en
   "dependsOn": null,
   "estado": "pending",
   "propuestaTecnica": null,
-  "commit": null
+  "commit": null,
+  "migracion": null,
+  "migracion": null
 }
 ```
 
