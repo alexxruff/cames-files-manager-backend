@@ -130,8 +130,8 @@ lista, no dentro.
 | POST   | `/contratos/:id/finalizar` · `/contratos/:id/reabrir`      | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Mueven `estado`; no se reabre si el proyecto está finalizado                                                                            |
 | PATCH  | `/contratos/:id/estado`                                    | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Mueve `activo` (la baja), que **no es lo mismo** que `estado` (D-70)                                                                    |
 | GET    | `/expedientes`                                             | ver empleados                | `expedientes[]` + `total` · `pagina` · `porPagina`                                                                                               | Paginado; mismos filtros que `/empleados` **más `estatus`** (D-45)                                                                      |
-| GET    | `/empleados/:id/expediente`                                | ver empleados                | `expediente` · `empleado` · `avance`                                                                                                             | Crea el expediente si no existía; `data: { expediente, empleado, avance }`                                                              |
-| GET    | `/expedientes/:id`                                         | ver empleados                | `expediente` · `empleado` · `avance`                                                                                                             | Lo mismo por id de expediente; 404 si el empleado no es visible                                                                         |
+| GET    | `/empleados/:id/expediente`                                | ver empleados                | `expediente` · `empleado` · `avance` · `obras`                                                                                                   | Crea el expediente si no existía; `data: { expediente, empleado, avance, obras }` (D-77)                                                |
+| GET    | `/expedientes/:id`                                         | ver empleados                | `expediente` · `empleado` · `avance` · `obras`                                                                                                   | Lo mismo por id de expediente; 404 si el empleado no es visible                                                                         |
 | POST   | `/expedientes/:id/documentos/:tipo`                        | subir documentos             | `expediente` · `empleado` · `avance`                                                                                                             | `multipart`, campo `archivo`. Versiona; 413 >10 MB, 415 si no es PDF/JPG/PNG/WEBP                                                       |
 | GET    | `/expedientes/:id/documentos/:tipo/versiones/:version/url` | ver documentos               | `url` · `expiraEnSegundos` · `archivo`                                                                                                           | URL firmada temporal; **queda en la bitácora** (D-41)                                                                                   |
 | POST   | `/expedientes/:id/documentos/:tipo/revisar`                | `rh_admin` · `rh_consulta`   | `expediente` · `empleado` · `avance`                                                                                                             | `{ aprobado, motivo? }`: valida o rechaza la versión en revisión (D-43, D-44)                                                           |
@@ -401,6 +401,73 @@ dónde van. Los 400 posibles, con el texto en `message`:
 Corregir el SIROC con `PUT /contratos/:id/siroc` **conserva sus actualizaciones**:
 son del mismo aviso. Para empezar de cero está `DELETE /contratos/:id/siroc`, que
 se lleva el aviso entero.
+
+### El SIROC de su obra, en el expediente (D-77)
+
+El detalle del expediente —`GET /empleados/:id/expediente` y
+`GET /expedientes/:id`— trae una **cuarta llave, `obras`**, junto a `expediente`,
+`empleado` y `avance`: bajo qué aviso de obra está trabajando esa persona.
+
+**No hay ningún campo nuevo guardado.** La cadena `empleado → asignación activa →
+proyecto → contrato → siroc` ya existe entera y se resuelve al leer, así que el
+mismo expediente responde distinto en cuanto alguien refrenda el aviso o cierra
+una fase. Mismo criterio que D-71.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "expediente": { "...": "igual que siempre" },
+    "empleado": { "...": "el renglón de /empleados/:id" },
+    "avance": { "...": "igual que siempre" },
+    "obras": [
+      {
+        "asignacionId": "6a9f...",
+        "proyecto": { "_id": "6a89...", "nombre": "Torre Poniente" },
+        "contrato": {
+          "_id": "6a93...",
+          "numero": 2,
+          "nombre": "Estructura",
+          "fase": "Fase 2",
+          "fechaInicio": "2026-03-01",
+          "fechaFin": "2026-12-31",
+          "estado": "en_curso"
+        },
+        "siroc": {
+          "numero": "SIR-2026-0002",
+          "fechaRegistro": "2026-03-01",
+          "actualizaciones": []
+        },
+        "vigente": true,
+        "seguimientoSiroc": { "...": "el mismo bloque que viaja con el contrato" }
+      }
+    ]
+  }
+}
+```
+
+**Un renglón por asignación activa**, y `[]` si no está en ninguna obra — nunca
+la llave ausente. Una obra cuyo proyecto no tenga contratos con SIROC no aparece.
+
+**Cuál de las fases manda.** Un proyecto tiene varios contratos y cada uno puede
+traer su aviso. Se elige:
+
+1. El contrato cuya ventana `fechaInicio`–`fechaFin` **contiene el día de la
+   consulta** (los bordes cuentan). Si se traslapan, el que empezó después.
+2. Si ninguno la contiene, **el último que estuvo activo**: el de `fechaFin` más
+   reciente ya pasada, aunque esté `finalizado`. La obra terminó, pero el aviso
+   bajo el que trabajó esa persona sigue siendo un dato de su expediente.
+
+`vigente` dice cuál de los dos casos es, **para que el front no lo deduzca de las
+fechas**: `true` cubre hoy, `false` es histórico. Nunca se elige un contrato con
+`activo: false` —capturado por error o cancelado (D-70)— ni uno cuya ventana esté
+entera por delante: ése ni cubre hoy ni cubrió nunca a nadie.
+
+**Alcance.** Un proyecto de una empresa que quien pregunta no ve **no sale en la
+lista**, y el expediente responde `200` igual: no se avisa de su existencia.
+
+**El listado `GET /expedientes` NO trae `obras`**, sólo el detalle: serían dos
+consultas más por renglón y el listado pagina de a 100.
 
 ### Coherencia del registro patronal y trazabilidad (D-71)
 

@@ -3329,3 +3329,54 @@ reescribiría la historia.
 de documentos y cumpleaños de personas, y el SIROC cuelga de un contrato. Meterlo
 ahí pedía un `origen` nuevo y una entrada sin `empleadoId`, que es la llave con
 la que el front agrupa toda esa pantalla. Si se quiere, se decide aparte.
+
+---
+
+## D-77 · El SIROC de la obra se ve en el expediente, y se deriva al leer
+
+**Contexto.** Quien trabaja en una obra está cubierto por el aviso de obra
+—el SIROC— de esa obra, y RH necesita verlo donde mira a la persona: en su
+expediente. Hasta aquí, el SIROC sólo se veía desde el contrato.
+
+**Decisión.** El detalle del expediente trae una llave `obras` con un renglón
+por asignación activa, y en cada uno el proyecto, el contrato, su SIROC y el
+`seguimientoSiroc` que ya calcula D-76.
+
+**Vincular NO es guardar un id.** La cadena `empleado → asignación activa →
+proyecto → contrato → siroc` ya está completa en la base: guardar el eslabón
+final sería un dato derivado —contra la regla #6— y se desincronizaría en cuanto
+alguien refrende el aviso o cierre una fase. Es el mismo criterio de D-71, que
+resolvió la trazabilidad de la asignación sin guardar un solo id nuevo. Por eso
+esta decisión **no cambia ningún esquema y no lleva migración**.
+
+**Cuál de las fases cubre a la gente.** Un proyecto tiene varios contratos —sus
+fases— y cada uno puede traer su propio aviso. La asignación apunta al proyecto,
+no al contrato, así que hay que elegir:
+
+1. El contrato cuya ventana `fechaInicio`–`fechaFin` **contiene el día de la
+   consulta**, bordes incluidos. Si dos fases se traslapan, la que empezó después.
+2. Si ninguno la contiene, **el último que estuvo activo** —el de `fechaFin` más
+   reciente ya pasada, aunque esté `finalizado`—. La obra terminó, pero el aviso
+   bajo el que trabajó esa persona sigue siendo un dato de su expediente, y
+   dejarlo en blanco borraría eso.
+
+Fuera quedan los contratos con `activo: false` (capturados por error o
+cancelados, D-70) y los que están **enteros por delante**: ésos ni cubren hoy ni
+cubrieron nunca a nadie, así que un proyecto donde sólo hay fases futuras no
+aporta SIROC todavía.
+
+La respuesta dice `vigente: true|false` para distinguir los dos casos, en vez de
+dejar que el front lo deduzca comparando fechas con hoy. Misma razón por la que
+`seguimientoSiroc` trae su `mensaje` ya escrito (D-25).
+
+**Sólo en el detalle.** `GET /expedientes` —el listado paginado— no lo trae:
+son dos consultas más por renglón y ese listado pagina de a 100. Si algún día
+hace falta ahí, se resuelve en lote para toda la página, no por fila.
+
+**Alcance.** Un proyecto de una empresa fuera de `empresasVisibles` no sale en
+la lista y el expediente responde `200` igual. No hace falta capacidad nueva:
+quien puede ver el expediente puede ver bajo qué aviso trabaja esa persona.
+
+**Qué NO se hizo.** El renglón del empleado en `/empleados` sigue con
+`asignaciones: []` —codificado vacío desde antes de esto—, y las alertas del
+SIROC siguen sin aparecer en `GET /alertas`: las dos cosas van aparte.

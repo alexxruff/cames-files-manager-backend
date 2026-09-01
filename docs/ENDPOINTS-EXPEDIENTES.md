@@ -58,8 +58,10 @@ Base: `/api/v1`. Envelope, códigos y convenciones generales:
 }
 ```
 
-Cada renglón es **exactamente** lo que devuelve `GET /expedientes/:id`: se puede
-navegar de la tabla al detalle sin transformar nada.
+Cada renglón es lo que devuelve `GET /expedientes/:id` **menos `obras`**: se
+puede navegar de la tabla al detalle sin transformar nada, y el detalle añade el
+SIROC de su obra (D-77). Es la única diferencia, y es a propósito: resolverlo por
+renglón serían dos consultas más en un listado que pagina de a 100.
 
 Errores: `400` con un `estatus` que no existe; `404` si `empresaId` no es
 visible; `401` sin sesión.
@@ -94,9 +96,51 @@ la tabla.
     "porVencer": 0,
     "vencidos": 0,
     "estatus": "incomplete" // complete | incomplete | expiring | expired
-  }
+  },
+  "obras": [/* bajo qué SIROC trabaja; ver abajo */]
 }
 ```
+
+### `obras` — el SIROC de la obra donde trabaja (D-77)
+
+Un renglón **por asignación activa**, y `[]` si no está en ninguna obra: la llave
+siempre viene. Sólo en estas dos rutas de detalle; **el listado paginado no la
+trae**.
+
+```jsonc
+{
+  "asignacionId": "6a9f…c113",
+  "proyecto": { "_id": "6a89…b6e9", "nombre": "Torre Poniente" },
+  "contrato": {
+    "_id": "6a93…c971",
+    "numero": 2,
+    "nombre": "Estructura",
+    "fase": "Fase 2", // null si el proyecto es de un solo contrato
+    "fechaInicio": "2026-03-01",
+    "fechaFin": "2026-12-31",
+    "estado": "en_curso"
+  },
+  "siroc": {
+    "numero": "SIR-2026-0002",
+    "fechaRegistro": "2026-03-01",
+    "actualizaciones": []
+  },
+  "vigente": true,
+  "seguimientoSiroc": {/* el MISMO bloque que ya viaja con el contrato (D-76) */}
+}
+```
+
+**Píntenlo con `seguimientoSiroc.mensaje` y su `estado`**, igual que en la
+pantalla del contrato: es el mismo objeto y el mismo semáforo, no hay nada que
+recalcular.
+
+**`vigente`** dice si ese aviso cubre hoy (`true`) o si es **el último que estuvo
+activo** en una obra que ya pasó (`false`). No lo deduzcan de las fechas: la
+regla de cuál de las fases manda vive en el servidor y puede afinarse.
+
+Una obra cuyo proyecto no tiene ningún contrato con SIROC **no aparece**, y
+tampoco aparecen las obras de empresas fuera de su alcance — el expediente
+responde `200` igual.
 
 **`documentos` viene siempre con los 12 renglones**, entregados o no: es el
 checklist, no la lista de archivos. En el orden en que hay que pintarlos.
@@ -283,7 +327,7 @@ las dos acciones**: lo decide `aprobado`, no dos rutas distintas.
 
 Revisa la **versión vigente** (la última que se subió) del documento indicado.
 Responde **`200`** con la **misma forma** que el `GET` (`expediente`, `empleado`,
-`avance`).
+`avance`, `obras`).
 
 - Sólo funciona si el documento está en **`in_review`**: recién subido, sin
   revisar todavía. Si está `pending` (nada subido) o ya revisado (`validated` o

@@ -403,9 +403,9 @@ son los que más se movieron. `employees` cambió de eje entero (D‑27…D‑31
   warning: "employeeImportService: 1488 líneas, escribe en 5 colecciones. Ciclo con records."
 
 - domain: records
-  relevant_docs: [docs/ENDPOINTS-EXPEDIENTES.md, docs/modelo-datos.md §6, .claude/skills/records-domain, DECISIONES D-41..D-45]
-  relevant_source: [src/api/v1/records/, src/api/v1/checklistTemplates/, src/api/v1/accessLogs/, src/utils/domain/{progress,documentStatus,checklist,expiry}.js, src/services/storageService.js]
-  dependencies: [employees, affiliations, checklistTemplates, accessLogs, storage]
+  relevant_docs: [docs/ENDPOINTS-EXPEDIENTES.md, docs/modelo-datos.md §6, .claude/skills/records-domain, DECISIONES D-41..D-45, D-77]
+  relevant_source: [src/api/v1/records/, src/api/v1/checklistTemplates/, src/api/v1/accessLogs/, src/utils/domain/{progress,documentStatus,checklist,expiry,siroc}.js, src/services/storageService.js]
+  dependencies: [employees, affiliations, checklistTemplates, accessLogs, storage, assignments, projects, contracts]
   external_contracts: ["GET /expedientes[/:id]", "POST /expedientes/:id/documentos/:tipo", "POST …/revisar { aprobado }", "GET …/versiones/:v/url"]
   tests: [tests/integracion/records.test.js, tests/integracion/recordsList.test.js, tests/unitarias/domain/*]
   warning: "Divergencia conocida con el front en `faltantes` (pending vs pending+rejected)."

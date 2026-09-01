@@ -1,7 +1,8 @@
 const {
   PERIODO_SIROC_MESES,
   requiredSirocRenewals,
-  deriveSirocTracking
+  deriveSirocTracking,
+  pickCurrentSirocContract
 } = require('../../../src/utils/domain')
 
 const DIAS_ALERTA = 5
@@ -232,5 +233,91 @@ describe('domain/siroc — el aviso se actualiza cada 2 meses (D-76)', () => {
       expect(s.actualizacionesRegistradas).toBe(2)
       expect(s.actualizacionesPendientes).toBe(0)
     })
+  })
+})
+
+describe('pickCurrentSirocContract — cuál de las fases cubre a la gente', () => {
+  /** Una fase con SIROC, que es lo único que la hace elegible. */
+  const fase = (extra = {}) => ({
+    _id: extra._id ?? 'c1',
+    numero: extra.numero ?? 1,
+    fechaInicio: '2026-01-01',
+    fechaFin: '2026-03-01',
+    estado: 'en_curso',
+    activo: true,
+    siroc: { numero: 'SIROC-001', fechaRegistro: '2026-01-01', actualizaciones: [] },
+    ...extra
+  })
+
+  it('sin contratos, no hay nada que vincular', () => {
+    expect(pickCurrentSirocContract([], '2026-02-01')).toBeNull()
+  })
+
+  it('un contrato sin SIROC no cuenta: la fase existe, el aviso no', () => {
+    expect(pickCurrentSirocContract([fase({ siroc: null })], '2026-02-01')).toBeNull()
+  })
+
+  it('toma el que cubre el día de la consulta', () => {
+    const elegido = pickCurrentSirocContract(
+      [
+        fase({ _id: 'vieja', fechaInicio: '2025-01-01', fechaFin: '2025-06-01' }),
+        fase({ _id: 'hoy', fechaInicio: '2026-01-01', fechaFin: '2026-06-01' })
+      ],
+      '2026-02-01'
+    )
+
+    expect(elegido.contrato._id).toBe('hoy')
+    expect(elegido.vigente).toBe(true)
+  })
+
+  it('los bordes de la ventana cuentan como dentro', () => {
+    const uno = [fase({ fechaInicio: '2026-01-01', fechaFin: '2026-03-01' })]
+
+    expect(pickCurrentSirocContract(uno, '2026-01-01').vigente).toBe(true)
+    expect(pickCurrentSirocContract(uno, '2026-03-01').vigente).toBe(true)
+  })
+
+  it('si dos fases se traslapan, manda la que empezó después', () => {
+    const elegido = pickCurrentSirocContract(
+      [
+        fase({ _id: 'primera', fechaInicio: '2026-01-01', fechaFin: '2026-06-01' }),
+        fase({ _id: 'segunda', fechaInicio: '2026-02-01', fechaFin: '2026-08-01' })
+      ],
+      '2026-03-01'
+    )
+
+    expect(elegido.contrato._id).toBe('segunda')
+  })
+
+  describe('cuando ninguna cubre hoy', () => {
+    it('cae en la última que estuvo activa, aunque esté finalizada', () => {
+      const elegido = pickCurrentSirocContract(
+        [
+          fase({ _id: 'vieja', fechaInicio: '2025-01-01', fechaFin: '2025-06-01' }),
+          fase({
+            _id: 'ultima',
+            fechaInicio: '2025-07-01',
+            fechaFin: '2025-12-01',
+            estado: 'finalizado'
+          })
+        ],
+        '2026-02-01'
+      )
+
+      expect(elegido.contrato._id).toBe('ultima')
+      expect(elegido.vigente).toBe(false)
+    })
+
+    it('una fase que todavía no arranca no es «la última activa»', () => {
+      const futura = [fase({ fechaInicio: '2026-09-01', fechaFin: '2026-12-01' })]
+
+      expect(pickCurrentSirocContract(futura, '2026-02-01')).toBeNull()
+    })
+  })
+
+  it('nunca elige un contrato dado de baja, ni aunque sea el único', () => {
+    const cancelado = [fase({ activo: false })]
+
+    expect(pickCurrentSirocContract(cancelado, '2026-02-01')).toBeNull()
   })
 })

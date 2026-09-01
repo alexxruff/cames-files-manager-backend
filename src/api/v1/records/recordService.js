@@ -2,6 +2,9 @@ const mongoose = require('mongoose')
 const Record = require('./recordModel')
 const Employee = require('../employees/employeeModel')
 const Affiliation = require('../affiliations/affiliationModel')
+const Assignment = require('../assignments/assignmentModel')
+const Contract = require('../contracts/contractModel')
+const Project = require('../projects/projectModel')
 const ChecklistTemplate = require('../checklistTemplates/checklistTemplateModel')
 const AccessLog = require('../accessLogs/accessLogModel')
 const employeeService = require('../employees/employeeService')
@@ -16,7 +19,9 @@ const {
   unirRenglones,
   resolveTemplate,
   computeProgress,
-  resolveDocuments
+  resolveDocuments,
+  deriveSirocTracking,
+  pickCurrentSirocContract
 } = require('../../../utils/domain')
 const {
   EXPIRING_DOCUMENT_TYPES,
@@ -25,6 +30,7 @@ const {
   isSensitiveDocument
 } = require('../../../constants')
 const { can, CAPABILITIES } = require('../../../utils/permissions')
+const { empresaEsVisible } = require('../../../middlewares/scopeMiddleware')
 
 const POR_PAGINA_DEFECTO = 25
 const POR_PAGINA_MAXIMO = 100
@@ -215,7 +221,10 @@ class RecordService {
     const renglon = await employeeService.getById(empleadoId, contexto)
     const expediente = await this.#asegurarConChecklist(empleadoId)
 
-    return this.#formatear(expediente, renglon)
+    return {
+      ...this.#formatear(expediente, renglon),
+      obras: await this.#obrasDe(empleadoId, contexto)
+    }
   }
 
   async porId(expedienteId, contexto = {}) {
@@ -227,7 +236,10 @@ class RecordService {
 
     // El alcance es el del empleado: si no lo ve, el expediente no existe para él.
     const renglon = await employeeService.getById(expediente.empleadoId, contexto)
-    return this.#formatear(await this.#rellenarSiEstaVacio(expediente), renglon)
+    return {
+      ...this.#formatear(await this.#rellenarSiEstaVacio(expediente), renglon),
+      obras: await this.#obrasDe(expediente.empleadoId, contexto)
+    }
   }
 
   /**
@@ -340,10 +352,13 @@ class RecordService {
       throw error
     }
 
-    return this.#formatear(
-      expediente,
-      await employeeService.getById(empleado._id, contexto)
-    )
+    return {
+      ...this.#formatear(
+        expediente,
+        await employeeService.getById(empleado._id, contexto)
+      ),
+      obras: await this.#obrasDe(empleado._id, contexto)
+    }
   }
 
   /**
@@ -387,10 +402,13 @@ class RecordService {
 
     await expediente.save()
 
-    return this.#formatear(
-      expediente,
-      await employeeService.getById(expediente.empleadoId, contexto)
-    )
+    return {
+      ...this.#formatear(
+        expediente,
+        await employeeService.getById(expediente.empleadoId, contexto)
+      ),
+      obras: await this.#obrasDe(expediente.empleadoId, contexto)
+    }
   }
 
   /**
@@ -623,6 +641,90 @@ class RecordService {
       empleado: renglonEmpleado,
       avance: computeProgress(json.documentos)
     }
+  }
+
+  /**
+   * Las obras de la persona, con el SIROC que la cubre — **derivado al leer**.
+   *
+   * No hay ningún id nuevo guardado en ninguna parte: la cadena
+   * `empleado → asignación activa → proyecto → contrato → siroc` ya está
+   * completa en la base, y guardar el eslabón final la desincronizaría en cuanto
+   * alguien refrende el aviso o cierre una fase. Mismo criterio que D-71, que
+   * resolvió la trazabilidad de la asignación sin guardar nada.
+   *
+   * Cuál de los contratos del proyecto manda lo decide
+   * `pickCurrentSirocContract`: el que cubre hoy y, si ninguno, el último que
+   * estuvo activo. Un proyecto sin contratos con SIROC no aparece.
+   *
+   * El alcance es el de siempre: un proyecto de una empresa que quien pregunta
+   * no ve **no sale en la lista**, sin avisar de su existencia.
+   *
+   * @returns {Promise<object[]>} vacío si no está asignado a ninguna obra
+   */
+  async #obrasDe(empleadoId, contexto = {}) {
+    const asignaciones = await Assignment.find({ empleadoId, activo: true })
+    if (asignaciones.length === 0) return []
+
+    const proyectos = await Project.find({
+      _id: { $in: asignaciones.map((a) => a.proyectoId) }
+    }).select('nombre empresaId')
+
+    const visibles = new Map(
+      proyectos
+        .filter((p) =>
+          empresaEsVisible({ empresasVisibles: contexto.empresasVisibles }, p.empresaId)
+        )
+        .map((p) => [p._id.toString(), p])
+    )
+    if (visibles.size === 0) return []
+
+    const contratos = await Contract.find({ proyectoId: { $in: [...visibles.keys()] } })
+
+    const porProyecto = new Map()
+    for (const contrato of contratos) {
+      const clave = contrato.proyectoId.toString()
+      if (!porProyecto.has(clave)) porProyecto.set(clave, [])
+      porProyecto.get(clave).push(contrato.toJSON())
+    }
+
+    const filas = []
+    for (const asignacion of asignaciones) {
+      const clave = asignacion.proyectoId.toString()
+      const proyecto = visibles.get(clave)
+      if (!proyecto) continue
+
+      const elegido = pickCurrentSirocContract(porProyecto.get(clave) ?? [])
+      if (!elegido) continue
+
+      const { contrato, vigente } = elegido
+      filas.push({
+        asignacionId: asignacion._id.toString(),
+        proyecto: { _id: proyecto._id.toString(), nombre: proyecto.nombre },
+        contrato: {
+          _id: contrato._id,
+          numero: contrato.numero,
+          nombre: contrato.nombre,
+          fase: contrato.fase,
+          fechaInicio: contrato.fechaInicio,
+          fechaFin: contrato.fechaFin,
+          estado: contrato.estado
+        },
+        siroc: contrato.siroc,
+        /*
+         * `false` = la obra ya pasó y esto es el último aviso que la cubrió. Se
+         * dice explícito para que el front no tenga que compararlo con hoy: la
+         * misma razón por la que `seguimientoSiroc` trae su `mensaje` hecho.
+         */
+        vigente,
+        seguimientoSiroc: deriveSirocTracking(contrato)
+      })
+    }
+
+    // Primero lo que cubre hoy; entre iguales, por nombre de obra.
+    return filas.sort((a, b) => {
+      if (a.vigente !== b.vigente) return a.vigente ? -1 : 1
+      return a.proyecto.nombre.localeCompare(b.proyecto.nombre)
+    })
   }
 }
 

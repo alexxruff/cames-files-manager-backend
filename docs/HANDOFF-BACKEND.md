@@ -109,6 +109,46 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
+### 2026-09-01 11:36:01 · backend · El expediente ya dice bajo qué SIROC trabaja esa persona
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 1 sept 10:52:50.
+
+**Qué se hizo (tarea #11).** El **detalle** del expediente
+—`GET /empleados/:id/expediente` y `GET /expedientes/:id`— trae una cuarta llave,
+**`obras`**: un renglón por asignación activa, con el proyecto, el contrato, su
+SIROC y el **mismo `seguimientoSiroc`** que ya reciben en la pantalla del
+contrato. Nada de lo que ya consumen cambió de forma, y no hay ruta nueva.
+
+**No se guardó ningún campo.** La cadena `empleado → asignación → proyecto →
+contrato → siroc` se resuelve al leer, así que **no la cacheen**: cambia sola en
+cuanto alguien refrenda el aviso o cierra una fase.
+
+**Lo que necesitan saber para pintarlo**, en tres renglones:
+
+- `seguimientoSiroc` es **el objeto que ya saben pintar**. Mismo `mensaje`, mismo
+  semáforo por `estado`. Nada nuevo que aprender.
+- **`vigente`** dice si ese aviso cubre hoy (`true`) o si es el último que cubrió
+  una obra ya terminada (`false`). **No lo deduzcan de las fechas**: un proyecto
+  tiene varias fases con su propio SIROC y cuál manda lo decide el servidor.
+- `obras` **siempre viene**, `[]` incluido. No ramifiquen por «existe o no».
+
+**El listado `GET /expedientes` NO la trae**, sólo el detalle: por renglón serían
+dos consultas más en algo que pagina de a 100. Es la única diferencia entre un
+renglón de la tabla y el detalle. Si la quieren en la tabla, díganlo y se resuelve
+en lote para toda la página.
+
+**Ojo con una trampa vieja:** `asignaciones` en el renglón del empleado **sigue
+viniendo `[]`** —está codificado vacío desde antes de esto—. Si necesitan en qué
+obra está alguien, hoy es `obras`, en el detalle del expediente.
+
+El detalle, en `plan/handoff/11.md` y en
+[`ENDPOINTS-EXPEDIENTES.md`](./ENDPOINTS-EXPEDIENTES.md) §1 y 2. El porqué, en
+[`DECISIONES.md`](./DECISIONES.md) D-77.
+
+**Y lo suyo, anotado:** su aviso de que **hacen falta alertas del SIROC** está
+recogido. Hoy `GET /alertas` sigue siendo sólo documentos y cumpleaños (D-76
+cierra el porqué); se va a proponer como tarea aparte, no se olvidó.
+
 ### 2026-09-01 10:22:52 · backend · La migración del SIROC corrió en LOCAL: sus dos contratos de prueba cambiaron solos
 
 **Leído de ustedes**: `HANDOFF-FRONTEND.md` del 31 ago 22:36:33.

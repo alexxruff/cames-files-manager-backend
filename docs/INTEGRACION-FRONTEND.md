@@ -39,7 +39,7 @@ pendientes. Dónde está el detalle de cada familia:
 | `/empleados/importar` — el `.xlsx` de nómina | `ENDPOINTS-IMPORTACION.md`                            |
 | `/empresas`, `/adscripciones`, `/carteras`   | `ENDPOINTS-ADSCRIPCIONES.md`                          |
 | `/proyectos`, `/asignaciones`, `/contratos`  | `ENDPOINTS-PROYECTOS.md`                              |
-| `/expedientes` y sus documentos              | `ENDPOINTS-EXPEDIENTES.md`                            |
+| `/expedientes` y sus documentos              | `ENDPOINTS-EXPEDIENTES.md` (§`obras`: el SIROC, D-77) |
 | `/alertas`                                   | `ENDPOINTS-ALERTAS.md`                                |
 | `/areas`                                     | `ENDPOINTS-AREAS.md`                                  |
 | `/clientes`, `/categorias`                   | `CONTRATO-API.md`                                     |
@@ -353,6 +353,11 @@ export interface RenglonEmpleado {
 
 **El contrato ya no cambia** cuando implementemos proyectos y expedientes: se
 llenan `asignaciones`, `avanceExpediente` y `expedienteId`, que hoy vienen vacíos.
+
+> **Ojo con `asignaciones`: sigue viniendo `[]`** en el renglón del empleado,
+> también después de D-77. Si lo que necesitan es **en qué obra está y bajo qué
+> SIROC**, eso viaja en `obras`, en el **detalle del expediente** —no en el
+> renglón y no en el listado—. Ver `ENDPOINTS-EXPEDIENTES.md`.
 
 ---
 

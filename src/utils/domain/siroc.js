@@ -184,10 +184,67 @@ function fechasDeActualizacion(siroc) {
 
 const enDias = (n) => `${n} ${n === 1 ? 'día' : 'días'}`
 
+/**
+ * De los contratos de UN proyecto, cuál es el SIROC que le toca a su gente.
+ *
+ * Un proyecto tiene varios contratos —sus fases—, y cada uno puede traer su
+ * propio aviso de obra. Quien está asignado al proyecto está bajo el que cubre
+ * **el día en que se pregunta**:
+ *
+ * 1. El contrato cuya ventana `fechaInicio`–`fechaFin` contiene `hoy`. Si hay
+ *    varios —fases que se traslapan—, el que empezó después.
+ * 2. Si ninguno la contiene, **el último que estuvo activo**: el de `fechaFin`
+ *    más grande de entre las ya pasadas, aunque esté `finalizado`. La obra
+ *    terminó, pero el aviso bajo el que trabajó esa persona sigue siendo un dato
+ *    de su expediente.
+ *
+ * Nunca uno con `activo: false` —capturado por error o cancelado, D-70— ni uno
+ * cuya ventana esté entera por delante: ése ni cubre hoy ni cubrió nunca a
+ * nadie. Un proyecto donde sólo hay contratos futuros no aporta SIROC todavía.
+ *
+ * @param {object[]} contratos ya serializados, del MISMO proyecto
+ * @param {string} [hoy] fecha de calendario con la que se compara
+ * @returns {{contrato: object, vigente: boolean}|null}
+ */
+function pickCurrentSirocContract(contratos, hoy = today()) {
+  const conSiroc = (contratos ?? []).filter(
+    (c) => c && c.activo !== false && c.siroc?.numero && c.fechaInicio && c.fechaFin
+  )
+  if (conSiroc.length === 0) return null
+
+  // `!isAfter(inicio, hoy)` y no `isBefore`: el día que arranca la fase ya cuenta.
+  const vigentes = conSiroc.filter(
+    (c) => !isAfter(c.fechaInicio, hoy) && !isBefore(c.fechaFin, hoy)
+  )
+  if (vigentes.length > 0) {
+    return { contrato: masReciente(vigentes, 'fechaInicio'), vigente: true }
+  }
+
+  const pasados = conSiroc.filter((c) => isBefore(c.fechaFin, hoy))
+  if (pasados.length === 0) return null
+
+  return { contrato: masReciente(pasados, 'fechaFin'), vigente: false }
+}
+
+/** El de la fecha más grande; a igualdad, el que empezó después. */
+function masReciente(contratos, campo) {
+  return contratos.reduce((mejor, actual) => {
+    if (isAfter(actual[campo], mejor[campo])) return actual
+    if (
+      actual[campo] === mejor[campo] &&
+      isAfter(actual.fechaInicio, mejor.fechaInicio)
+    ) {
+      return actual
+    }
+    return mejor
+  })
+}
+
 module.exports = {
   PERIODO_SIROC_MESES,
   ESTADOS_SIROC,
   requiredSirocRenewals,
   deriveSirocTracking,
-  mensajeDeSiroc
+  mensajeDeSiroc,
+  pickCurrentSirocContract
 }
