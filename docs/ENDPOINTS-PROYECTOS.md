@@ -1,46 +1,49 @@
 # Carteras, proyectos y asignaciones
 
-Referencia de los **25 endpoints** de este dominio para el equipo de front.
+Referencia de los **27 endpoints** de este dominio para el equipo de front.
 
-> **Actualizado hasta la Fase 8 (D-70 a D-72).** Trae **contratos y SIROC** (§4,
-> que faltaban en este documento), el endpoint `GET /asignaciones/:id` y **dos
-> campos nuevos** en cada `Asignacion`. Nada de lo anterior cambió de forma: todo
-> es aditivo. Lo único que se comporta distinto es el `message` del alta de
-> asignaciones, que ahora puede traer un aviso — ver «Coherencia del registro
-> patronal» en §3.
+> **Actualizado hasta D-76.** Lo último es la **actualización del SIROC cada dos
+> meses** (§4.1): dos endpoints nuevos, `siroc.actualizaciones` dentro del SIROC y
+> el bloque `seguimientoSiroc` en **todo** `Contrato`. Es aditivo: nada de lo que
+> ya consumen cambió de forma. Antes de eso, la Fase 8 (D-70 a D-72) trajo
+> contratos y SIROC, `GET /asignaciones/:id` y dos campos nuevos en cada
+> `Asignacion`; el único comportamiento distinto sigue siendo el `message` del
+> alta de asignaciones, que puede traer un aviso — ver §3.
 
 Base: `/api/v1`. Envelope, códigos y convenciones generales: ver
 [`INTEGRACION-FRONTEND.md`](./INTEGRACION-FRONTEND.md).
 
 ## Índice
 
-| #   | Endpoint                                | Quién                    |
-| --- | --------------------------------------- | ------------------------ |
-| 1   | `GET /empresas/:id/clientes`            | sesión                   |
-| 2   | `POST /empresas/:id/clientes`           | `rh_admin` · `jefe_area` |
-| 3   | `PATCH /carteras/:id`                   | `rh_admin` · `jefe_area` |
-| 4   | `PATCH /carteras/:id/estado`            | `rh_admin` · `jefe_area` |
-| 5   | `GET /proyectos`                        | sesión                   |
-| 6   | `GET /proyectos/:id`                    | sesión                   |
-| 7   | `POST /proyectos`                       | `rh_admin` · `jefe_area` |
-| 8   | `PATCH /proyectos/:id`                  | `rh_admin` · `jefe_area` |
-| 9   | `POST /proyectos/:id/aplazar`           | `rh_admin` · `jefe_area` |
-| 10  | `POST /proyectos/:id/finalizar`         | `rh_admin` · `jefe_area` |
-| 11  | `POST /proyectos/:id/reabrir`           | `rh_admin` · `jefe_area` |
-| 12  | `POST /proyectos/:id/categorias/clonar` | `rh_admin` · `jefe_area` |
-| 13  | `GET /proyectos/:id/asignables`         | sesión                   |
-| 14  | `GET /proyectos/:id/asignaciones`       | sesión                   |
-| 15  | `POST /proyectos/:id/asignaciones`      | asignar a proyectos      |
-| 16  | `GET /asignaciones/:id`                 | sesión                   |
-| 17  | `PATCH /asignaciones/:id/salida`        | asignar a proyectos      |
-| 18  | `GET /proyectos/:id/contratos`          | sesión                   |
-| 19  | `POST /proyectos/:id/contratos`         | `rh_admin` · `jefe_area` |
-| 20  | `PATCH /contratos/:id`                  | `rh_admin` · `jefe_area` |
-| 21  | `PUT /contratos/:id/siroc`              | `rh_admin` · `jefe_area` |
-| 22  | `DELETE /contratos/:id/siroc`           | `rh_admin` · `jefe_area` |
-| 23  | `POST /contratos/:id/finalizar`         | `rh_admin` · `jefe_area` |
-| 24  | `POST /contratos/:id/reabrir`           | `rh_admin` · `jefe_area` |
-| 25  | `PATCH /contratos/:id/estado`           | `rh_admin` · `jefe_area` |
+| #   | Endpoint                                             | Quién                    |
+| --- | ---------------------------------------------------- | ------------------------ |
+| 1   | `GET /empresas/:id/clientes`                         | sesión                   |
+| 2   | `POST /empresas/:id/clientes`                        | `rh_admin` · `jefe_area` |
+| 3   | `PATCH /carteras/:id`                                | `rh_admin` · `jefe_area` |
+| 4   | `PATCH /carteras/:id/estado`                         | `rh_admin` · `jefe_area` |
+| 5   | `GET /proyectos`                                     | sesión                   |
+| 6   | `GET /proyectos/:id`                                 | sesión                   |
+| 7   | `POST /proyectos`                                    | `rh_admin` · `jefe_area` |
+| 8   | `PATCH /proyectos/:id`                               | `rh_admin` · `jefe_area` |
+| 9   | `POST /proyectos/:id/aplazar`                        | `rh_admin` · `jefe_area` |
+| 10  | `POST /proyectos/:id/finalizar`                      | `rh_admin` · `jefe_area` |
+| 11  | `POST /proyectos/:id/reabrir`                        | `rh_admin` · `jefe_area` |
+| 12  | `POST /proyectos/:id/categorias/clonar`              | `rh_admin` · `jefe_area` |
+| 13  | `GET /proyectos/:id/asignables`                      | sesión                   |
+| 14  | `GET /proyectos/:id/asignaciones`                    | sesión                   |
+| 15  | `POST /proyectos/:id/asignaciones`                   | asignar a proyectos      |
+| 16  | `GET /asignaciones/:id`                              | sesión                   |
+| 17  | `PATCH /asignaciones/:id/salida`                     | asignar a proyectos      |
+| 18  | `GET /proyectos/:id/contratos`                       | sesión                   |
+| 19  | `POST /proyectos/:id/contratos`                      | `rh_admin` · `jefe_area` |
+| 20  | `PATCH /contratos/:id`                               | `rh_admin` · `jefe_area` |
+| 21  | `PUT /contratos/:id/siroc`                           | `rh_admin` · `jefe_area` |
+| 22  | `DELETE /contratos/:id/siroc`                        | `rh_admin` · `jefe_area` |
+| 23  | `POST /contratos/:id/siroc/actualizaciones`          | `rh_admin` · `jefe_area` |
+| 24  | `DELETE /contratos/:id/siroc/actualizaciones/ultima` | `rh_admin` · `jefe_area` |
+| 25  | `POST /contratos/:id/finalizar`                      | `rh_admin` · `jefe_area` |
+| 26  | `POST /contratos/:id/reabrir`                        | `rh_admin` · `jefe_area` |
+| 27  | `PATCH /contratos/:id/estado`                        | `rh_admin` · `jefe_area` |
 
 > **Orden obligado para probar.** Un proyecto no se puede crear si su cliente no
 > está antes en la cartera de la empresa:
@@ -557,14 +560,20 @@ interface Contrato {
   siroc: Siroc | null // null hasta que se registre
   estado: 'en_curso' | 'finalizado'
   activo: boolean // la BAJA, que no es lo mismo que `estado`
+  seguimientoSiroc: SeguimientoSiroc // derivado al leer; SIEMPRE viene, ver §4.1
   createdAt: string
   updatedAt: string
 }
 
 interface Siroc {
   numero: string // único en TODO el sistema; el servidor lo pasa a MAYÚSCULAS
-  fechaRegistro: string // 'YYYY-MM-DD'
-  vigenciaHasta: string | null // puede no conocerse al registrarlo
+  fechaRegistro: string // 'YYYY-MM-DD'; la ÚNICA fecha del aviso — no hay final
+  actualizaciones: SirocActualizacion[] // los refrendos de cada 2 meses; [] al nacer
+}
+
+interface SirocActualizacion {
+  fecha: string // 'YYYY-MM-DD'
+  nota: string | null // folio del acuse, quién fue… máximo 200 caracteres
 }
 ```
 
@@ -634,18 +643,26 @@ a `null`. Mandar sólo uno de ellos no toca el otro ni las fechas.
 
 ### `PUT /contratos/:id/siroc`
 
-**`PUT` y no `PATCH` porque reemplaza el SIROC entero.** Mandar sólo la vigencia y
+**`PUT` y no `PATCH` porque reemplaza el SIROC entero.** Mandar sólo la fecha y
 dejar el número anterior sería exactamente la mezcla que produce avisos de obra a
 medias. Sirve para registrarlo y para corregirlo.
+
+**Del aviso se capturan dos datos y ya**, y ninguno es una fecha final (D-76):
 
 ```jsonc
 {
   "numero": "SIR-2026-0001", // obligatorio, 3 a 40 caracteres
-  "fechaRegistro": "2026-09-05", // obligatoria
-  "vigenciaHasta": "2027-09-05" // opcional; null si todavía no se sabe
+  "fechaRegistro": "2026-09-05" // obligatoria; la ÚNICA fecha del SIROC
 }
 // data: { "contrato": { … } }   → 200, no 201
 ```
+
+**Quita `vigenciaHasta` del formulario.** El aviso vale dos meses contados desde
+`fechaRegistro` —o desde la última actualización—, así que su vigencia no es un
+dato que alguien teclee: viene derivada en
+`seguimientoSiroc.vigenciaPeriodoHasta`, y es la que dispara el aviso de que hay
+que refrendar. Mientras el campo siga en la pantalla, mandarlo **no rompe nada**:
+el servidor lo ignora, no lo guarda y no lo devuelve.
 
 El servidor **lo guarda en mayúsculas**: si lo muestras después de capturarlo, usa
 lo que devuelve la respuesta y no lo que se tecleó.
@@ -671,7 +688,8 @@ choque**, que es lo que necesita quien captura:
 Ese `proyectoId` puede ser de un proyecto **que el usuario no ve** (otra empresa).
 Muestra el nombre; no armes un enlace que vaya a dar `404`.
 
-`400` también si `vigenciaHasta` es anterior a `fechaRegistro`.
+`400` si `fechaRegistro` no viene o no es `AAAA-MM-DD`, y también si quedara
+**después** de una actualización ya registrada.
 
 ### `DELETE /contratos/:id/siroc`
 
@@ -685,6 +703,110 @@ contrato equivocado dejaría ese número bloqueado para siempre.
 
 `400` si el contrato no tenía SIROC. Quitarlo **también destraba el
 `registroObraId` del proyecto**, si ningún otro contrato tiene SIROC.
+
+## 4.1 El SIROC se actualiza cada dos meses (D-76)
+
+El aviso de obra **se refrenda cada dos meses conservando el mismo número**. No es
+un SIROC nuevo: `siroc.numero` no cambia nunca al actualizarlo, y lo que crece es
+`siroc.actualizaciones`.
+
+Todo `Contrato` trae `seguimientoSiroc` — **siempre, con SIROC o sin él**. Se
+**deriva en cada lectura**: no hay nada que marcar ni apagar, y el mismo contrato
+responde distinto mañana. No lo caches.
+
+```ts
+interface SeguimientoSiroc {
+  periodoMeses: 2
+  actualizacionesRequeridas: number // predichas desde fechaInicio/fechaFin
+  actualizacionesRegistradas: number // el contador de SIROC actualizados
+  actualizacionesPendientes: number // requeridas − registradas, nunca negativo
+  ultimaActualizacion: string | null // 'YYYY-MM-DD'
+  vigenciaPeriodoHasta: string | null // cuándo cumple los 2 meses; null sin SIROC
+  diasParaActualizacion: number | null // negativo si ya pasó; null sin SIROC
+  requiereActualizacion: boolean // true SÓLO con estado 'vencida'
+  estado: 'sin_siroc' | 'no_requiere' | 'al_dia' | 'por_vencer' | 'vencida'
+  mensaje: string // en español, listo para pintar tal cual
+}
+```
+
+| `estado`      | Cuándo                                                               | Qué pintar                 |
+| ------------- | -------------------------------------------------------------------- | -------------------------- |
+| `sin_siroc`   | El contrato todavía no tiene SIROC                                   | Nada urgente               |
+| `no_requiere` | Contrato finalizado o dado de baja, o la ventana cubre su `fechaFin` | Nada                       |
+| `al_dia`      | Faltan más de 5 días (umbral del servidor, configurable)             | Verde, con la fecha        |
+| `por_vencer`  | Faltan 5 días o menos; el día justo entra aquí, no en `vencida`      | Aviso, sin bloquear        |
+| `vencida`     | Ya pasaron los dos meses y el contrato **sigue en curso**            | Alerta: hay que actualizar |
+
+**`requiereActualizacion` es `true` sólo con `vencida`.** `por_vencer` avisa con
+anticipación, pero todavía no se debe nada — si el semáforo usa el booleano y el
+texto usa `estado`, van a decir cosas distintas a propósito.
+
+Los dos cálculos que conviene no repetir en el front:
+
+- **Cuántas pide el contrato** son las ventanas de dos meses que hacen falta para
+  cubrir `fechaInicio → fechaFin`, **menos la primera**, que ya la cubre el SIROC
+  original. Un contrato de dos meses justos pide **cero**; uno de seis, **dos**.
+  Sale desde el alta, antes de que exista el SIROC.
+- **La ventana vigente corre desde la última actualización**, o desde
+  `fechaRegistro` si no hay ninguna. **No desde el inicio del contrato**: un SIROC
+  tramitado tarde vence tarde.
+
+Y un tercero, que es el que hace falta pintar bien: **«la ventana cubre su
+`fechaFin`» sólo aplica mientras el contrato siga dentro de sus fechas.** Un
+contrato que ya pasó su `fechaFin` y que nadie finalizó **sigue en curso** —para
+el IMSS la obra sigue abierta—, así que su aviso vence igual y pasa a
+`por_vencer` y luego a `vencida` como cualquier otro. En ese caso
+`actualizacionesRequeridas` puede valer `0` —sus fechas no preveían ninguna—
+mientras `actualizacionesPendientes` vale `1`: la predicción es del contrato, la
+deuda es del calendario. Si pintas «faltan N», usa `actualizacionesPendientes`,
+no la resta.
+
+### `POST /contratos/:id/siroc/actualizaciones` → `201`
+
+Registra que el SIROC se refrendó. **Los dos campos son opcionales:**
+
+```jsonc
+{
+  "fecha": "2026-11-12", // opcional; sin ella se asume HOY, que es el caso normal
+  "nota": "Acuse 4471" // opcional; máximo 200 caracteres
+}
+// data: { "contrato": { … } }   // con seguimientoSiroc ya recalculado
+```
+
+**No mandes `numero`**: actualizar el SIROC conserva el mismo, y el `400` lo dice.
+`fechaRegistro` tampoco: va por `PUT /contratos/:id/siroc`. Y `vigenciaHasta` no
+existe en ninguna de las dos: la vigencia se deriva.
+
+| Código | Cuándo                                                     | `message`                                                            |
+| ------ | ---------------------------------------------------------- | -------------------------------------------------------------------- |
+| `400`  | El contrato no tiene SIROC                                 | `Ese contrato no tiene SIROC registrado`                             |
+| `400`  | Contrato finalizado o dado de baja                         | `El contrato ya no está en curso: su SIROC no necesita actualizarse` |
+| `400`  | `fecha` futura                                             | `La actualización del SIROC no puede tener fecha futura`             |
+| `400`  | `fecha` anterior al registro o a la actualización anterior | `La actualización no puede ser anterior al registro del SIROC (…)`   |
+| `400`  | Campos que no van aquí (`numero`, `fechaRegistro`…)        | Lista los campos y dice por dónde va cada uno (en `errors[0].msg`)   |
+| `404`  | Contrato inexistente o de otra empresa                     | `El contrato no existe`                                              |
+
+Ojo: los `400` de negocio traen el texto en **`message`**; sólo los de validación
+de campos traen `errors[0].msg`. Es la misma convención del resto del recurso.
+
+### `DELETE /contratos/:id/siroc/actualizaciones/ultima`
+
+Deshace **la última** actualización, para cuando se capturó con la fecha
+equivocada. Sólo la última: borrar una de en medio reescribiría la historia, y una
+fecha mal tecleada corre la ventana y hace que el contrato **calle avisos que
+debería dar**.
+
+```jsonc
+// data: { "contrato": { … } }   // 200
+```
+
+`400` si no hay ninguna que deshacer.
+
+**Corregir el SIROC con `PUT` conserva sus actualizaciones**: son del mismo aviso.
+Para empezar de cero está `DELETE /contratos/:id/siroc`, que se lleva el aviso
+entero. Y si la nueva `fechaRegistro` quedara **después** de una actualización ya
+registrada, el `PUT` responde `400` diciéndolo, en vez de dejar el SIROC en un
+estado imposible.
 
 ### `POST /contratos/:id/finalizar` · `/reabrir`
 

@@ -61,6 +61,7 @@ dos versiones difieran manda ésta.
 | `GET /adscripciones` — listado global, de todas las empresas de un tirón | **No existe**, y no está pedido: se listan por empresa |
 | `/areas` — el catálogo, con las temporales de la nómina | **Implementado y conectado** |
 | `/proyectos/:id/contratos` y `/contratos/:id[/siroc]` | **Implementado y conectado** |
+| Actualización del SIROC cada 2 meses (`/contratos/:id/siroc/actualizaciones`) | **Implementado**, pendiente de que el front lo consuma |
 | Importación de colaboradores desde el `.xlsx` de nómina | **Implementado y conectado** |
 | Expedientes, documentos y su revisión | **Implementado y conectado** |
 | Listado paginado de expedientes (`GET /expedientes`) | **Implementado y conectado** |
@@ -739,7 +740,9 @@ Sacar un cliente de la cartera falla si la empresa tiene proyectos con él.
 | `PATCH` | `/asignaciones/:id/salida` | `{ fechaSalida }` — cierra, no borra |
 | `GET` `POST` | `/proyectos/:id/contratos` | `?incluirInactivos=`; el alta es `{ nombre?, fase?, fechaInicio, fechaFin }` |
 | `PATCH` | `/contratos/:id` | **Sólo** `nombre`, `fase`, `fechaInicio`, `fechaFin` |
-| `PUT` `DELETE` | `/contratos/:id/siroc` | `{ numero, fechaRegistro, vigenciaHasta? }` — reemplaza entero |
+| `PUT` `DELETE` | `/contratos/:id/siroc` | `{ numero, fechaRegistro }` — el aviso no tiene fecha final (D-76); reemplaza entero, conservando sus actualizaciones |
+| `POST` | `/contratos/:id/siroc/actualizaciones` | `{ fecha?, nota? }` — el refrendo de cada 2 meses; el número no cambia (D-76) |
+| `DELETE` | `/contratos/:id/siroc/actualizaciones/ultima` | Deshace la última, capturada mal |
 | `POST` | `/contratos/:id/finalizar` · `/reabrir` | Mueven `estado` |
 | `PATCH` | `/contratos/:id/estado` | `{ activo }` — mueve **`activo`**, la baja |
 
@@ -777,6 +780,13 @@ después de capturarlo, hay que usar lo que devuelve la respuesta. Repetirlo es
 proyectoNombre }` — se muestra el nombre pero **no se enlaza**: puede ser un
 proyecto de otra empresa y el enlace daría `404`. Quitarlo con `DELETE` libera el
 número.
+
+**El SIROC se actualiza cada dos meses conservando el mismo número** (D-76). Cada
+refrendo se registra con `POST /contratos/:id/siroc/actualizaciones` y todo
+contrato viaja con `seguimientoSiroc` —cuántas actualizaciones pide, cuántas
+lleva, cuándo cumple los dos meses y si ya urge—, **derivado en cada lectura**
+como el resto de los estados de esta plataforma. La forma exacta está en
+[`CONTRATO-API.md`](./CONTRATO-API.md) § «El SIROC se actualiza cada dos meses».
 
 **Qué le traba cada contrato al proyecto:**
 

@@ -311,35 +311,45 @@ describe('Contratos de un proyecto', () => {
       const alta = await request(app)
         .put(`${CONTRATOS}/${contrato._id}/siroc`)
         .set(auth(e.token))
-        .send({ ...SIROC, vigenciaHasta: '2027-09-10' })
+        .send(SIROC)
 
       expect(alta.status).toBe(200)
       expect(alta.body.data.contrato.siroc).toEqual({
         numero: 'SIR-2026-0001',
         fechaRegistro: '2026-09-10',
-        vigenciaHasta: '2027-09-10'
+        // Nace sin renovaciones: se agregan cada dos meses (D-76).
+        actualizaciones: []
       })
 
       // Corregirlo con su MISMO número no choca consigo mismo.
       const correccion = await request(app)
         .put(`${CONTRATOS}/${contrato._id}/siroc`)
         .set(auth(e.token))
-        .send({ ...SIROC, vigenciaHasta: '2027-12-31' })
+        .send({ ...SIROC, fechaRegistro: '2026-09-15' })
       expect(correccion.status).toBe(200)
-      expect(correccion.body.data.contrato.siroc.vigenciaHasta).toBe('2027-12-31')
+      expect(correccion.body.data.contrato.siroc.fechaRegistro).toBe('2026-09-15')
     })
 
-    it('la vigencia es opcional y se devuelve en null, nunca vacía', async () => {
+    /*
+     * Del aviso se capturan dos datos y ya: número y fecha de registro (D-76). La
+     * vigencia se deriva —dos meses—, y mientras el front quita el campo de su
+     * formulario, mandarla no rompe: se ignora.
+     */
+    it('no tiene fecha final: `vigenciaHasta` no se guarda ni se devuelve', async () => {
       const e = await escenario()
       const contrato = (await crear(e)).body.data.contrato
 
       const res = await request(app)
         .put(`${CONTRATOS}/${contrato._id}/siroc`)
         .set(auth(e.token))
-        .send(SIROC)
+        .send({ ...SIROC, vigenciaHasta: '2027-09-10' })
 
       expect(res.status).toBe(200)
-      expect(res.body.data.contrato.siroc.vigenciaHasta).toBeNull()
+      expect(res.body.data.contrato.siroc).not.toHaveProperty('vigenciaHasta')
+      // Lo que sí sale es la vigencia derivada, a los dos meses del registro.
+      expect(res.body.data.contrato.seguimientoSiroc.vigenciaPeriodoHasta).toBe(
+        '2026-11-10'
+      )
     })
 
     it('es ÚNICO en todo el sistema: 409 diciendo dónde está el otro (G4)', async () => {
@@ -404,17 +414,17 @@ describe('Contratos de un proyecto', () => {
       expect(reuso.status).toBe(200)
     })
 
-    it('400 si la vigencia es anterior al registro', async () => {
+    it('400 si la fecha de registro no es una fecha de calendario', async () => {
       const e = await escenario()
       const contrato = (await crear(e)).body.data.contrato
 
       const res = await request(app)
         .put(`${CONTRATOS}/${contrato._id}/siroc`)
         .set(auth(e.token))
-        .send({ ...SIROC, vigenciaHasta: '2026-01-01' })
+        .send({ ...SIROC, fechaRegistro: '10/09/2026' })
 
       expect(res.status).toBe(400)
-      expect(res.body.errors[0].msg).toMatch(/anterior a su fecha de registro/i)
+      expect(res.body.errors[0].msg).toMatch(/AAAA-MM-DD/)
     })
   })
 

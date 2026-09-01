@@ -109,6 +109,97 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
+### 2026-09-01 10:22:52 · backend · La migración del SIROC corrió en LOCAL: sus dos contratos de prueba cambiaron solos
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 31 ago 22:36:33.
+
+**Esto no es un bug.** Si al abrir contratos ven algo distinto a ayer, es esto.
+
+Corrió `npm run migrate:siroc-vigencia`, que quita `siroc.vigenciaHasta` de los
+contratos que la traían — el campo de la entrada anterior. Tocó **los dos
+contratos con SIROC de la base local**, y ahora su vigencia se deriva en vez de
+leerse:
+
+| Contrato | SIROC           | Qué responde ahora                                         |
+| -------- | --------------- | ---------------------------------------------------------- |
+| 1        | `SIR-2026-0001` | `al_dia`, vigencia al **2026-10-31**, 60 días, 1 pendiente |
+| 2        | `SIR-2026-0002` | `vencida` desde el **2026-05-01**, 123 días, 4 pendientes  |
+
+El 2 sale rojo y pidiendo actualización. Es correcto: se registró el 2026-03-01,
+nadie lo ha refrendado, y el contrato sigue `en_curso` hasta el 2026-12-31.
+
+**Sólo en local.** En Fly **no** ha corrido, y el código de la corrección tampoco
+está desplegado: contra producción siguen viendo lo de antes, con el campo
+guardado. Cuando se despliegue lo avisamos aquí.
+
+**Lo único que les queda de la #9**: quitar `vigenciaHasta` del formulario del
+SIROC. Su entrada de las 22:36 daba la tarea por buena, pero es de **antes** de
+la corrección de las 23:35 — que no habían leído todavía. No corre prisa y no
+rompe nada: `PUT /contratos/:id/siroc` lo sigue aceptando y lo ignora.
+
+### 2026-08-31 23:35:02 · backend · El SIROC ya no tiene fecha final, y el contrato vencido sí pide actualización
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 31 ago 19:24:10.
+
+**Qué se hizo.** Dos correcciones sobre la tarea #9, salidas de probarla:
+
+1. **`siroc.vigenciaHasta` desapareció.** Del aviso se capturan **su número y su
+   fecha de registro, y nada más**: su vigencia son siempre dos meses desde ahí
+   —o desde la última actualización— y ya venía derivada en
+   `seguimientoSiroc.vigenciaPeriodoHasta`. Pedirla además hacía que se tecleara
+   ahí la fecha de fin del contrato, y el contrato acababa mostrando una vigencia
+   que el seguimiento no usaba y que lo contradecía.
+2. **Un contrato que se pasó de su `fechaFin` y que nadie finalizó ahora sí exige
+   la actualización.** Antes respondía `no_requiere` —«la ventana ya cubre lo que
+   queda del contrato»— sin mirar que ese contrato ya había quedado atrás. Para
+   el IMSS la obra sigue abierta y el aviso vence igual. Era el caso más común de
+   todos, porque las obras se alargan y nadie corre a finalizarlas.
+
+**Qué necesita el front.** Una cosa: **quiten `vigenciaHasta` del formulario del
+SIROC.** No corre prisa y no rompe nada mientras tanto —`PUT /contratos/:id/siroc`
+lo sigue aceptando y lo **ignora**—, pero ya no se guarda ni vuelve en la
+respuesta. Y al pintar «faltan N actualizaciones», usen
+`actualizacionesPendientes`, no la resta: en un contrato vencido
+`actualizacionesRequeridas` puede ser `0` y `pendientes` valer `1`.
+
+El detalle, en `plan/handoff/9.md` (encabezado «Corrección del 2026-08-31») y en
+[`ENDPOINTS-PROYECTOS.md`](./ENDPOINTS-PROYECTOS.md) §4.1. El porqué, en
+[`DECISIONES.md`](./DECISIONES.md) D-76.
+
+### 2026-08-31 22:08:33 · backend · Tarea #9: el SIROC se actualiza cada 2 meses, y el aviso ya viene calculado
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 31 ago 19:24:10 (tarea #8 cerrada,
+`fase` capturándose en dos casillas).
+
+**Qué se hizo.** El aviso de obra **se refrenda cada dos meses conservando el
+mismo número**. Se guarda sólo el hecho —`siroc.actualizaciones: [{ fecha, nota }]`—
+y **todo contrato viaja ahora con `seguimientoSiroc`**: cuántas actualizaciones
+pide (predichas desde `fechaInicio`/`fechaFin`), cuántas lleva, cuándo cumple los
+dos meses la ventana vigente, `estado`
+(`sin_siroc | no_requiere | al_dia | por_vencer | vencida`) y un `mensaje` en
+español listo para pintar. Derivado en cada lectura, como todo lo demás: no hay
+nada que marcar ni apagar. Dos rutas nuevas,
+`POST /contratos/:id/siroc/actualizaciones` y
+`DELETE /contratos/:id/siroc/actualizaciones/ultima`.
+
+**Qué necesita el front.** Es **aditivo**: nada de lo que consumen cambió de
+forma. Cuando pinten la tarea #10, tres cosas que ahorran errores:
+
+1. **`requiereActualizacion` es `true` sólo con `estado: 'vencida'`.**
+   `por_vencer` avisa 5 días antes, pero todavía no se debe nada.
+2. **La ventana corre desde la última actualización** —o desde `fechaRegistro`—,
+   **no desde el inicio del contrato**: un SIROC tramitado tarde vence tarde.
+3. **No cacheen `seguimientoSiroc`**: el mismo contrato responde distinto mañana.
+
+El detalle petición por petición, en `plan/handoff/9.md` y en
+[`ENDPOINTS-PROYECTOS.md`](./ENDPOINTS-PROYECTOS.md) §4.1. El porqué, en
+[`DECISIONES.md`](./DECISIONES.md) D-76.
+
+**Lo que quedó fuera, a propósito:** estas alertas **no entran en `GET /alertas`**
+—esa bandeja agrupa por `empleadoId` y el SIROC cuelga de un contrato—, y no hay
+listado global de «contratos que requieren actualización». Si lo quieren, se
+decide aparte.
+
 ### 2026-08-31 18:39:32 · backend · El contrato tiene fase, y es un campo suyo — no una entidad nueva
 
 **Qué se hizo.** `contracts` gana **`fase`**, una etiqueta opcional (máx. 120) que

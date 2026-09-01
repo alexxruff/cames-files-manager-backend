@@ -10,7 +10,8 @@ const {
   contractIdValidation,
   updateContractValidation,
   contractEstadoValidation,
-  setSirocValidation
+  setSirocValidation,
+  sirocRenovacionValidation
 } = require('../../../validations/contractValidation')
 
 /**
@@ -54,6 +55,26 @@ router
     validateRequest,
     asyncHandler(contractController.quitarSiroc)
   )
+
+/*
+ * Las renovaciones del aviso (D-76). Cuelgan del SIROC y no de `PUT /siroc`
+ * porque no lo reemplazan: el número sigue siendo el mismo y lo que se agrega es
+ * una fecha más a su historia.
+ */
+router.post(
+  '/:id/siroc/actualizaciones',
+  gestionarProyectos,
+  sirocRenovacionValidation,
+  validateRequest,
+  asyncHandler(contractController.registrarActualizacion)
+)
+router.delete(
+  '/:id/siroc/actualizaciones/ultima',
+  gestionarProyectos,
+  contractIdValidation,
+  validateRequest,
+  asyncHandler(contractController.quitarUltimaActualizacion)
+)
 
 router.post(
   '/:id/finalizar',

@@ -59,6 +59,13 @@ const schema = z.object({
    */
   DIAS_ALERTA_CUMPLEANOS: z.coerce.number().int().min(0).max(60).default(7),
 
+  /*
+   * Con cuánta anticipación se avisa que un SIROC cumple sus dos meses (D-76).
+   * 5 días por defecto: actualizar el aviso ante el IMSS es un trámite, no un
+   * clic, y avisar el mismo día llegaría tarde.
+   */
+  DIAS_ALERTA_SIROC: z.coerce.number().int().min(0).max(60).default(5),
+
   // Zona horaria de negocio: las fechas de calendario se interpretan aquí.
   TIMEZONE: z.string().default('America/Mexico_City'),
 

@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-75)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-76)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -236,9 +236,21 @@ dos opcionales y ninguno derivado del otro (D-75).
   chocaría contra el índice único.
 - `siroc` va **embebido** porque es 1:1 con el contrato y no tiene ciclo de vida
   propio. Nace en `null`.
+- **El aviso guarda una sola fecha, la de registro** (D-76). No hay
+  `vigenciaHasta`: la vigencia son dos meses contados desde el registro —o desde
+  la última actualización— y se deriva al leer. Mientras existió como campo,
+  quien capturaba tecleaba ahí la fecha de fin del contrato y el aviso terminaba
+  contradiciendo al seguimiento. La quita `npm run migrate:siroc-vigencia`.
 - **`siroc.numero` es único en TODO el sistema**, con índice parcial por
   `$type: 'string'` — no `sparse`, que haría chocar entre sí a los contratos sin
   SIROC. Repetirlo responde `409` diciendo dónde está el otro.
+- `siroc.actualizaciones` es la lista de **refrendos del mismo aviso** (D-76): el
+  SIROC se actualiza cada dos meses conservando su número, así que una renovación
+  no es un SIROC nuevo sino una fecha más —con `nota` opcional— dentro del que ya
+  hay. Es lo ÚNICO que se guarda de todo esto: cuántas faltan, cuándo vence la
+  ventana vigente y si urge son `seguimientoSiroc`, derivado al leer (regla #6).
+  Van en orden y ninguna puede ser anterior a `fechaRegistro`; una fecha suelta
+  hacia atrás correría la ventana y el contrato callaría avisos que debe dar.
 - `estado` (`en_curso` | `finalizado`) y `activo` **no son lo mismo**: el primero
   es un contrato que terminó bien, el segundo uno capturado por error. Van por
   rutas distintas.
@@ -343,6 +355,7 @@ colección: `records.documentos[].tipo` apunta a `DOCUMENT_TYPES` en
 | **Dar de baja un registro patronal o de obra**  | Bloqueado si un proyecto **en curso** lo usa. Hay que cerrarlos o cambiárselo primero                           |
 | **Crear un contrato**                           | Traba el `clienteId` y el `registroPatronalId` de su proyecto (D-70)                                            |
 | **Registrar un SIROC**                          | Traba además el `registroObraId`. Quitarlo lo libera                                                            |
+| **`siroc.actualizaciones`**                     | Mueve la ventana de dos meses y con ella todo `seguimientoSiroc`: quitar una hace reaparecer el aviso (D-76)    |
 | **`affiliations.registroPatronalId`**           | El aviso de coherencia al asignar y en el listado (D-71). Manda sobre el texto; no bloquea nada                 |
 | **`affiliations.condiciones.registroPatronal`** | Lo mismo, pero **sólo mientras no haya vínculo**: es el respaldo de las que M3 no resolvió (D-72)               |
 | **`projects.registroPatronalId`**               | Lo mismo: el aviso se recalcula al leer, así que cambiarlo mueve toda la trazabilidad ya registrada             |

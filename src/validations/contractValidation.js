@@ -101,8 +101,53 @@ exports.setSirocValidation = [
     .trim()
     .isLength({ min: 3, max: 40 })
     .withMessage('El número de SIROC debe tener entre 3 y 40 caracteres'),
-  fecha('fechaRegistro', 'La fecha de registro'),
-  fecha('vigenciaHasta', 'La vigencia', { obligatoria: false })
+  fecha('fechaRegistro', 'La fecha de registro')
+  /*
+   * NO se pide fecha final (D-76). El aviso vale dos meses desde el registro —o
+   * desde la última actualización— y esa vigencia se deriva, así que capturarla
+   * sólo servía para contradecirla. `vigenciaHasta` se sigue aceptando en el
+   * cuerpo y se ignora, para que el front pueda quitar el campo de su formulario
+   * sin quedarse sin registrar SIROCs mientras tanto.
+   */
+]
+
+/**
+ * Registrar una renovación del aviso (D-76). `fecha` es opcional: sin ella se
+ * asume hoy, que es como se captura al volver del IMSS. El número NO se acepta
+ * aquí: actualizar el SIROC conserva el mismo, y dejar mandarlo invitaría a
+ * cambiarlo por error.
+ */
+exports.sirocRenovacionValidation = [
+  param('id').isMongoId().withMessage('El contrato indicado no es válido'),
+  body().custom((cuerpo) => {
+    const invalidos = Object.keys(cuerpo || {}).filter(
+      (c) => !['fecha', 'nota'].includes(c)
+    )
+    if (invalidos.length > 0) {
+      const pistas = {
+        numero: 'actualizar el SIROC conserva el mismo número',
+        fechaRegistro: 'usa PUT /contratos/:id/siroc para corregir el registro',
+        vigenciaHasta:
+          'el SIROC no tiene fecha final: vence dos meses después de esta actualización'
+      }
+      const detalle = invalidos
+        .map((c) => (pistas[c] ? `${c} (${pistas[c]})` : c))
+        .join(', ')
+      throw new Error(`Estos campos no se pueden enviar aquí: ${detalle}`)
+    }
+    return true
+  }),
+  fecha('fecha', 'La fecha de la actualización', { obligatoria: false }),
+  body('nota')
+    .optional({ values: 'null' })
+    .customSanitizer((v) => (typeof v === 'string' ? v.trim() : v))
+    .custom((valor) => {
+      if (valor === null || valor === undefined || valor === '') return true
+      if (String(valor).length > 200) {
+        throw new Error('La nota no puede exceder 200 caracteres')
+      }
+      return true
+    })
 ]
 
 exports.CAMPOS_EDITABLES = CAMPOS_EDITABLES

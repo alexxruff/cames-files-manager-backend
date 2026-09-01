@@ -3252,3 +3252,80 @@ fases**, que es justo lo que dice G1.
 **Qué NO cambió.** El SIROC, `numero`, `estado`, `activo` y los candados del
 proyecto (G3) siguen igual. `fase` es una etiqueta: no traba nada, no deriva nada
 y no entra en ninguna consulta de alcance.
+
+---
+
+## D-76 · El SIROC se actualiza cada dos meses, y el aviso se deriva
+
+**Decisión.** El aviso de obra ante el IMSS **se refrenda cada dos meses
+conservando el mismo número**. Lo único que se guarda es el hecho —qué día se
+refrendó— en `siroc.actualizaciones: [{ fecha, nota }]`. Todo lo demás
+—cuántas actualizaciones pide el contrato, cuántas lleva, cuándo cumple los dos
+meses la ventana vigente y si ya urge— es `seguimientoSiroc`, **derivado en cada
+lectura** (`src/utils/domain/siroc.js`) y presente en toda respuesta de contrato.
+
+**Por qué una lista dentro del SIROC y no un SIROC por periodo.** Porque el
+número no cambia: actualizarlo es refrendar el mismo aviso, no sacar otro. Un
+documento por periodo obligaría a repetir el número —que es **único global**
+(G4)— y el índice único lo rechazaría; relajar ese índice para permitirlo
+destruiría la garantía que hace útil al SIROC. La renovación es una fecha más
+dentro del aviso que ya existe.
+
+**Por qué nada de esto se guarda calculado.** Es la regla #6, y aquí se ve por
+qué: un `requiereActualizacion` guardado sería falso al día siguiente sin que
+nadie tocara nada, y haría falta un job diario para mantenerlo. Derivado, el
+aviso aparece solo al cumplirse los dos meses y **desaparece solo** el día que se
+captura la renovación. No hay nada que marcar ni que apagar.
+
+**Cuántas actualizaciones pide un contrato** son las ventanas de dos meses que
+hacen falta para cubrir `fechaInicio → fechaFin`, **menos la primera**, que ya la
+cubre el SIROC original. Un contrato de dos meses justos pide cero; uno de seis,
+dos. Se responde desde el alta, antes de que exista el SIROC: la predicción sale
+de las fechas que capturó el usuario, que es justo lo que pidió el cliente.
+
+**La ventana corre desde la última actualización —o desde `fechaRegistro`—, no
+desde el inicio del contrato.** Un SIROC tramitado un mes tarde vence un mes
+tarde: contar desde `fechaInicio` pediría refrendos que el IMSS no exige todavía,
+y quien captura dejaría de creerle a los avisos.
+
+**`por_vencer` avisa; sólo `vencida` exige.** El umbral es `DIAS_ALERTA_SIROC`,
+5 días por defecto —el trámite no es un clic— y es inclusivo: el día justo en que
+se cumplen los dos meses todavía es `por_vencer`, y se vence al siguiente. Es la
+misma convención que `documentStatus` (D-04), y romperla aquí habría dado dos
+semáforos que se comportan distinto en la misma pantalla.
+
+**Un contrato finalizado o dado de baja deja de pedir**, igual que uno cuya
+ventana vigente ya cubre su `fechaFin`: el aviso acompaña a la obra, y pedir el
+refrendo de una obra terminada sería ruido permanente en la bandeja.
+
+**Pero «la ventana cubre su `fechaFin`» sólo vale mientras el contrato siga
+dentro de sus fechas.** Un contrato que ya pasó su `fechaFin` y que nadie
+finalizó **sigue en curso**: para el IMSS la obra sigue abierta, y su aviso vence
+igual. La primera versión miraba `fechaFin` sin mirar el calendario y ese
+contrato —el más común de todos, porque las obras se alargan y nadie corre a
+finalizarlas— no pedía nada. Ahora el atajo pide las dos cosas: que la ventana
+cubra el fin **y** que ese fin no haya quedado atrás. En ese caso
+`actualizacionesRequeridas` puede valer `0` mientras `actualizacionesPendientes`
+vale `1`: la predicción sale de las fechas del contrato, la deuda del calendario,
+y decir «vencida» con «0 pendientes» habría sido una contradicción en pantalla.
+
+**El aviso no tiene fecha final, y por eso no se captura.** `siroc.vigenciaHasta`
+existió como campo opcional y fue un error: su vigencia son siempre dos meses
+desde el registro —o desde la última actualización—, así que el dato ya se sabe.
+Al pedirlo, quien capturaba tecleaba ahí la fecha de fin del contrato, y el
+contrato quedaba mostrando una vigencia que el seguimiento no usaba y que lo
+contradecía. Del aviso se capturan **su número y su fecha de registro**, y ya. El
+campo se quita de los datos que ya existen con `npm run migrate:siroc-vigencia`;
+`PUT /contratos/:id/siroc` lo **sigue aceptando y lo ignora**, para que el front
+pueda quitarlo del formulario sin quedarse sin registrar SIROCs mientras tanto.
+
+**Corregir el SIROC conserva sus actualizaciones** (`PUT`), porque son del mismo
+aviso; quitarlo entero (`DELETE`) se las lleva. Y se puede deshacer **sólo la
+última** actualización: una fecha mal tecleada corre la ventana y hace que el
+contrato calle avisos que debería dar, mientras que borrar una de en medio
+reescribiría la historia.
+
+**Qué NO se hizo.** Estas alertas **no entran en `GET /alertas`**: esa bandeja es
+de documentos y cumpleaños de personas, y el SIROC cuelga de un contrato. Meterlo
+ahí pedía un `origen` nuevo y una entrada sin `empleadoId`, que es la llave con
+la que el front agrupa toda esa pantalla. Si se quiere, se decide aparte.

@@ -3,6 +3,8 @@ const Contract = require('./contractModel')
 const Project = require('../projects/projectModel')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { empresaEsVisible } = require('../../../middlewares/scopeMiddleware')
+const { deriveSirocTracking } = require('../../../utils/domain')
+const { today, isAfter, isBefore } = require('../../../utils/dates')
 
 /**
  * Contratos de un proyecto y su SIROC (backend-spec §6.7, plan §C4, D-70).
@@ -10,6 +12,11 @@ const { empresaEsVisible } = require('../../../middlewares/scopeMiddleware')
  * El alcance **no se comprueba sobre el contrato**, sino sobre el proyecto al
  * que pertenece: es el proyecto el que tiene empresa, y la empresa la que decide
  * quién lo ve. Un contrato de un proyecto fuera de alcance responde 404, no 403.
+ *
+ * Todo contrato sale de aquí con su `seguimientoSiroc` (D-76): cuántas
+ * actualizaciones pide, cuántas lleva y si la siguiente urge. **Se deriva en cada
+ * lectura** —regla #6— y por eso no hay nada que marcar ni que apagar: el día que
+ * se captura la renovación, el aviso desaparece solo.
  */
 class ContractService {
   /** GET /proyectos/:id/contratos */
@@ -20,7 +27,7 @@ class ContractService {
     if (!incluirInactivos) filtro.activo = true
 
     const contratos = await Contract.find(filtro).sort({ numero: 1 })
-    return { contratos: contratos.map((c) => c.toJSON()) }
+    return { contratos: contratos.map((c) => this.#serializar(c)) }
   }
 
   /** POST /proyectos/:id/contratos */
@@ -46,7 +53,7 @@ class ContractService {
           fechaInicio: datos.fechaInicio,
           fechaFin: datos.fechaFin
         })
-        return { contrato: contrato.toJSON() }
+        return { contrato: this.#serializar(contrato) }
       } catch (error) {
         const chocaElNumero = error.code === 11000 && !this.#esChoqueDeSiroc(error)
         if (!chocaElNumero || intento === 2) throw error
@@ -65,15 +72,19 @@ class ContractService {
     if (datos.fechaFin !== undefined) contrato.fechaFin = datos.fechaFin
 
     await contrato.save()
-    return { contrato: contrato.toJSON() }
+    return { contrato: this.#serializar(contrato) }
   }
 
   /**
    * PUT /contratos/:id/siroc — registrarlo o corregirlo.
    *
-   * `PUT` y no `PATCH` porque reemplaza el SIROC entero: mandar sólo la vigencia
-   * y dejar el número anterior sería exactamente la mezcla que produce avisos de
+   * `PUT` y no `PATCH` porque reemplaza el SIROC entero: mandar sólo la fecha y
+   * dejar el número anterior sería exactamente la mezcla que produce avisos de
    * obra a medias.
+   *
+   * Del aviso se capturan **dos datos y ya**: su número y el día en que se
+   * registró (D-76). No hay fecha final que teclear —la ventana de dos meses la
+   * calcula `seguimientoSiroc`—, y si el cuerpo trae una, se ignora.
    */
   async setSiroc(id, datos, contexto = {}) {
     const { contrato } = await this.#buscarVisible(id, contexto)
@@ -89,10 +100,29 @@ class ContractService {
     const choque = await this.#buscarChoqueDeSiroc(numero, contrato._id)
     if (choque) throw choque
 
+    /*
+     * Las renovaciones sobreviven a corregir el aviso (D-76): son del MISMO
+     * SIROC —el número no cambia al actualizarlo— y arrastran la ventana
+     * vigente. Quien quiera empezar de cero tiene `DELETE /siroc`, que se lleva
+     * el aviso entero.
+     */
+    const actualizaciones = (contrato.siroc?.actualizaciones ?? []).map((a) => ({
+      fecha: a.fecha,
+      nota: a.nota ?? null
+    }))
+
+    const primera = actualizaciones[0]?.fecha
+    if (primera && isBefore(primera, datos.fechaRegistro)) {
+      throw new AppError(
+        400,
+        `Ese SIROC ya tiene una actualización del ${primera}: la fecha de registro no puede ser posterior. Quita el SIROC si necesitas capturarlo de nuevo.`
+      )
+    }
+
     contrato.siroc = {
       numero,
       fechaRegistro: datos.fechaRegistro,
-      vigenciaHasta: datos.vigenciaHasta ?? null
+      actualizaciones
     }
 
     try {
@@ -109,7 +139,7 @@ class ContractService {
       throw error
     }
 
-    return { contrato: contrato.toJSON() }
+    return { contrato: this.#serializar(contrato) }
   }
 
   /**
@@ -127,7 +157,72 @@ class ContractService {
 
     contrato.siroc = null
     await contrato.save()
-    return { contrato: contrato.toJSON() }
+    return { contrato: this.#serializar(contrato) }
+  }
+
+  /**
+   * POST /contratos/:id/siroc/actualizaciones — registrar una renovación.
+   *
+   * No crea un SIROC nuevo: el número es el mismo y lo que corre es la ventana
+   * de dos meses, que a partir de aquí se cuenta desde esta fecha (D-76).
+   */
+  async registrarActualizacion(id, datos, contexto = {}) {
+    const { contrato } = await this.#buscarVisible(id, contexto)
+
+    if (!contrato.siroc) throw new AppError(400, 'Ese contrato no tiene SIROC registrado')
+
+    if (contrato.estado === 'finalizado' || !contrato.activo) {
+      throw new AppError(
+        400,
+        'El contrato ya no está en curso: su SIROC no necesita actualizarse'
+      )
+    }
+
+    // Sin fecha se asume hoy, que es el caso normal: se captura al volver del IMSS.
+    const hoy = today()
+    const fecha = datos.fecha ?? hoy
+
+    if (isAfter(fecha, hoy)) {
+      throw new AppError(400, 'La actualización del SIROC no puede tener fecha futura')
+    }
+
+    const previas = contrato.siroc.actualizaciones ?? []
+    const anterior = previas[previas.length - 1]?.fecha ?? contrato.siroc.fechaRegistro
+    if (isBefore(fecha, anterior)) {
+      throw new AppError(
+        400,
+        previas.length === 0
+          ? `La actualización no puede ser anterior al registro del SIROC (${anterior})`
+          : `Ya hay una actualización del ${anterior}: la nueva no puede ser anterior`
+      )
+    }
+
+    contrato.siroc.actualizaciones.push({ fecha, nota: datos.nota || null })
+    contrato.markModified('siroc.actualizaciones')
+    await contrato.save()
+
+    return { contrato: this.#serializar(contrato) }
+  }
+
+  /**
+   * DELETE /contratos/:id/siroc/actualizaciones/ultima — deshacer la última.
+   *
+   * Sólo la última, y por la misma razón que existe `quitarSiroc`: una fecha mal
+   * tecleada corre la ventana de dos meses y el contrato empieza a callar avisos
+   * que debería dar. Borrar una de en medio, en cambio, reescribiría la historia.
+   */
+  async quitarUltimaActualizacion(id, contexto = {}) {
+    const { contrato } = await this.#buscarVisible(id, contexto)
+
+    if (!contrato.siroc?.actualizaciones?.length) {
+      throw new AppError(400, 'Ese SIROC no tiene actualizaciones registradas')
+    }
+
+    contrato.siroc.actualizaciones.pop()
+    contrato.markModified('siroc.actualizaciones')
+    await contrato.save()
+
+    return { contrato: this.#serializar(contrato) }
   }
 
   /** POST /contratos/:id/finalizar */
@@ -140,7 +235,7 @@ class ContractService {
 
     contrato.estado = 'finalizado'
     await contrato.save()
-    return { contrato: contrato.toJSON() }
+    return { contrato: this.#serializar(contrato) }
   }
 
   /** POST /contratos/:id/reabrir */
@@ -159,7 +254,7 @@ class ContractService {
 
     contrato.estado = 'en_curso'
     await contrato.save()
-    return { contrato: contrato.toJSON() }
+    return { contrato: this.#serializar(contrato) }
   }
 
   /** PATCH /contratos/:id/estado — la baja, distinta de finalizar. */
@@ -168,7 +263,7 @@ class ContractService {
 
     contrato.activo = activo
     await contrato.save()
-    return { contrato: contrato.toJSON() }
+    return { contrato: this.#serializar(contrato) }
   }
 
   // ─── Lo que consulta el proyecto para sus candados (G3) ────────────────────
@@ -189,6 +284,15 @@ class ContractService {
   }
 
   // ─── Interno ───────────────────────────────────────────────────────────────
+
+  /**
+   * El contrato con su `seguimientoSiroc` al lado. Derivado en cada lectura, no
+   * guardado (regla #6): el mismo contrato responde distinto mañana.
+   */
+  #serializar(contrato) {
+    const json = contrato.toJSON()
+    return { ...json, seguimientoSiroc: deriveSirocTracking(json) }
+  }
 
   async #siguienteNumero(proyectoId) {
     // Incluye los dados de baja: reusar su número chocaría contra el índice.

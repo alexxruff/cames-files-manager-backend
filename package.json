@@ -37,6 +37,7 @@
     "migrate:condiciones": "node scripts/migrateLaborConditions.js",
     "migrate:registros-patronales": "node scripts/migrateEmployerRegistrations.js",
     "migrate:vinculo-rp": "node scripts/linkAffiliationRegistrations.js",
+    "migrate:siroc-vigencia": "node scripts/migrateSirocValidity.js",
     "migrate:revisar-respaldos": "node scripts/checkMigrationBackups.js",
     "proyectos:incompletos": "node scripts/resolveLegacyProjects.js"
   },

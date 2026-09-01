@@ -125,6 +125,8 @@ lista, no dentro.
 | PATCH  | `/contratos/:id`                                           | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Nombre, fase y fechas. El SIROC y el estado van por sus rutas                                                                           |
 | PUT    | `/contratos/:id/siroc`                                     | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Registra o corrige el SIROC entero; **409 `SIROC_DUPLICADO`** si el número ya existe (G4)                                               |
 | DELETE | `/contratos/:id/siroc`                                     | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Lo quita y libera el número; 400 si no tenía                                                                                            |
+| POST   | `/contratos/:id/siroc/actualizaciones`                     | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Registra que el SIROC se actualizó; conserva el número. `fecha` opcional (hoy) y `nota` opcional (D-76)                                 |
+| DELETE | `/contratos/:id/siroc/actualizaciones/ultima`              | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Deshace la última actualización, capturada mal; 400 si no hay ninguna (D-76)                                                            |
 | POST   | `/contratos/:id/finalizar` · `/contratos/:id/reabrir`      | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Mueven `estado`; no se reabre si el proyecto está finalizado                                                                            |
 | PATCH  | `/contratos/:id/estado`                                    | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Mueve `activo` (la baja), que **no es lo mismo** que `estado` (D-70)                                                                    |
 | GET    | `/expedientes`                                             | ver empleados                | `expedientes[]` + `total` · `pagina` · `porPagina`                                                                                               | Paginado; mismos filtros que `/empleados` **más `estatus`** (D-45)                                                                      |
@@ -267,9 +269,12 @@ este cambio salen con `"fase": null`.
   "fase": "Fase 1", // etiqueta de la fase, o null
   "fechaInicio": "2026-09-01",
   "fechaFin": "2026-12-31",
-  "siroc": null, // o { numero, fechaRegistro, vigenciaHasta }
+  "siroc": null, // o { numero, fechaRegistro, actualizaciones[] }
   "estado": "en_curso", // en_curso | finalizado
   "activo": true,
+  "seguimientoSiroc": {
+    // derivado en cada lectura (D-76), ver abajo
+  },
   "createdAt": "…",
   "updatedAt": "…"
 }
@@ -311,6 +316,91 @@ formulario completo sigue funcionando.
 
 Dar de baja el contrato lo saca de la cuenta, y quitar su SIROC libera el
 registro de obra.
+
+### El SIROC se actualiza cada dos meses (D-76)
+
+El aviso de obra **se refrenda cada dos meses conservando el mismo número**: no
+se saca un SIROC nuevo, se actualiza el que hay. Por eso `siroc.numero` sigue
+siendo uno solo y las renovaciones son una lista de fechas dentro del mismo
+SIROC:
+
+```jsonc
+"siroc": {
+  "numero": "SIR-2026-0001",
+  "fechaRegistro": "2026-09-10",
+  "actualizaciones": [{ "fecha": "2026-11-12", "nota": "Acuse 4471" }]
+}
+```
+
+**El SIROC no tiene fecha final.** Del aviso se capturan **dos datos y ya**: su
+número y el día en que se registró. Su vigencia son siempre dos meses contados
+desde ahí —o desde la última actualización—, y sale derivada en
+`seguimientoSiroc.vigenciaPeriodoHasta`. `siroc.vigenciaHasta` **ya no existe**:
+se sigue aceptando en el cuerpo de `PUT /contratos/:id/siroc` y se ignora, para
+que el campo se pueda quitar del formulario sin dejar de registrar SIROCs
+mientras tanto, pero no se guarda ni vuelve en la respuesta.
+
+Todo contrato viaja además con `seguimientoSiroc`, **derivado en cada lectura**
+(regla #6): no hay nada que marcar ni apagar, y el día que se captura la
+renovación el aviso desaparece solo.
+
+```jsonc
+"seguimientoSiroc": {
+  "periodoMeses": 2,
+  "actualizacionesRequeridas": 2,   // predichas desde fechaInicio/fechaFin
+  "actualizacionesRegistradas": 1,
+  "actualizacionesPendientes": 1,
+  "ultimaActualizacion": "2026-11-12", // o null
+  "vigenciaPeriodoHasta": "2027-01-12", // cuándo cumple los 2 meses; null sin SIROC
+  "diasParaActualizacion": 3,        // negativo si ya pasó; null sin SIROC
+  "requiereActualizacion": false,    // true SÓLO cuando ya venció
+  "estado": "por_vencer",
+  "mensaje": "El SIROC cumple sus dos meses el 2027-01-12: requiere actualización en 3 días."
+}
+```
+
+| `estado`      | Cuándo                                                           |
+| ------------- | ---------------------------------------------------------------- |
+| `sin_siroc`   | El contrato todavía no tiene SIROC                               |
+| `no_requiere` | Contrato finalizado o dado de baja, o la ventana ya cubre su fin |
+| `al_dia`      | Faltan más de `DIAS_ALERTA_SIROC` días (5 por defecto)           |
+| `por_vencer`  | Faltan `DIAS_ALERTA_SIROC` días o menos; el día justo entra aquí |
+| `vencida`     | Ya pasaron los dos meses y el contrato sigue en curso            |
+
+**«La ventana ya cubre su fin» vale sólo mientras el contrato siga dentro de sus
+fechas.** Uno que ya pasó su `fechaFin` y nadie finalizó sigue en curso —para el
+IMSS la obra sigue abierta—, así que su aviso vence igual y pasa a `por_vencer` y
+luego a `vencida` como cualquier otro. Ahí `actualizacionesRequeridas` puede ser
+`0` —sus fechas no preveían ninguna— mientras `actualizacionesPendientes` vale
+`1`: la predicción es del contrato, la deuda es del calendario.
+
+Los tres cálculos, para que el front no los repita:
+
+- **Cuántas pide el contrato**: las ventanas de dos meses que hacen falta para
+  cubrir `fechaInicio → fechaFin`, **menos la primera**, que ya la cubre el SIROC
+  original. Un contrato de dos meses justos pide cero; uno de seis, dos.
+- **Desde cuándo corre la ventana vigente**: desde la última actualización
+  registrada, o desde `fechaRegistro` si no hay ninguna. **No desde el inicio del
+  contrato**: un SIROC tramitado tarde vence tarde.
+- **`requiereActualizacion`** es `true` sólo con `estado: 'vencida'`. `por_vencer`
+  avisa con anticipación, pero todavía no se debe nada.
+
+**Registrar la actualización** es `POST /contratos/:id/siroc/actualizaciones` con
+`{ fecha?, nota? }` — sin `fecha` se asume hoy, que es como se captura al volver
+del IMSS. `numero` y `fechaRegistro` **no se aceptan aquí** y el 400 dice por
+dónde van. Los 400 posibles, con el texto en `message`:
+
+| Qué pasó                                        | `message`                                                            |
+| ----------------------------------------------- | -------------------------------------------------------------------- |
+| El contrato no tiene SIROC                      | `Ese contrato no tiene SIROC registrado`                             |
+| El contrato está finalizado o dado de baja      | `El contrato ya no está en curso: su SIROC no necesita actualizarse` |
+| La fecha es futura                              | `La actualización del SIROC no puede tener fecha futura`             |
+| La fecha va antes del registro o de la anterior | `La actualización no puede ser anterior al registro del SIROC (…)`   |
+| No hay ninguna que deshacer                     | `Ese SIROC no tiene actualizaciones registradas`                     |
+
+Corregir el SIROC con `PUT /contratos/:id/siroc` **conserva sus actualizaciones**:
+son del mismo aviso. Para empezar de cero está `DELETE /contratos/:id/siroc`, que
+se lleva el aviso entero.
 
 ### Coherencia del registro patronal y trazabilidad (D-71)
 

@@ -26,6 +26,32 @@ const validadorFecha = (etiqueta) => ({
 })
 
 /**
+ * Una renovación del aviso ante el IMSS (D-76).
+ *
+ * El SIROC se actualiza cada dos meses **conservando el mismo número**, así que
+ * esto no es un SIROC nuevo: es la fecha en que se refrendó el que ya hay. Se
+ * guarda porque es un hecho —alguien fue y lo actualizó ese día—, no un derivado:
+ * cuántas faltan y si urge la siguiente se calculan al leer (regla #6).
+ */
+const sirocRenovacionSchema = new mongoose.Schema(
+  {
+    fecha: {
+      type: String,
+      required: [true, 'La fecha de la actualización es requerida'],
+      validate: validadorFecha('La fecha de la actualización')
+    },
+    /** Folio del acuse, quién fue, lo que haga falta recordar. */
+    nota: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: [200, 'La nota no puede exceder 200 caracteres']
+    }
+  },
+  { _id: false }
+)
+
+/**
  * El aviso de obra ante el IMSS. `numero` es **único en todo el sistema** (G4):
  * no se repite entre empresas, ni entre clientes, ni entre proyectos.
  */
@@ -39,17 +65,24 @@ const sirocSchema = new mongoose.Schema(
       minlength: [3, 'El número de SIROC debe tener al menos 3 caracteres'],
       maxlength: [40, 'El número de SIROC no puede exceder 40 caracteres']
     },
+    /**
+     * El único dato de fecha que se captura del aviso (D-76). **No hay fecha
+     * final**: el aviso vale dos meses contados desde aquí —o desde la última
+     * actualización—, y esa vigencia se deriva al leer, en `seguimientoSiroc`.
+     * Cuando además se guardaba, quien capturaba tecleaba ahí la fecha de fin del
+     * contrato y el aviso terminaba diciendo una cosa y la pantalla otra.
+     */
     fechaRegistro: {
       type: String,
       required: [true, 'La fecha de registro del SIROC es requerida'],
       validate: validadorFecha('La fecha de registro')
     },
-    /** Cuándo vence el aviso. Puede no conocerse al registrarlo. */
-    vigenciaHasta: {
-      type: String,
-      default: null,
-      validate: validadorFecha('La vigencia')
-    }
+
+    /**
+     * Las renovaciones de este mismo aviso, en orden (D-76). Vacío mientras el
+     * SIROC original siga dentro de sus dos meses.
+     */
+    actualizaciones: { type: [sirocRenovacionSchema], default: [] }
   },
   { _id: false }
 )
@@ -139,7 +172,10 @@ const contractSchema = new mongoose.Schema(
             ? {
                 numero: ret.siroc.numero,
                 fechaRegistro: ret.siroc.fechaRegistro,
-                vigenciaHasta: ret.siroc.vigenciaHasta ?? null
+                actualizaciones: (ret.siroc.actualizaciones ?? []).map((a) => ({
+                  fecha: a.fecha,
+                  nota: a.nota ?? null
+                }))
               }
             : null,
           estado: ret.estado,
@@ -175,16 +211,26 @@ contractSchema.pre('validate', function forzarInvariantes(next) {
     this.invalidate('fechaFin', 'La fecha de fin no puede ser anterior a la de inicio')
   }
 
-  if (
-    this.siroc?.vigenciaHasta &&
-    isCalendarDate(this.siroc.vigenciaHasta) &&
-    isCalendarDate(this.siroc.fechaRegistro) &&
-    isBefore(this.siroc.vigenciaHasta, this.siroc.fechaRegistro)
-  ) {
-    this.invalidate(
-      'siroc.vigenciaHasta',
-      'La vigencia del SIROC no puede ser anterior a su fecha de registro'
-    )
+  /*
+   * Las renovaciones van en orden y ninguna es anterior al registro del aviso
+   * (D-76). Una fecha suelta hacia atrás desplazaría la ventana vigente y el
+   * contrato empezaría a pedir actualizaciones que ya se hicieron.
+   */
+  const renovaciones = this.siroc?.actualizaciones ?? []
+  let anterior = this.siroc?.fechaRegistro ?? null
+
+  for (const [indice, renovacion] of renovaciones.entries()) {
+    if (!isCalendarDate(renovacion?.fecha)) continue
+
+    if (anterior && isBefore(renovacion.fecha, anterior)) {
+      this.invalidate(
+        `siroc.actualizaciones.${indice}.fecha`,
+        indice === 0
+          ? 'La actualización no puede ser anterior al registro del SIROC'
+          : 'Las actualizaciones del SIROC deben ir en orden de fecha'
+      )
+    }
+    anterior = renovacion.fecha
   }
 
   next()

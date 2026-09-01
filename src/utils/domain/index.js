@@ -15,5 +15,6 @@ module.exports = {
   ...require('./alerts'),
   ...require('./checklist'),
   ...require('./expiry'),
-  ...require('./registries')
+  ...require('./registries'),
+  ...require('./siroc')
 }

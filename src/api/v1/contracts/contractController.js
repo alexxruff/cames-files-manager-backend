@@ -67,6 +67,31 @@ class ContractController {
     return ok(res, datos, 'SIROC retirado del contrato')
   }
 
+  /** POST /contratos/:id/siroc/actualizaciones */
+  registrarActualizacion = async (req, res) => {
+    const datos = await contractService.registrarActualizacion(
+      req.params.id,
+      req.body,
+      this.#contexto(req)
+    )
+    req.log.info('SIROC actualizado', {
+      contratoId: req.params.id,
+      numero: datos.contrato.siroc?.numero,
+      actualizaciones: datos.contrato.siroc?.actualizaciones?.length
+    })
+    return created(res, datos, 'Actualización del SIROC registrada')
+  }
+
+  /** DELETE /contratos/:id/siroc/actualizaciones/ultima */
+  quitarUltimaActualizacion = async (req, res) => {
+    const datos = await contractService.quitarUltimaActualizacion(
+      req.params.id,
+      this.#contexto(req)
+    )
+    req.log.info('Actualización de SIROC deshecha', { contratoId: req.params.id })
+    return ok(res, datos, 'Última actualización del SIROC deshecha')
+  }
+
   /** POST /contratos/:id/finalizar */
   finalizar = async (req, res) => {
     const datos = await contractService.finalizar(req.params.id, this.#contexto(req))

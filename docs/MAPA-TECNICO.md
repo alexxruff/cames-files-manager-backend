@@ -708,7 +708,7 @@ important_fields:
   proyectoId: ObjectId
   numero: Number                    # lo pone el SERVIDOR, max+1
   nombre: String|null               # la etiqueta de la fase
-  siroc: { numero, fechaRegistro, vigenciaHasta } | null
+  siroc: { numero, fechaRegistro, actualizaciones[] } | null  # sin fecha final: se deriva
   estado: en_curso|finalizado       # ≠ activo
   activo: Boolean
 indexes: ["{proyectoId, numero} unique", "{proyectoId, estado}", "{'siroc.numero'} unique parcial GLOBAL"]
