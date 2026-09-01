@@ -447,8 +447,12 @@ colección aparte, abajo.
 ### 5.5b `contratos` — que son las fases del proyecto
 
 Un contrato **es** una fase (29 ago 2026, D-68 a D-70). No hay entidad «fase» ni
-un campo que las relacione: `nombre` es la etiqueta y es opcional, así que un
-proyecto de un solo contrato simplemente no tiene fases.
+un campo que las relacione: la fase es **un campo del contrato**, y es opcional,
+así que un proyecto de un solo contrato simplemente no tiene fases.
+
+Desde el 31 ago 2026 son dos campos y no uno (D-75): `nombre` es el del contrato
+y `fase` su etiqueta de obra. Se separaron porque en obra se nombran distinto y
+un solo campo obligaba a elegir cuál de los dos se pierde.
 
 ```js
 const sirocSchema = new mongoose.Schema({
@@ -466,8 +470,11 @@ const contratoSchema = new mongoose.Schema({
   // baja). LA PONE EL SERVIDOR: no se manda al crear ni se puede corregir.
   numero: { type: Number, required: true },
 
-  // La etiqueta de la fase ('Fase 1', 'Cimentación'). Opcional.
+  // Los dos opcionales y ninguno derivado del otro (D-75):
+  //   nombre → el del contrato   ('Contrato 001-A')
+  //   fase   → la etiqueta de obra ('Fase 1', 'Cimentación')
   nombre:      { type: String, default: null, maxlength: 120 },
+  fase:        { type: String, default: null, maxlength: 120 },
   fechaInicio: { type: String, required: true },   // YYYY-MM-DD
   fechaFin:    { type: String, required: true },   // posterior al inicio
 

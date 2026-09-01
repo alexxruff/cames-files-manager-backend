@@ -8,7 +8,7 @@ const { isCalendarDate } = require('../utils/dates')
  * secuencia dentro del proyecto y la asigna el servidor.
  */
 
-const CAMPOS_EDITABLES = ['nombre', 'fechaInicio', 'fechaFin']
+const CAMPOS_EDITABLES = ['nombre', 'fase', 'fechaInicio', 'fechaFin']
 
 const fecha = (campo, etiqueta, { obligatoria = true } = {}) => {
   const regla = body(campo)
@@ -21,18 +21,23 @@ const fecha = (campo, etiqueta, { obligatoria = true } = {}) => {
   })
 }
 
-const nombreContrato = (obligatorio) => {
-  const regla = body('nombre')
-  return (obligatorio ? regla : regla.optional({ values: 'null' }))
+/**
+ * `nombre` y `fase` se validan igual: opcionales, se recortan, y el vacío es una
+ * forma legítima de decir «no tiene» — el servicio lo guarda como `null`.
+ */
+const etiqueta = (campo, mensajeLargo) =>
+  body(campo)
+    .optional({ values: 'null' })
     .customSanitizer((v) => (typeof v === 'string' ? v.trim() : v))
     .custom((valor) => {
       if (valor === null || valor === undefined || valor === '') return true
-      if (String(valor).length > 120) {
-        throw new Error('El nombre no puede exceder 120 caracteres')
-      }
+      if (String(valor).length > 120) throw new Error(mensajeLargo)
       return true
     })
-}
+
+const nombreContrato = () =>
+  etiqueta('nombre', 'El nombre no puede exceder 120 caracteres')
+const faseContrato = () => etiqueta('fase', 'La fase no puede exceder 120 caracteres')
 
 exports.listContractsValidation = [
   param('id').isMongoId().withMessage('El proyecto indicado no es válido'),
@@ -44,7 +49,8 @@ exports.listContractsValidation = [
 
 exports.createContractValidation = [
   param('id').isMongoId().withMessage('El proyecto indicado no es válido'),
-  nombreContrato(false),
+  nombreContrato(),
+  faseContrato(),
   fecha('fechaInicio', 'La fecha de inicio'),
   fecha('fechaFin', 'La fecha de fin')
 ]
@@ -75,7 +81,8 @@ exports.updateContractValidation = [
     }
     return true
   }),
-  nombreContrato(false),
+  nombreContrato(),
+  faseContrato(),
   fecha('fechaInicio', 'La fecha de inicio', { obligatoria: false }),
   fecha('fechaFin', 'La fecha de fin', { obligatoria: false })
 ]

@@ -526,8 +526,12 @@ cerrada.
 
 **Un contrato ES una fase.** Cada fase de la obra tiene exactamente un contrato, y
 un proyecto de un solo contrato no tiene fases. Por eso no hay entidad «fase» ni
-un campo que las relacione: `nombre` es la etiqueta ('Fase 1', 'Cimentación') y es
-opcional.
+un campo que las relacione: la fase es **un campo del propio contrato**.
+
+Lo que sí son dos son los nombres (D-75): `nombre` es cómo se llama el contrato
+('Contrato 001-A') y `fase` el alias con el que la obra lo nombra ('Fase 1',
+'Cimentación'). Los dos son opcionales y ninguno se deriva del otro. Los
+contratos anteriores a este cambio salen con `"fase": null`.
 
 ### Lo que el contrato NO tiene
 
@@ -546,7 +550,8 @@ interface Contrato {
   _id: string
   proyectoId: string
   numero: number // secuencia dentro del proyecto: 1, 2, 3… LA PONE EL SERVIDOR
-  nombre: string | null // etiqueta de la fase
+  nombre: string | null // nombre del contrato
+  fase: string | null // etiqueta de la fase: 'Fase 1', 'Cimentación'
   fechaInicio: string // 'YYYY-MM-DD'
   fechaFin: string // 'YYYY-MM-DD'
   siroc: Siroc | null // null hasta que se registre
@@ -577,16 +582,21 @@ activos**). Ordenados por `numero` ascendente.
 
 ### `POST /proyectos/:id/contratos` → `201`
 
-**El cuerpo completo son tres campos, y uno es opcional:**
+**El cuerpo completo son cuatro campos, y dos son opcionales:**
 
 ```jsonc
 {
-  "nombre": "Cimentación", // opcional; null o ausente si el proyecto no tiene fases
+  "nombre": "Contrato 001-A", // opcional; null, "" o ausente → null
+  "fase": "Fase 1", // opcional; null, "" o ausente → null
   "fechaInicio": "2026-09-01", // obligatoria
   "fechaFin": "2026-12-31" // obligatoria
 }
 // data: { "contrato": { … } }
 ```
+
+`nombre` y `fase` se recortan, y el vacío se guarda como `null`: mandar `"   "`
+devuelve `null`, nunca cadena vacía. (Hasta el 31 ago 2026 el alta con
+`"nombre": ""` devolvía `""`; era un incumplimiento de la regla 5 y ya no pasa.)
 
 **No mandes `numero`**: es una secuencia dentro del proyecto y la calcula el
 servidor (`max + 1`, contando también los dados de baja). Tampoco `siroc`, que va
@@ -601,13 +611,13 @@ Ojo con la asimetría: **el alta IGNORA los campos de más en silencio** —mand
 | `400`  | El proyecto está **finalizado**                         |
 | `400`  | Falta `fechaInicio` o `fechaFin`, o no son `AAAA-MM-DD` |
 | `400`  | `fechaFin` anterior a `fechaInicio` (`path: fechaFin`)  |
-| `400`  | `nombre` de más de 120 caracteres                       |
+| `400`  | `nombre` o `fase` de más de 120 caracteres              |
 | `404`  | Proyecto inexistente o ajeno                            |
 
 ### `PATCH /contratos/:id`
 
-**Sólo `nombre`, `fechaInicio` y `fechaFin`.** Cualquier otro campo responde `400`
-diciendo por dónde va:
+**Sólo `nombre`, `fase`, `fechaInicio` y `fechaFin`.** Cualquier otro campo
+responde `400` diciendo por dónde va:
 
 | Si mandas    | El mensaje dice                                  |
 | ------------ | ------------------------------------------------ |
@@ -618,6 +628,9 @@ diciendo por dónde va:
 | `proyectoId` | un contrato no cambia de proyecto                |
 
 Un cuerpo vacío también es `400` («No hay nada que actualizar»).
+
+Para **borrar** el nombre o la fase, manda `""` o `null`: los dos vuelven el campo
+a `null`. Mandar sólo uno de ellos no toca el otro ni las fechas.
 
 ### `PUT /contratos/:id/siroc`
 

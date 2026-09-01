@@ -737,8 +737,8 @@ Sacar un cliente de la cartera falla si la empresa tiene proyectos con él.
 | `POST` | `/proyectos/:id/asignaciones` | `{ empleadoId, categoriaId, fechaAsignacion }` → `{ asignacion, avisos[] }` |
 | `GET` | `/asignaciones/:id` | El detalle con la cadena completa en `trazabilidad` |
 | `PATCH` | `/asignaciones/:id/salida` | `{ fechaSalida }` — cierra, no borra |
-| `GET` `POST` | `/proyectos/:id/contratos` | `?incluirInactivos=`; el alta es `{ nombre?, fechaInicio, fechaFin }` |
-| `PATCH` | `/contratos/:id` | **Sólo** `nombre`, `fechaInicio`, `fechaFin` |
+| `GET` `POST` | `/proyectos/:id/contratos` | `?incluirInactivos=`; el alta es `{ nombre?, fase?, fechaInicio, fechaFin }` |
+| `PATCH` | `/contratos/:id` | **Sólo** `nombre`, `fase`, `fechaInicio`, `fechaFin` |
 | `PUT` `DELETE` | `/contratos/:id/siroc` | `{ numero, fechaRegistro, vigenciaHasta? }` — reemplaza entero |
 | `POST` | `/contratos/:id/finalizar` · `/reabrir` | Mueven `estado` |
 | `PATCH` | `/contratos/:id/estado` | `{ activo }` — mueve **`activo`**, la baja |

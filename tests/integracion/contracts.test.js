@@ -56,6 +56,7 @@ describe('Contratos de un proyecto', () => {
         proyectoId: e.proyecto._id.toString(),
         numero: 1,
         nombre: 'Cimentación',
+        fase: null,
         fechaInicio: '2026-09-01',
         fechaFin: '2026-12-31',
         siroc: null,
@@ -73,6 +74,15 @@ describe('Contratos de un proyecto', () => {
       const e = await escenario()
 
       const res = await crear(e, { nombre: undefined })
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.contrato.nombre).toBeNull()
+    })
+
+    it('el nombre vacío se guarda como null, nunca como cadena vacía', async () => {
+      const e = await escenario()
+
+      const res = await crear(e, { nombre: '' })
 
       expect(res.status).toBe(201)
       expect(res.body.data.contrato.nombre).toBeNull()
@@ -121,6 +131,96 @@ describe('Contratos de un proyecto', () => {
 
       expect(res.status).toBe(400)
       expect(res.body.message).toMatch(/proyecto finalizado/i)
+    })
+  })
+
+  describe('la fase, el alias del contrato (D-75)', () => {
+    it('se manda en el alta, junto al nombre y sin pisarlo', async () => {
+      const e = await escenario()
+
+      const res = await crear(e, { nombre: 'Contrato 001-A', fase: 'Fase 1' })
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.contrato).toMatchObject({
+        nombre: 'Contrato 001-A',
+        fase: 'Fase 1'
+      })
+    })
+
+    it('es opcional y sale en null, nunca vacía ni ausente', async () => {
+      const e = await escenario()
+
+      const sinFase = await crear(e)
+      expect(sinFase.body.data.contrato.fase).toBeNull()
+
+      const vacia = await crear(e, { fase: '   ' })
+      expect(vacia.status).toBe(201)
+      expect(vacia.body.data.contrato.fase).toBeNull()
+    })
+
+    it('se edita, y se vacía con cadena vacía o con null', async () => {
+      const e = await escenario()
+      const id = (await crear(e, { fase: 'Fase 1' })).body.data.contrato._id
+
+      const editada = await request(app)
+        .patch(`${CONTRATOS}/${id}`)
+        .set(auth(e.token))
+        .send({ fase: 'Fase 2' })
+      expect(editada.status).toBe(200)
+      expect(editada.body.data.contrato.fase).toBe('Fase 2')
+
+      const vaciada = await request(app)
+        .patch(`${CONTRATOS}/${id}`)
+        .set(auth(e.token))
+        .send({ fase: '' })
+      expect(vaciada.status).toBe(200)
+      expect(vaciada.body.data.contrato.fase).toBeNull()
+
+      const conNull = await request(app)
+        .patch(`${CONTRATOS}/${id}`)
+        .set(auth(e.token))
+        .send({ fase: null })
+      expect(conNull.status).toBe(200)
+      expect(conNull.body.data.contrato.fase).toBeNull()
+    })
+
+    it('editar sólo la fase no toca el nombre ni las fechas', async () => {
+      const e = await escenario()
+      const id = (await crear(e, { nombre: 'Contrato 001-A' })).body.data.contrato._id
+
+      const res = await request(app)
+        .patch(`${CONTRATOS}/${id}`)
+        .set(auth(e.token))
+        .send({ fase: 'Fase 1' })
+
+      expect(res.body.data.contrato).toMatchObject({
+        nombre: 'Contrato 001-A',
+        fase: 'Fase 1',
+        fechaInicio: '2026-09-01',
+        fechaFin: '2026-12-31'
+      })
+    })
+
+    it('viene en el listado de contratos del proyecto', async () => {
+      const e = await escenario()
+      await crear(e, { nombre: 'Uno', fase: 'Fase 1' })
+      await crear(e, { nombre: 'Dos' })
+
+      const res = await request(app)
+        .get(`${PROYECTOS}/${e.proyecto._id}/contratos`)
+        .set(auth(e.token))
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.contratos.map((c) => c.fase)).toEqual(['Fase 1', null])
+    })
+
+    it('400 si pasa de 120 caracteres', async () => {
+      const e = await escenario()
+
+      const res = await crear(e, { fase: 'F'.repeat(121) })
+
+      expect(res.status).toBe(400)
+      expect(res.body.errors[0].msg).toBe('La fase no puede exceder 120 caracteres')
     })
   })
 

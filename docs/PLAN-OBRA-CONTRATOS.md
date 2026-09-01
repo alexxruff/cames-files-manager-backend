@@ -142,7 +142,8 @@ registrosObra: [
 {
   proyectoId,          // ObjectId → projects
   numero,              // orden dentro del proyecto: 1, 2, 3…
-  nombre,              // 'Fase 1', 'Cimentación' — opcional
+  nombre,              // nombre del contrato — opcional
+  fase,                // 'Fase 1', 'Cimentación' — opcional (D-75)
   fechaInicio, fechaFin,
   siroc: {             // null hasta que se registre
     numero,
@@ -165,8 +166,9 @@ versiones, se gradúa entonces.
 
 **Fase y contrato son la misma entidad.** En tu descripción cada fase tiene
 exactamente un contrato, y un proyecto de un solo contrato no tiene fase. Dos
-entidades 1:1 obligatorias son una sola con dos nombres. `nombre` cubre la
-etiqueta de fase. **Esto conviene que lo confirmes** (ver G1).
+entidades 1:1 obligatorias son una sola con dos nombres, y desde D-75 son
+literalmente dos campos: `nombre` el del contrato y `fase` la etiqueta de obra.
+**Esto conviene que lo confirmes** (ver G1).
 
 ### C5. Empleados — nada que duplicar
 
@@ -302,8 +304,8 @@ entorno por separado.
 Confirmadas con el cliente el 28 de agosto de 2026.
 
 **G1. Fase y contrato son la misma entidad.** ✅ Una sola colección
-`contracts`, con `nombre` opcional como etiqueta de fase. No se modela «fase»
-por separado.
+`contracts`. No se modela «fase» por separado: es un campo del contrato,
+`fase`, opcional y aparte de su `nombre` (D-75, 31 ago 2026).
 
 **G2. La coherencia del registro patronal del empleado es un AVISO, no un
 bloqueo.** ✅ Si se asigna a un proyecto de `H67` a alguien cuya adscripción dice

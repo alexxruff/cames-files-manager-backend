@@ -7,8 +7,9 @@ const { idAString } = require('../../../utils/ids')
  *
  * **Contrato y fase son la misma entidad** (G1): cada fase de una obra tiene
  * exactamente un contrato, y un proyecto de un solo contrato no tiene fases.
- * Dos entidades 1:1 obligatorias son una sola con dos nombres; `nombre` cubre la
- * etiqueta ('Fase 1', 'Cimentación').
+ * Dos entidades 1:1 obligatorias son una sola con dos nombres, y por eso son dos
+ * campos de un mismo documento: `nombre` el del contrato y `fase` su etiqueta de
+ * obra ('Fase 1', 'Cimentación'), los dos opcionales (D-75).
  *
  * **Colección propia y no subdocumento del proyecto** porque crecen sin tope, se
  * agregan con el tiempo y hay que consultarlos solos. Es el mismo criterio que
@@ -72,12 +73,25 @@ const contractSchema = new mongoose.Schema(
       min: [1, 'El número de contrato empieza en 1']
     },
 
-    /** Etiqueta de la fase. Opcional: un proyecto de un contrato no la necesita. */
+    /** Nombre del contrato. Opcional: un proyecto de un contrato no lo necesita. */
     nombre: {
       type: String,
       default: null,
       trim: true,
       maxlength: [120, 'El nombre no puede exceder 120 caracteres']
+    },
+
+    /**
+     * Etiqueta de la fase ('Fase 1', 'Cimentación'), el alias con el que la obra
+     * llama a este contrato. Opcional y **aparte de `nombre`** (D-75): contrato y
+     * fase siguen siendo la misma entidad, pero en obra se nombran distinto y
+     * meter los dos nombres en un solo campo obligaba a elegir cuál se pierde.
+     */
+    fase: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: [120, 'La fase no puede exceder 120 caracteres']
     },
 
     fechaInicio: {
@@ -118,6 +132,7 @@ const contractSchema = new mongoose.Schema(
           proyectoId: idAString(ret.proyectoId),
           numero: ret.numero,
           nombre: ret.nombre ?? null,
+          fase: ret.fase ?? null,
           fechaInicio: ret.fechaInicio,
           fechaFin: ret.fechaFin,
           siroc: ret.siroc

@@ -122,7 +122,7 @@ lista, no dentro.
 | PATCH  | `/asignaciones/:id/salida`                                 | asignar a proyectos          | `asignacion`                                                                                                                                     | Cierra, no borra                                                                                                                        |
 | GET    | `/proyectos/:id/contratos`                                 | sesión                       | `contratos[]`                                                                                                                                    | Contratos del proyecto por número; `?incluirInactivos=true` (D-70)                                                                      |
 | POST   | `/proyectos/:id/contratos`                                 | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | El `numero` **lo asigna el servidor**; 400 si el proyecto está finalizado (D-70)                                                        |
-| PATCH  | `/contratos/:id`                                           | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Nombre y fechas. El SIROC y el estado van por sus rutas                                                                                 |
+| PATCH  | `/contratos/:id`                                           | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Nombre, fase y fechas. El SIROC y el estado van por sus rutas                                                                           |
 | PUT    | `/contratos/:id/siroc`                                     | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Registra o corrige el SIROC entero; **409 `SIROC_DUPLICADO`** si el número ya existe (G4)                                               |
 | DELETE | `/contratos/:id/siroc`                                     | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Lo quita y libera el número; 400 si no tenía                                                                                            |
 | POST   | `/contratos/:id/finalizar` · `/contratos/:id/reabrir`      | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Mueven `estado`; no se reabre si el proyecto está finalizado                                                                            |
@@ -249,14 +249,22 @@ número de renglón.
 ### Contratos y SIROC (D-70)
 
 Un contrato **es una fase**: cada fase de la obra tiene exactamente un contrato,
-y un proyecto de un solo contrato no tiene fases. Por eso `nombre` es opcional.
+y un proyecto de un solo contrato no tiene fases. Por eso `nombre` y `fase` son
+los dos opcionales.
+
+**`nombre` y `fase` son campos distintos del mismo contrato** (D-75): `nombre` es
+cómo se llama el contrato y `fase` el alias con el que la obra lo nombra. Se
+mandan en el alta, se editan por `PATCH /contratos/:id` y se vacían mandando `""`
+o `null` —vuelven a `null`, nunca a cadena vacía—. Los contratos anteriores a
+este cambio salen con `"fase": null`.
 
 ```jsonc
 {
   "_id": "66f...",
   "proyectoId": "66f...",
   "numero": 1, // secuencia dentro del proyecto; la pone el servidor
-  "nombre": "Cimentación", // etiqueta de la fase, o null
+  "nombre": "Contrato 001-A", // nombre del contrato, o null
+  "fase": "Fase 1", // etiqueta de la fase, o null
   "fechaInicio": "2026-09-01",
   "fechaFin": "2026-12-31",
   "siroc": null, // o { numero, fechaRegistro, vigenciaHasta }

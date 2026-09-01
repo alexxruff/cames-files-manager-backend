@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-74)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-75)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -227,7 +227,9 @@ después.
 
 Cada fase de una obra tiene exactamente un contrato, y un proyecto de una sola
 fase no tiene fases: **son la misma entidad** y por eso hay una sola colección
-(D-70). `nombre` es la etiqueta ('Cimentación') y es opcional.
+(D-70). Lo que sí son dos son sus nombres: `nombre` es el del contrato
+('Contrato 001-A') y `fase` su etiqueta de obra ('Fase 1', 'Cimentación'), los
+dos opcionales y ninguno derivado del otro (D-75).
 
 - `numero` es una **secuencia dentro del proyecto que asigna el servidor**, no un
   dato que se captura. Cuenta también los dados de baja: reusar un número

@@ -3213,3 +3213,42 @@ que hacía; sólo dejó de ser el único que sabe la forma.
 `CAMES_GIT_COMMIT` y `CAMES_BUILD_TIME` todavía no está commiteado, así que hoy
 en producción los dos campos son `null`. Se activan cuando se adopte el camino
 de despliegue guiado que vive en `cames-ops`.
+
+---
+
+## D-75 · La fase es un campo del contrato, aparte de su nombre
+
+**Decisión.** El contrato tiene **dos etiquetas opcionales y distintas**:
+`nombre`, cómo se llama el contrato ('Contrato 001-A'), y `fase`, el alias con el
+que la obra lo nombra ('Fase 1', 'Cimentación'). Se mandan las dos en el alta, se
+editan por `PATCH /contratos/:id`, y cualquiera de ellas se vacía mandando `""` o
+`null` —vuelven a `null`, nunca a cadena vacía (regla 5).
+
+**Contrato y fase siguen siendo la misma entidad** (G1, D-70). No hay colección
+`phases`, ni un `faseId`, ni una tabla de unión: si cada fase tiene exactamente
+un contrato, dos colecciones serían la misma fila partida en dos. Lo que cambió
+no es el modelo, son los nombres: **son dos, no uno**.
+
+**Por qué no bastó `nombre`.** Nació documentado como «la etiqueta de la fase», y
+mientras la obra sólo decía «Fase 1» alcanzaba. Pero el contrato también tiene su
+propio nombre —el que trae el papel firmado—, y con un solo campo quien captura
+tenía que elegir cuál de los dos perdía, o meter los dos en una cadena
+(`'Contrato 001-A — Fase 1'`) que después nadie puede volver a separar para
+filtrar ni para agrupar.
+
+**Por qué no se renombró `nombre` a `fase`.** Era la alternativa limpia, y se
+descartó: el front ya manda y muestra `nombre`, y renombrarlo obliga a migrar los
+contratos existentes y a coordinar el cambio en los dos lados para no romper lo
+que hoy funciona. Agregar un campo opcional no rompe a nadie: los contratos
+anteriores salen con `"fase": null`.
+
+**Por qué `fase` no es único ni obligatorio.** Dos fases de proyectos distintos se
+llaman «Fase 1» todo el tiempo, y dentro de un mismo proyecto el orden ya lo
+lleva `numero`, que sí es único y lo asigna el servidor. Un índice único sobre
+una etiqueta que la gente escribe a mano sólo produciría `409` en capturas
+legítimas. Y obligatoria no puede ser: un proyecto de un solo contrato **no tiene
+fases**, que es justo lo que dice G1.
+
+**Qué NO cambió.** El SIROC, `numero`, `estado`, `activo` y los candados del
+proyecto (G3) siguen igual. `fase` es una etiqueta: no traba nada, no deriva nada
+y no entra en ninguna consulta de alcance.

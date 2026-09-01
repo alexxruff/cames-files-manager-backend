@@ -41,7 +41,8 @@ class ContractService {
         const contrato = await Contract.create({
           proyectoId: proyecto._id,
           numero: await this.#siguienteNumero(proyecto._id),
-          nombre: datos.nombre ?? null,
+          nombre: datos.nombre || null,
+          fase: datos.fase || null,
           fechaInicio: datos.fechaInicio,
           fechaFin: datos.fechaFin
         })
@@ -53,11 +54,13 @@ class ContractService {
     }
   }
 
-  /** PATCH /contratos/:id — nombre y fechas. El SIROC y el estado, no. */
+  /** PATCH /contratos/:id — nombre, fase y fechas. El SIROC y el estado, no. */
   async update(id, datos, contexto = {}) {
     const { contrato } = await this.#buscarVisible(id, contexto)
 
+    // `|| null`: mandar cadena vacía es cómo se borra la etiqueta (regla 5).
     if (datos.nombre !== undefined) contrato.nombre = datos.nombre || null
+    if (datos.fase !== undefined) contrato.fase = datos.fase || null
     if (datos.fechaInicio !== undefined) contrato.fechaInicio = datos.fechaInicio
     if (datos.fechaFin !== undefined) contrato.fechaFin = datos.fechaFin
 

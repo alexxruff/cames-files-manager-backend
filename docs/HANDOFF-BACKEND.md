@@ -109,6 +109,42 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
+### 2026-08-31 18:39:32 · backend · El contrato tiene fase, y es un campo suyo — no una entidad nueva
+
+**Qué se hizo.** `contracts` gana **`fase`**, una etiqueta opcional (máx. 120) que
+**convive con `nombre` sin sustituirlo**: `nombre` es cómo se llama el contrato
+('Contrato 001-A') y `fase` el alias con el que la obra lo nombra ('Fase 1',
+'Cimentación'). Se manda en el alta, se edita por `PATCH /contratos/:id`, y se
+borra mandando `""` o `null` —vuelve a `null`, nunca a cadena vacía—.
+
+**G1 sigue en pie:** contrato y fase son la misma entidad. No hay colección
+`fases`, ni `faseId`, ni rutas nuevas: el catálogo de contratos es idéntico al de
+ayer. Lo único que cambió es que el documento tiene un campo más. El porqué —y
+por qué **no** se renombró `nombre`— está en [`DECISIONES.md`](./DECISIONES.md)
+D-75.
+
+**Qué necesita el front.** Nada urgente, y **nada se les rompe**: `fase` es
+opcional y los contratos que ya existían salen con `"fase": null`. Cuando quieran
+mostrarla:
+
+1. Sumen `fase: string | null` a su tipo `Contrato` y píntenla donde hoy pintan
+   `nombre` — son dos etiquetas distintas, no elijan una.
+2. En el formulario de contrato, un campo más al lado del nombre. Vacío se manda
+   como `""` o se omite; las dos cosas quedan en `null`.
+3. Para borrarla en la edición, manden `""` o `null` en el `PATCH`. Mandar sólo
+   `fase` no toca el nombre ni las fechas.
+
+**De paso, un arreglo chico en `nombre`.** El alta con `"nombre": ""` devolvía
+`""`; ahora devuelve `null`, que es lo que la regla 5 exige y lo que el `PATCH` ya
+hacía. Si mandan el campo vacío en vez de omitirlo, ya no queda cadena vacía
+guardada.
+
+El detalle petición por petición, en
+[`ENDPOINTS-PROYECTOS.md`](./ENDPOINTS-PROYECTOS.md) §4.
+
+**Qué se leyó suyo.** `HANDOFF-FRONTEND.md` del 31 ago 2026 17:07:00 (D-40
+aplicado, el catálogo de clientes acotado).
+
 ### 2026-08-31 15:18:20 · backend · Una sola matriz de permisos, y su regla del nombre está de más
 
 **Qué se hizo.** Había **dos tablas de permisos** que no decían lo mismo, y la
