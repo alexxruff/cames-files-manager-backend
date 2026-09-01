@@ -296,7 +296,7 @@ Cuando se te pida **«implementa la siguiente tarea pendiente»**:
    el otro lado dejó escrito.
 4. **Antes de tocar código**, escribe tu traducción técnica en `propuestaTecnica`
    —qué archivos y campos concretos vas a tocar, en 3-5 renglones—, cambia el
-   estado a `propuesta` y **para**. El usuario la aprueba o la corrige. La
+   estado a `proposed` y **para**. El usuario la aprueba o la corrige. La
    descripción de la tarea está escrita en su idioma, no en el nuestro: traducirla
    es tu primer trabajo, y confirmarla evita implementar lo que no era.
 5. Aprobada: estado `in_progress` y trabaja. El `acceptance` es el alcance; nada
@@ -305,11 +305,19 @@ Cuando se te pida **«implementa la siguiente tarea pendiente»**:
 7. Si la tarea tiene `handoff`, escribe `../cames-ops/plan/handoff/<id>.md` con el
    formato de abajo. Es lo único que el otro lado va a leer: si algo no está ahí,
    para ellos no existe.
-8. Estado `done`, y escribe en `commit` el mensaje que el usuario debe usar:
+8. Estado `in_review`, y escribe en `commit` el mensaje que el usuario debe usar:
    `feat(#<id>): <título>` más el cuerpo y la línea `Plan: #<id>`.
 9. **Termina tu respuesta con el mensaje de commit completo, en un bloque de
    código listo para copiar.** No basta con dejarlo en `tareas.json`: el usuario
    commitea desde la terminal y no deberia tener que ir a buscarlo al archivo.
+
+**`in_review` no es `done`.** Tu no cierras una tarea: la dejas lista para que el
+usuario la pruebe. El pasa a `done` cuando la valido, o la devuelve a
+`in_progress` diciendo que fallo. Una tarea de backend, ademas, no se puede dar
+por buena hasta que el front la consuma.
+
+Una tarea cuyo `dependsOn` este en `in_review` SI se puede empezar: el trabajo
+esta hecho y su handoff escrito; lo unico que falta es el visto bueno del usuario.
 
 **Nunca hagas `git add`, `git commit` ni `git push`.** El usuario revisa el diff y
 commitea. Deja el árbol como está.
