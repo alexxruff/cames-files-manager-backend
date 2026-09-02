@@ -1,9 +1,11 @@
 const mongoose = require('mongoose')
 const Contract = require('./contractModel')
 const Project = require('../projects/projectModel')
+const storage = require('../../../services/storageService')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { empresaEsVisible } = require('../../../middlewares/scopeMiddleware')
 const { deriveSirocTracking } = require('../../../utils/domain')
+const { detectarTipo, mensajeTipoNoPermitido } = require('../../../utils/fileTypes')
 const { today, isAfter, isBefore } = require('../../../utils/dates')
 
 /**
@@ -27,7 +29,7 @@ class ContractService {
     if (!incluirInactivos) filtro.activo = true
 
     const contratos = await Contract.find(filtro).sort({ numero: 1 })
-    return { contratos: contratos.map((c) => this.#serializar(c)) }
+    return { contratos: await Promise.all(contratos.map((c) => this.#serializar(c))) }
   }
 
   /** POST /proyectos/:id/contratos */
@@ -53,7 +55,7 @@ class ContractService {
           fechaInicio: datos.fechaInicio,
           fechaFin: datos.fechaFin
         })
-        return { contrato: this.#serializar(contrato) }
+        return { contrato: await this.#serializar(contrato) }
       } catch (error) {
         const chocaElNumero = error.code === 11000 && !this.#esChoqueDeSiroc(error)
         if (!chocaElNumero || intento === 2) throw error
@@ -72,7 +74,7 @@ class ContractService {
     if (datos.fechaFin !== undefined) contrato.fechaFin = datos.fechaFin
 
     await contrato.save()
-    return { contrato: this.#serializar(contrato) }
+    return { contrato: await this.#serializar(contrato) }
   }
 
   /**
@@ -103,12 +105,13 @@ class ContractService {
     /*
      * Las renovaciones sobreviven a corregir el aviso (D-76): son del MISMO
      * SIROC —el número no cambia al actualizarlo— y arrastran la ventana
-     * vigente. Quien quiera empezar de cero tiene `DELETE /siroc`, que se lleva
-     * el aviso entero.
+     * vigente. Con su acuse, que también es de ellas (D-80). Quien quiera
+     * empezar de cero tiene `DELETE /siroc`, que se lleva el aviso entero.
      */
     const actualizaciones = (contrato.siroc?.actualizaciones ?? []).map((a) => ({
       fecha: a.fecha,
-      nota: a.nota ?? null
+      nota: a.nota ?? null,
+      archivo: this.#planoAdjunto(a.archivo)
     }))
 
     const primera = actualizaciones[0]?.fecha
@@ -119,15 +122,30 @@ class ContractService {
       )
     }
 
+    /*
+     * Corregir el aviso **no tira su archivo** (D-80): el número mal tecleado no
+     * invalida el papel escaneado. Sólo lo reemplaza mandar uno nuevo, y el
+     * anterior se borra hasta que la base ya no lo referencia.
+     */
+    const anterior = contrato.siroc?.archivo?.claveAlmacenamiento ?? null
+    const archivo = datos.archivo
+      ? await this.#subirAdjunto(contrato, datos.archivo, 'aviso', contexto)
+      : this.#planoAdjunto(contrato.siroc?.archivo)
+    const claveNueva = datos.archivo ? archivo.claveAlmacenamiento : null
+
     contrato.siroc = {
       numero,
       fechaRegistro: datos.fechaRegistro,
-      actualizaciones
+      actualizaciones,
+      archivo
     }
 
     try {
       await contrato.save()
     } catch (error) {
+      // Lo recién subido se limpia: si la base no lo guardó, nadie lo alcanza.
+      if (claveNueva) await storage.borrar(claveNueva)
+
       if (this.#esChoqueDeSiroc(error)) {
         throw (
           (await this.#buscarChoqueDeSiroc(numero, contrato._id)) ||
@@ -139,7 +157,9 @@ class ContractService {
       throw error
     }
 
-    return { contrato: this.#serializar(contrato) }
+    if (claveNueva && anterior && anterior !== claveNueva) await storage.borrar(anterior)
+
+    return { contrato: await this.#serializar(contrato) }
   }
 
   /**
@@ -155,9 +175,16 @@ class ContractService {
 
     if (!contrato.siroc) throw new AppError(400, 'Ese contrato no tiene SIROC registrado')
 
+    // Se va el aviso, se van sus papeles: el del registro y el acuse de cada
+    // renovación. Nada los referenciaría después (D-80).
+    const claves = this.#clavesDelSiroc(contrato.siroc)
+
     contrato.siroc = null
     await contrato.save()
-    return { contrato: this.#serializar(contrato) }
+
+    for (const clave of claves) await storage.borrar(clave)
+
+    return { contrato: await this.#serializar(contrato) }
   }
 
   /**
@@ -197,11 +224,23 @@ class ContractService {
       )
     }
 
-    contrato.siroc.actualizaciones.push({ fecha, nota: datos.nota || null })
-    contrato.markModified('siroc.actualizaciones')
-    await contrato.save()
+    // El acuse de ESTA renovación, si vino (D-80). Es opcional: se puede
+    // capturar la fecha al volver del IMSS y escanear el papel más tarde.
+    const archivo = datos.archivo
+      ? await this.#subirAdjunto(contrato, datos.archivo, 'actualizacion', contexto)
+      : null
 
-    return { contrato: this.#serializar(contrato) }
+    contrato.siroc.actualizaciones.push({ fecha, nota: datos.nota || null, archivo })
+    contrato.markModified('siroc.actualizaciones')
+
+    try {
+      await contrato.save()
+    } catch (error) {
+      if (archivo) await storage.borrar(archivo.claveAlmacenamiento)
+      throw error
+    }
+
+    return { contrato: await this.#serializar(contrato) }
   }
 
   /**
@@ -218,11 +257,16 @@ class ContractService {
       throw new AppError(400, 'Ese SIROC no tiene actualizaciones registradas')
     }
 
-    contrato.siroc.actualizaciones.pop()
+    const quitada = contrato.siroc.actualizaciones.pop()
     contrato.markModified('siroc.actualizaciones')
     await contrato.save()
 
-    return { contrato: this.#serializar(contrato) }
+    // Su acuse se va con ella: era de esa renovación, no del aviso.
+    if (quitada?.archivo?.claveAlmacenamiento) {
+      await storage.borrar(quitada.archivo.claveAlmacenamiento)
+    }
+
+    return { contrato: await this.#serializar(contrato) }
   }
 
   /** POST /contratos/:id/finalizar */
@@ -235,7 +279,7 @@ class ContractService {
 
     contrato.estado = 'finalizado'
     await contrato.save()
-    return { contrato: this.#serializar(contrato) }
+    return { contrato: await this.#serializar(contrato) }
   }
 
   /** POST /contratos/:id/reabrir */
@@ -254,7 +298,7 @@ class ContractService {
 
     contrato.estado = 'en_curso'
     await contrato.save()
-    return { contrato: this.#serializar(contrato) }
+    return { contrato: await this.#serializar(contrato) }
   }
 
   /** PATCH /contratos/:id/estado — la baja, distinta de finalizar. */
@@ -263,7 +307,105 @@ class ContractService {
 
     contrato.activo = activo
     await contrato.save()
-    return { contrato: this.#serializar(contrato) }
+    return { contrato: await this.#serializar(contrato) }
+  }
+
+  // ─── El papel del aviso (D-80) ─────────────────────────────────────────────
+
+  /**
+   * GET /contratos/:id/siroc/archivo — un enlace fresco al aviso escaneado.
+   *
+   * Existe además de la URL que ya viaja en cada contrato porque esa caduca a
+   * los 10 minutos: sin esto, quien deja la pantalla abierta un rato tendría que
+   * recargar el proyecto entero para volver a abrir el mismo papel.
+   */
+  async urlDeArchivoSiroc(id, contexto = {}) {
+    const { contrato } = await this.#buscarVisible(id, contexto)
+
+    if (!contrato.siroc) throw AppError.notFound('Ese contrato no tiene SIROC registrado')
+    if (!contrato.siroc.archivo) throw AppError.notFound('Ese SIROC no tiene archivo')
+
+    return {
+      archivo: await storage.firmarAdjunto(
+        contrato.siroc.archivo,
+        contrato.siroc.numero,
+        {
+          descargar: contexto.descargar === true ? true : null
+        }
+      )
+    }
+  }
+
+  /**
+   * GET /contratos/:id/siroc/actualizaciones/:indice/archivo — el acuse de una
+   * renovación concreta.
+   *
+   * Se direcciona por **posición** porque las renovaciones no tienen `_id`
+   * (D-76). Es estable: el arreglo sólo crece y sólo se puede quitar la última.
+   */
+  async urlDeArchivoActualizacion(id, indice, contexto = {}) {
+    const { contrato } = await this.#buscarVisible(id, contexto)
+
+    if (!contrato.siroc) throw AppError.notFound('Ese contrato no tiene SIROC registrado')
+
+    const actualizacion = (contrato.siroc.actualizaciones ?? [])[indice]
+    if (!actualizacion) throw AppError.notFound('Esa actualización del SIROC no existe')
+    if (!actualizacion.archivo) {
+      throw AppError.notFound('Esa actualización del SIROC no tiene archivo')
+    }
+
+    return {
+      archivo: await storage.firmarAdjunto(
+        actualizacion.archivo,
+        storage.nombreDeActualizacion(contrato.siroc.numero, actualizacion.fecha),
+        { descargar: contexto.descargar === true ? true : null }
+      )
+    }
+  }
+
+  /**
+   * PUT /contratos/:id/siroc/actualizaciones/:indice/archivo — ponerle el acuse
+   * a una renovación **ya capturada**, o reemplazar el que tenga.
+   *
+   * Existe porque el acuse sellado casi siempre llega **después** de capturar el
+   * refrendo, y sin esta ruta la única salida era deshacer la actualización para
+   * volver a capturarla con el papel — lo que **mueve la ventana de dos meses** y
+   * con ella todos los avisos de vencimiento (D-76). Seis veces al año por obra.
+   *
+   * Toca **sólo el archivo**: ni la fecha, ni la nota, ni el orden, ni la cuenta
+   * de refrendos, ni la vigencia. Y sirve para cualquiera de ellas, no sólo la
+   * última: las de en medio no se podían tocar de ninguna manera.
+   */
+  async reemplazarArchivoActualizacion(id, indice, archivo, contexto = {}) {
+    const { contrato } = await this.#buscarVisible(id, contexto)
+
+    if (!contrato.siroc) throw new AppError(400, 'Ese contrato no tiene SIROC registrado')
+
+    const actualizacion = (contrato.siroc.actualizaciones ?? [])[indice]
+    if (!actualizacion) throw AppError.notFound('Esa actualización del SIROC no existe')
+
+    /*
+     * A propósito NO se exige que el contrato siga en curso, al revés que
+     * capturar el refrendo: el acuse que llega tarde es justamente el caso que
+     * esta ruta viene a resolver, y una obra puede haber cerrado mientras tanto.
+     */
+    const anterior = actualizacion.archivo?.claveAlmacenamiento ?? null
+    const nuevo = await this.#subirAdjunto(contrato, archivo, 'actualizacion', contexto)
+
+    actualizacion.archivo = nuevo
+    contrato.markModified('siroc.actualizaciones')
+
+    try {
+      await contrato.save()
+    } catch (error) {
+      await storage.borrar(nuevo.claveAlmacenamiento)
+      throw error
+    }
+
+    // El anterior, hasta que la base ya no lo referencia. No se versiona (D-79).
+    if (anterior && anterior !== nuevo.claveAlmacenamiento) await storage.borrar(anterior)
+
+    return { contrato: await this.#serializar(contrato) }
   }
 
   // ─── Lo que consulta el proyecto para sus candados (G3) ────────────────────
@@ -289,9 +431,68 @@ class ContractService {
    * El contrato con su `seguimientoSiroc` al lado. Derivado en cada lectura, no
    * guardado (regla #6): el mismo contrato responde distinto mañana.
    */
-  #serializar(contrato) {
+  async #serializar(contrato) {
     const json = contrato.toJSON()
-    return { ...json, seguimientoSiroc: deriveSirocTracking(json) }
+    return {
+      ...json,
+      // El SIROC sale con la URL firmada de su aviso y la de cada acuse (D-80).
+      siroc: await storage.firmarSiroc(json.siroc, contrato.siroc),
+      seguimientoSiroc: deriveSirocTracking(json)
+    }
+  }
+
+  /**
+   * Sube el adjunto y devuelve el subdocumento listo para guardar.
+   *
+   * Al almacenamiento primero y a la base después, como en el expediente y en el
+   * registro de obra: si la base falla, quien llama borra el objeto recién
+   * subido en vez de dejarlo huérfano.
+   *
+   * @param {'aviso'|'actualizacion'} clase qué papel es, para la ruta en R2
+   */
+  async #subirAdjunto(contrato, archivo, clase, contexto = {}) {
+    const tipoReal = detectarTipo(archivo.buffer, archivo.nombreOriginal)
+    if (!tipoReal) throw new AppError(415, mensajeTipoNoPermitido(archivo.buffer))
+
+    // Todo lo del SIROC de un contrato cuelga de `siroc/{contratoId}/`.
+    const clave = storage.construirClaveAdjunto({
+      carpeta: 'siroc',
+      ids: [contrato._id, clase],
+      extension: tipoReal.extension
+    })
+
+    await storage.subir({ buffer: archivo.buffer, clave, contentType: tipoReal.mime })
+
+    return {
+      nombre: archivo.nombreOriginal || `siroc.${tipoReal.extension}`,
+      mime: tipoReal.mime,
+      tamanoBytes: archivo.buffer.length,
+      subidoPor: contexto.user?.nombre || 'Sistema',
+      subidoPorId: contexto.user?._id ?? null,
+      subidoEn: new Date(),
+      claveAlmacenamiento: clave
+    }
+  }
+
+  /**
+   * El adjunto como objeto plano, con su clave.
+   *
+   * `contrato.siroc = { ... }` reemplaza el subdocumento entero, así que lo que
+   * se conserva hay que volvérselo a dar: pasarle el subdocumento de Mongoose
+   * tal cual funciona por accidente y deja de funcionar en cuanto cambia el
+   * casteo. `toObject` cuando lo es, el objeto cuando ya es plano.
+   */
+  #planoAdjunto(archivo) {
+    if (!archivo) return null
+    return typeof archivo.toObject === 'function' ? archivo.toObject() : archivo
+  }
+
+  /** Las claves de todo lo que cuelga de un SIROC: el aviso y cada acuse. */
+  #clavesDelSiroc(siroc) {
+    const claves = [siroc?.archivo?.claveAlmacenamiento]
+    for (const a of siroc?.actualizaciones ?? [])
+      claves.push(a?.archivo?.claveAlmacenamiento)
+    return claves.filter(Boolean)
   }
 
   async #siguienteNumero(proyectoId) {

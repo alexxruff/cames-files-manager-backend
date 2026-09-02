@@ -86,7 +86,7 @@ describe('La documentación no se desfasó del código', () => {
      * entrega, no un prefijo de ruta.
      */
     it.each([
-      ['docs/ENDPOINTS-PROYECTOS.md', 27],
+      ['docs/ENDPOINTS-PROYECTOS.md', 30],
       ['docs/ENDPOINTS-ADSCRIPCIONES.md', 6],
       ['docs/ENDPOINTS-EXPEDIENTES.md', 6],
       ['docs/ENDPOINTS-IMPORTACION.md', 2]

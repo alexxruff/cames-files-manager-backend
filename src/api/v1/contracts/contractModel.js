@@ -1,6 +1,8 @@
 const mongoose = require('mongoose')
 const { isCalendarDate, isBefore } = require('../../../utils/dates')
 const { idAString } = require('../../../utils/ids')
+const attachmentSchema = require('../../../models/attachmentSchema')
+const { attachmentToJson } = require('../../../utils/attachments')
 
 /**
  * Contrato de un proyecto, con su SIROC embebido (D-70, plan §C4).
@@ -46,9 +48,24 @@ const sirocRenovacionSchema = new mongoose.Schema(
       default: null,
       trim: true,
       maxlength: [200, 'La nota no puede exceder 200 caracteres']
-    }
+    },
+
+    /**
+     * El acuse de ESTA renovación (D-80). Opcional, y **propio de cada una**: el
+     * papel que sale del IMSS al refrendar no es el del aviso original, y es el
+     * historial completo lo que se enseña si algún día lo revisan.
+     */
+    archivo: { type: attachmentSchema, default: null }
   },
-  { _id: false }
+  {
+    /*
+     * SIN `_id`, como nació (D-76). Ponérselo ahora obligaría a migrar las
+     * renovaciones ya capturadas —y mientras tanto Mongoose les inventaría uno
+     * distinto en cada lectura—, así que cada una se direcciona por su índice.
+     * Es estable: el arreglo sólo crece y sólo se quita la última.
+     */
+    _id: false
+  }
 )
 
 /**
@@ -82,7 +99,14 @@ const sirocSchema = new mongoose.Schema(
      * Las renovaciones de este mismo aviso, en orden (D-76). Vacío mientras el
      * SIROC original siga dentro de sus dos meses.
      */
-    actualizaciones: { type: [sirocRenovacionSchema], default: [] }
+    actualizaciones: { type: [sirocRenovacionSchema], default: [] },
+
+    /**
+     * El aviso escaneado (D-80). Opcional: el SIROC se puede capturar en cuanto
+     * se tiene el número, y el papel llegar después. Corregir el aviso con
+     * `PUT /siroc` **no lo tira**; sólo lo reemplaza mandar uno nuevo.
+     */
+    archivo: { type: attachmentSchema, default: null }
   },
   { _id: false }
 )
@@ -174,8 +198,11 @@ const contractSchema = new mongoose.Schema(
                 fechaRegistro: ret.siroc.fechaRegistro,
                 actualizaciones: (ret.siroc.actualizaciones ?? []).map((a) => ({
                   fecha: a.fecha,
-                  nota: a.nota ?? null
-                }))
+                  nota: a.nota ?? null,
+                  // Sin `url`: firmarla es asíncrono, y la agrega el servicio.
+                  archivo: attachmentToJson(a.archivo)
+                })),
+                archivo: attachmentToJson(ret.siroc.archivo)
               }
             : null,
           estado: ret.estado,

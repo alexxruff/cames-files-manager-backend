@@ -318,7 +318,9 @@ describe('Contratos de un proyecto', () => {
         numero: 'SIR-2026-0001',
         fechaRegistro: '2026-09-10',
         // Nace sin renovaciones: se agregan cada dos meses (D-76).
-        actualizaciones: []
+        actualizaciones: [],
+        // Y sin papel: el aviso escaneado es opcional (D-80).
+        archivo: null
       })
 
       // Corregirlo con su MISMO número no choca consigo mismo.

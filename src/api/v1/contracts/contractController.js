@@ -3,6 +3,13 @@ const { ok, created } = require('../../../utils/response')
 
 /** HTTP de contratos y SIROC (backend-spec §6.7, D-70). */
 class ContractController {
+  /** El archivo de multer, en la forma que espera el servicio. `null` si no vino. */
+  #archivo(req) {
+    return req.file
+      ? { buffer: req.file.buffer, nombreOriginal: req.file.originalname }
+      : null
+  }
+
   #contexto(req) {
     return {
       user: req.user,
@@ -46,18 +53,28 @@ class ContractController {
     return ok(res, datos, 'Contrato actualizado')
   }
 
-  /** PUT /contratos/:id/siroc */
+  /**
+   * PUT /contratos/:id/siroc
+   *
+   * Acepta `multipart` con el aviso escaneado en el campo `archivo`, opcional
+   * (D-80). Sin archivo se sigue pudiendo mandar JSON, y corregir el número no
+   * tira el papel que ya estaba.
+   */
   setSiroc = async (req, res) => {
     const datos = await contractService.setSiroc(
       req.params.id,
-      req.body,
+      { ...req.body, archivo: this.#archivo(req) },
       this.#contexto(req)
     )
     req.log.info('SIROC registrado', {
       contratoId: req.params.id,
       numero: datos.contrato.siroc?.numero
     })
-    return ok(res, datos, 'SIROC registrado')
+    return ok(
+      res,
+      datos,
+      req.file ? 'SIROC registrado con su archivo' : 'SIROC registrado'
+    )
   }
 
   /** DELETE /contratos/:id/siroc */
@@ -67,11 +84,16 @@ class ContractController {
     return ok(res, datos, 'SIROC retirado del contrato')
   }
 
-  /** POST /contratos/:id/siroc/actualizaciones */
+  /**
+   * POST /contratos/:id/siroc/actualizaciones
+   *
+   * Igual que el alta del aviso, acepta `multipart`: el `archivo` que venga es
+   * el acuse de ESTA renovación, no el del SIROC original (D-80).
+   */
   registrarActualizacion = async (req, res) => {
     const datos = await contractService.registrarActualizacion(
       req.params.id,
-      req.body,
+      { ...req.body, archivo: this.#archivo(req) },
       this.#contexto(req)
     )
     req.log.info('SIROC actualizado', {
@@ -90,6 +112,50 @@ class ContractController {
     )
     req.log.info('Actualización de SIROC deshecha', { contratoId: req.params.id })
     return ok(res, datos, 'Última actualización del SIROC deshecha')
+  }
+
+  /**
+   * GET /contratos/:id/siroc/archivo
+   *
+   * Un enlace fresco al aviso escaneado. `?descargar=true` fuerza la descarga;
+   * los tipos que el navegador no previsualiza se descargan siempre.
+   */
+  urlArchivoSiroc = async (req, res) => {
+    const datos = await contractService.urlDeArchivoSiroc(req.params.id, {
+      ...this.#contexto(req),
+      descargar: req.query.descargar === 'true'
+    })
+    return ok(res, datos)
+  }
+
+  /** GET /contratos/:id/siroc/actualizaciones/:indice/archivo */
+  urlArchivoActualizacion = async (req, res) => {
+    const datos = await contractService.urlDeArchivoActualizacion(
+      req.params.id,
+      Number(req.params.indice),
+      { ...this.#contexto(req), descargar: req.query.descargar === 'true' }
+    )
+    return ok(res, datos)
+  }
+
+  /**
+   * PUT /contratos/:id/siroc/actualizaciones/:indice/archivo
+   *
+   * Le pone el acuse a una renovación ya capturada, o reemplaza el que tenga.
+   * No toca ningún otro dato de la actualización.
+   */
+  subirArchivoActualizacion = async (req, res) => {
+    const datos = await contractService.reemplazarArchivoActualizacion(
+      req.params.id,
+      Number(req.params.indice),
+      this.#archivo(req),
+      this.#contexto(req)
+    )
+    req.log.info('Acuse de actualización del SIROC guardado', {
+      contratoId: req.params.id,
+      indice: req.params.indice
+    })
+    return ok(res, datos, 'Acuse de la actualización guardado')
   }
 
   /** POST /contratos/:id/finalizar */

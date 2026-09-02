@@ -4,6 +4,7 @@ const asyncHandler = require('../../../utils/asyncHandler')
 const validateRequest = require('../../../middlewares/validateRequest')
 const { protect, requireCapability } = require('../../../middlewares/authMiddleware')
 const { applyScope } = require('../../../middlewares/scopeMiddleware')
+const { recibirArchivo } = require('../../../middlewares/uploadMiddleware')
 const { requirePasswordDefinitiva } = require('../../../middlewares/passwordMiddleware')
 const { CAPABILITIES } = require('../../../utils/permissions')
 const {
@@ -11,7 +12,10 @@ const {
   updateContractValidation,
   contractEstadoValidation,
   setSirocValidation,
-  sirocRenovacionValidation
+  sirocRenovacionValidation,
+  sirocFileValidation,
+  sirocUpdateFileValidation,
+  sirocUpdateFileUploadValidation
 } = require('../../../validations/contractValidation')
 
 /**
@@ -41,10 +45,17 @@ router.patch(
   asyncHandler(contractController.update)
 )
 
+/*
+ * `recibirArchivo` va ANTES de las validaciones porque es multer quien llena
+ * `req.body` cuando la petición viene como `multipart` (D-80). Las dos rutas de
+ * captura siguen aceptando `application/json` sin archivo: multer deja pasar lo
+ * que no es multipart.
+ */
 router
   .route('/:id/siroc')
   .put(
     gestionarProyectos,
+    recibirArchivo,
     setSirocValidation,
     validateRequest,
     asyncHandler(contractController.setSiroc)
@@ -64,6 +75,7 @@ router
 router.post(
   '/:id/siroc/actualizaciones',
   gestionarProyectos,
+  recibirArchivo,
   sirocRenovacionValidation,
   validateRequest,
   asyncHandler(contractController.registrarActualizacion)
@@ -75,6 +87,39 @@ router.delete(
   validateRequest,
   asyncHandler(contractController.quitarUltimaActualizacion)
 )
+
+/*
+ * Abrir el papel del aviso. Sólo pide sesión y alcance —lo mismo que ver el
+ * contrato—: quien puede leer el número del SIROC puede ver el papel que lo
+ * respalda. La URL que viaja en cada respuesta caduca a los 10 minutos; esto
+ * pide una nueva sin recargar el proyecto entero.
+ */
+router.get(
+  '/:id/siroc/archivo',
+  sirocFileValidation,
+  validateRequest,
+  asyncHandler(contractController.urlArchivoSiroc)
+)
+/*
+ * El archivo de una renovación se LEE con sesión y alcance, y se REEMPLAZA con
+ * la misma capacidad que capturarla. El `PUT` está aquí y no en un `POST` nuevo
+ * porque el recurso es el archivo de esa posición y esto lo reemplaza entero: no
+ * toca la fecha, la nota ni el orden (D-80).
+ */
+router
+  .route('/:id/siroc/actualizaciones/:indice/archivo')
+  .get(
+    sirocUpdateFileValidation,
+    validateRequest,
+    asyncHandler(contractController.urlArchivoActualizacion)
+  )
+  .put(
+    gestionarProyectos,
+    recibirArchivo,
+    sirocUpdateFileUploadValidation,
+    validateRequest,
+    asyncHandler(contractController.subirArchivoActualizacion)
+  )
 
 router.post(
   '/:id/finalizar',

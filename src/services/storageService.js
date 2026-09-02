@@ -229,6 +229,43 @@ async function firmarRegistro(registro, registrosOriginales) {
 }
 
 /**
+ * El SIROC como sale al front, con el archivo del aviso y el de cada renovación
+ * ya firmados (D-80).
+ *
+ * Recibe la forma pública —la que produjo el `toJSON`, que nunca trae la clave—
+ * y el subdocumento original, que es donde vive. Las renovaciones se cruzan por
+ * **posición**: no tienen `_id` (D-76) y el arreglo va en orden.
+ *
+ * El nombre de descarga es el del DATO (D-78): el aviso baja como el número del
+ * SIROC y cada acuse como `<número>-actualizacion-<fecha>`, para que en la
+ * carpeta de descargas se distingan solos.
+ */
+async function firmarSiroc(siroc, sirocOriginal) {
+  if (!siroc) return siroc
+
+  const actualizaciones = await Promise.all(
+    (siroc.actualizaciones ?? []).map(async (a, indice) => ({
+      ...a,
+      archivo: await firmarAdjunto(
+        sirocOriginal?.actualizaciones?.[indice]?.archivo,
+        nombreDeActualizacion(siroc.numero, a.fecha)
+      )
+    }))
+  )
+
+  return {
+    ...siroc,
+    actualizaciones,
+    archivo: await firmarAdjunto(sirocOriginal?.archivo, siroc.numero)
+  }
+}
+
+/** Con qué nombre baja el acuse de una renovación. */
+function nombreDeActualizacion(numero, fecha) {
+  return `${numero}-actualizacion-${fecha}`
+}
+
+/**
  * Borra un objeto. **Las versiones de un documento no se borran** (el versionado
  * es el requisito de trazabilidad): esto existe para limpiar una subida que
  * falló a medias, no para el flujo normal.
@@ -269,6 +306,8 @@ module.exports = {
   construirClaveAdjunto,
   firmarAdjunto,
   firmarRegistro,
+  firmarSiroc,
+  nombreDeActualizacion,
   subir,
   urlDeDescarga,
   borrar,

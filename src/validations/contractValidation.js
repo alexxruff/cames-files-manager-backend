@@ -150,4 +150,48 @@ exports.sirocRenovacionValidation = [
     })
 ]
 
+/**
+ * Pedir un enlace fresco al papel del aviso (D-80). Sólo el id y la bandera de
+ * descarga: no hay cuerpo.
+ */
+exports.sirocFileValidation = [
+  param('id').isMongoId().withMessage('El contrato indicado no es válido'),
+  query('descargar')
+    .optional()
+    .isBoolean()
+    .withMessage('descargar debe ser verdadero o falso')
+]
+
+/**
+ * El acuse de una renovación concreta. Se direcciona por **posición** porque las
+ * renovaciones no tienen `_id` (D-76), y el arreglo va en orden.
+ */
+exports.sirocUpdateFileValidation = [
+  param('id').isMongoId().withMessage('El contrato indicado no es válido'),
+  param('indice')
+    .isInt({ min: 0 })
+    .withMessage('La actualización indicada no es válida')
+    .toInt(),
+  query('descargar')
+    .optional()
+    .isBoolean()
+    .withMessage('descargar debe ser verdadero o falso')
+]
+
+/**
+ * Ponerle el acuse a una renovación ya capturada. El archivo es **obligatorio**
+ * aquí —es lo único que hace esta ruta—, al revés que al capturarla.
+ */
+exports.sirocUpdateFileUploadValidation = [
+  param('id').isMongoId().withMessage('El contrato indicado no es válido'),
+  param('indice')
+    .isInt({ min: 0 })
+    .withMessage('La actualización indicada no es válida')
+    .toInt(),
+  body().custom((_cuerpo, { req }) => {
+    if (!req.file) throw new Error('Envía el archivo en el campo "archivo"')
+    return true
+  })
+]
+
 exports.CAMPOS_EDITABLES = CAMPOS_EDITABLES

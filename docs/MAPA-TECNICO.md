@@ -281,7 +281,7 @@ sistema de coordinación que se quiere diseñar.**
 | Unitarias de dominio         | `tests/unitarias/domain/`      | 7 archivos, funciones puras                                                                  |
 | Unitarias de infraestructura | `tests/unitarias/`             | 7: `models`, `permissions`, `dates`, `text`, `storageKey`, `database`, `credentialIsolation` |
 | Guardia de documentación     | `tests/unitarias/docs.test.js` | Compara cifras de los docs contra el código                                                  |
-| Integración HTTP             | `tests/integracion/`           | 24 archivos, supertest + mongodb-memory-server                                               |
+| Integración HTTP             | `tests/integracion/`           | 29 archivos, supertest + mongodb-memory-server                                               |
 
 - **Ejecución:** `npm test` (`jest --runInBand`, ~10 min), `test:watch`, `test:coverage`
 - **Andamiaje:** `helpers/env.js` (setupFiles, fija el entorno antes de cargar módulos), `helpers/db.js` (setupFilesAfterEnv, base en memoria), `helpers/factories.js`, `helpers/nominaWorkbook.js`
@@ -708,7 +708,9 @@ important_fields:
   proyectoId: ObjectId
   numero: Number                    # lo pone el SERVIDOR, max+1
   nombre: String|null               # la etiqueta de la fase
-  siroc: { numero, fechaRegistro, actualizaciones[] } | null  # sin fecha final: se deriva
+  siroc: { numero, fechaRegistro, actualizaciones[], archivo } | null  # sin fecha final: se deriva
+                                    # archivo = el aviso escaneado (D-80); cada
+                                    # actualizacion lleva ADEMAS el suyo
   estado: en_curso|finalizado       # ≠ activo
   activo: Boolean
 indexes: ["{proyectoId, numero} unique", "{proyectoId, estado}", "{'siroc.numero'} unique parcial GLOBAL"]
@@ -717,6 +719,7 @@ writes_from: [contractService]
 schema_assumptions:
   - "`siroc.numero` es único en TODO el sistema, no por proyecto ni por empresa"
   - "`estado` y `activo` son cosas distintas por rutas distintas"
+  - "las actualizaciones NO tienen _id: su archivo se pide por posicion (D-80)"
 risks:
   - "El unique global del SIROC puede chocar entre empresas: el 409 revela nombre de proyecto ajeno (por eso NO se enlaza)"
 ```

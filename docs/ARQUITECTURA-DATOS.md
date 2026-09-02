@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-79)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-80)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -259,6 +259,16 @@ dos opcionales y ninguno derivado del otro (D-75).
   ventana vigente y si urge son `seguimientoSiroc`, derivado al leer (regla #6).
   Van en orden y ninguna puede ser anterior a `fechaRegistro`; una fecha suelta
   hacia atrás correría la ventana y el contrato callaría avisos que debe dar.
+- **El aviso y cada refrendo llevan su propio archivo** (D-80): `siroc.archivo`
+  es el aviso escaneado y `siroc.actualizaciones[].archivo` el acuse de esa
+  renovación, los dos con el `attachmentSchema` de D-79 y los dos opcionales. Son
+  dos papeles distintos a propósito: refrendar no sustituye al original, y la
+  serie completa de acuses es lo que se enseña si el IMSS revisa. Corregir el
+  SIROC con `PUT` **conserva los archivos**; sólo se reemplaza el del aviso si la
+  petición trae uno nuevo, y entonces el anterior se borra de R2.
+- **Las renovaciones siguen sin `_id`**, así que su archivo se pide **por
+  posición**. Dárselo obligaría a migrar las ya capturadas y Mongoose les
+  inventaría uno distinto en cada lectura mientras tanto.
 - `estado` (`en_curso` | `finalizado`) y `activo` **no son lo mismo**: el primero
   es un contrato que terminó bien, el segundo uno capturado por error. Van por
   rutas distintas.
@@ -365,6 +375,7 @@ colección: `records.documentos[].tipo` apunta a `DOCUMENT_TYPES` en
 | **Registrar un SIROC**                           | Traba además el `registroObraId`. Quitarlo lo libera                                                            |
 | **Reemplazar el archivo de un registro de obra** | El anterior **se borra de R2** (D-79): no hay versiones a las que volver                                        |
 | **`siroc.actualizaciones`**                      | Mueve la ventana de dos meses y con ella todo `seguimientoSiroc`: quitar una hace reaparecer el aviso (D-76)    |
+| **Quitar el SIROC o su última renovación**       | Sus archivos **se borran de R2** (D-80): el del aviso y el acuse de cada refrendo. No hay versiones             |
 | **`affiliations.registroPatronalId`**            | El aviso de coherencia al asignar y en el listado (D-71). Manda sobre el texto; no bloquea nada                 |
 | **`affiliations.condiciones.registroPatronal`**  | Lo mismo, pero **sólo mientras no haya vínculo**: es el respaldo de las que M3 no resolvió (D-72)               |
 | **`projects.registroPatronalId`**                | Lo mismo: el aviso se recalcula al leer, así que cambiarlo mueve toda la trazabilidad ya registrada             |

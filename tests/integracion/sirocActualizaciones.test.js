@@ -193,7 +193,8 @@ describe('Actualización del SIROC cada dos meses', () => {
       // El número es el mismo: se actualiza el aviso, no se saca otro.
       expect(actualizado.siroc.numero).toBe('SIR-2026-9001')
       expect(actualizado.siroc.actualizaciones).toEqual([
-        { fecha: HOY, nota: 'Acuse 4471' }
+        // `archivo: null` porque esta renovación se capturó sin acuse (D-80).
+        { fecha: HOY, nota: 'Acuse 4471', archivo: null }
       ])
       expect(actualizado.seguimientoSiroc).toMatchObject({
         estado: 'al_dia',
@@ -212,7 +213,7 @@ describe('Actualización del SIROC cada dos meses', () => {
 
       expect(res.status).toBe(201)
       expect(res.body.data.contrato.siroc.actualizaciones).toEqual([
-        { fecha: HOY, nota: null }
+        { fecha: HOY, nota: null, archivo: null }
       ])
     })
 

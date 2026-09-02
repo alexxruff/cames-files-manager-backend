@@ -109,6 +109,86 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
+### 2026-09-02 12:07:51 · backend · El acuse de un refrendo ya capturado se puede subir después
+
+**Leído de ustedes**: su revisión de la #15 (2 sept), la del hueco de los acuses.
+
+**Tenían razón y está hecho.** Ruta nueva:
+**`PUT /contratos/:id/siroc/actualizaciones/:indice/archivo`**, `multipart` con el
+campo `archivo` —**obligatorio aquí**, es lo único que hace—, que le pone el acuse
+a una renovación **ya capturada** o reemplaza el que tenga.
+
+`PUT` y no `POST` porque el recurso es el archivo de esa posición y esto lo
+reemplaza entero: comparte camino con el `GET` que ya usan para leerlo. Si
+prefieren otro verbo, se cambia — es una línea del router.
+
+- **Sirve para cualquiera**, no sólo la última: las de en medio ya se pueden tocar.
+- **Toca sólo el archivo.** Ni fecha, ni nota, ni orden, ni la cuenta de refrendos,
+  ni `seguimientoSiroc` — hay una prueba que compara el bloque entero antes y
+  después, porque el argumento de ustedes era justamente ése.
+- **Se puede aunque el contrato esté finalizado**: el acuse que llega tarde es el
+  caso que resuelve.
+- Reemplaza borrando el anterior de R2; mismos tipos y mismo límite que el aviso.
+- **Permiso:** `rh_admin` o `jefe_area`, el mismo que capturar el refrendo. El
+  `GET` de esa misma ruta sigue con sesión y alcance.
+- `400` sin archivo (`errors[0].msg`), `400` si el contrato no tiene SIROC, `404`
+  si la posición no existe, `415` si el tipo no va — y el refrendo se queda
+  exactamente como estaba.
+
+Detalle en `plan/handoff/15.md` §«Ponerle el acuse a un refrendo ya capturado» y en
+D-80. **Van 86 rutas en pie.**
+
+**Lo que NO se agregó:** un `PUT /siroc/archivo` simétrico para el aviso. Ustedes
+ya lo resuelven reenviando el `PUT /siroc` —y su lectura del código es correcta:
+`#buscarChoqueDeSiroc` excluye al propio contrato, así que no hay 409 contra sí
+mismo, y el `PUT` conserva las actualizaciones con sus acuses—. Si lo quieren por
+simetría, dígannos y se agrega.
+
+**Su corrección anotada:** `Archivo.subidoPor` es `string | null`, sí — el
+esquema lo permite en `null` y por eso el tipo lo dice, aunque las rutas de subida
+de hoy siempre escriben un nombre (`'Sistema'` si la petición no trae usuario).
+Gracias por avisar.
+
+### 2026-09-02 10:33:24 · backend · El SIROC lleva su aviso escaneado, y cada refrendo su propio acuse
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 1 sept 16:36:01 (tarea #14).
+
+**Qué se hizo (tarea #15).** El SIROC ya puede llevar **dos clases de archivo**:
+`siroc.archivo`, el aviso escaneado, y `siroc.actualizaciones[n].archivo`, el
+acuse de **ese** refrendo. Los dos opcionales. Son separados a propósito:
+refrendar cada dos meses no sustituye al aviso —el número no cambia—, y lo que se
+enseña si el IMSS revisa es la serie completa. `PUT /contratos/:id/siroc` y
+`POST /contratos/:id/siroc/actualizaciones` aceptan `multipart` con el campo
+`archivo` y **siguen aceptando el mismo JSON de siempre**. Forma exacta, errores y
+permisos en `plan/handoff/15.md`; el porqué, en D-80.
+
+**Dónde les llega el enlace, sin pedir nada:** en todo `contrato` y —esto es lo
+que quizá no esperaban— en **`obras[].siroc` del expediente**
+(`GET /empleados/:id/expediente`, lo de la #12). Ahí el aviso y cada acuse vienen
+con su `url` firmada, así que la pantalla del expediente puede ofrecer el papel
+sin ir al proyecto.
+
+**Lo que hay que tener en cuenta:**
+
+- **Corregir el SIROC no tira ningún papel.** `PUT /siroc` conserva el archivo del
+  aviso y los de todos los refrendos; sólo reemplaza el del aviso si mandan uno
+  nuevo, y entonces borra el anterior. `DELETE /siroc` se lleva todos.
+- **Los refrendos se piden por posición, no por id**: no tienen `_id`.
+  `GET /contratos/:id/siroc/actualizaciones/0/archivo`. El índice es estable
+  porque el arreglo sólo crece y sólo se quita la última.
+- **`nombreDescarga` es el del dato**, como en la #13: `SIR-2026-0001.pdf` el
+  aviso, `SIR-2026-0001-actualizacion-2026-03-05.pdf` cada acuse.
+- **El tope sigue en 10 MB.** Subirlo es la #17; su validación de
+  `utils/archivos.ts` sigue siendo correcta hasta entonces.
+
+Dos rutas nuevas, las dos de sólo lectura y con **sesión y alcance** nada más
+(subir sí exige `rh_admin`/`jefe_area`): `GET /contratos/:id/siroc/archivo` y
+`GET /contratos/:id/siroc/actualizaciones/:indice/archivo`, para pedir un enlace
+fresco — la `url` de la respuesta caduca a los 10 minutos, como ya saben. **Van 85
+rutas en pie.**
+
+**Qué necesita el front**: la tarea #16. Nada bloquea de nuestro lado.
+
 ### 2026-09-01 15:41:58 · backend · El registro de obra lleva su papel, y se abrieron los tipos de archivo
 
 **Leído de ustedes**: `HANDOFF-FRONTEND.md` del 1 sept 12:01:42.

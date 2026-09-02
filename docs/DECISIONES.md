@@ -3481,3 +3481,78 @@ con `archivo: null`.
 **Qué NO se hizo.** No hay forma de **quitar** el archivo dejando el registro sin
 él —no se pidió—, ni bitácora de accesos como la del expediente: el registro de
 obra no es un dato personal.
+
+## D-80 · El SIROC lleva su aviso escaneado, y cada renovación su propio acuse
+
+**Contexto.** Tarea #15. El SIROC se captura como número y fecha (D-76), pero
+quien lo registra tiene el aviso del IMSS en la mano, y cada dos meses vuelve del
+IMSS con **otro papel**: el acuse del refrendo.
+
+**Decisión.** Dos adjuntos, no uno. `contracts.siroc.archivo` es el aviso
+original y `contracts.siroc.actualizaciones[].archivo` el acuse de esa renovación
+concreta, los dos con el `attachmentSchema` de D-79 y los dos **opcionales**.
+`PUT /contratos/:id/siroc` y `POST /contratos/:id/siroc/actualizaciones` aceptan
+`multipart/form-data` con el campo `archivo`; las dos siguen aceptando
+`application/json` sin archivo, así que lo que el front ya manda no cambia.
+
+**Por qué separados y no uno que se reemplaza.** Refrendar el aviso no sustituye
+al anterior: el número es el mismo (D-76) pero el papel es nuevo, y lo que se
+enseña si el IMSS revisa es la **serie completa** de acuses. Un solo archivo que
+el refrendo pisara borraría justo la prueba de que se estuvo refrendando.
+
+**Corregir el aviso no tira ningún papel.** `PUT /siroc` reemplaza el SIROC
+entero, así que hay que decir explícitamente qué sobrevive: sobreviven las
+renovaciones —ya lo hacían (D-76)— **y ahora también los archivos**, el del aviso
+y el de cada acuse. Sólo se reemplaza el del aviso si la petición trae uno nuevo,
+y entonces el anterior se borra de R2. Corregir un dígito mal tecleado no puede
+costar el escaneo.
+
+**Quitar se lleva el papel.** `DELETE /siroc` borra de R2 el aviso y todos sus
+acuses —nada los referenciaría después—, y
+`DELETE /siroc/actualizaciones/ultima` borra el suyo y sólo el suyo.
+
+**El acuse se puede poner después, y por eso hay un `PUT` aparte.** El papel
+sellado casi siempre llega días después de ir al IMSS, así que capturar el
+refrendo y adjuntar su acuse son dos momentos distintos —seis veces al año por
+obra—. Sin una ruta propia, la única salida era **deshacer la actualización y
+volver a capturarla** con el papel, y eso mueve la ventana de dos meses y con ella
+todos los avisos de vencimiento: el arreglo lo pagaba el semáforo.
+`PUT /contratos/:id/siroc/actualizaciones/:indice/archivo` toca **sólo el
+archivo**, sirve para cualquiera de las renovaciones —las de en medio no se podían
+tocar de ninguna manera— y **no exige que el contrato siga en curso**, porque el
+acuse tardío es justamente el caso. Es `PUT` y no `POST` porque el recurso es el
+archivo de esa posición y esto lo reemplaza entero; comparte camino con el `GET`
+que ya lo lee.
+
+**Las renovaciones se direccionan por posición, no por id.** No tienen `_id`
+(D-76) y dárselo ahora obligaría a migrar las que ya están capturadas —y mientras
+tanto Mongoose les inventaría uno distinto en cada lectura—, así que el acuse de
+la renovación `n` se pide como
+`GET /contratos/:id/siroc/actualizaciones/:indice/archivo`. El índice es estable:
+el arreglo sólo crece y sólo se puede quitar la última.
+
+**Dónde sale el enlace.** Donde ya salía el SIROC: en todos los contratos del
+proyecto y en las **obras del expediente** de quien está asignado a ellas (D-77).
+Firmado a 10 minutos y derivado al leer (regla #6); `GET /contratos/:id/siroc/archivo`
+emite uno fresco sin recargar el proyecto entero.
+
+**El nombre de descarga es el del dato** (D-78): el aviso baja como
+`<número de SIROC>.pdf` y cada acuse como
+`<número de SIROC>-actualizacion-<fecha>.pdf`, para que en la carpeta de
+descargas se distingan solos.
+
+**Claves en R2.** Todo lo del aviso de un contrato cuelga de
+`siroc/{contratoId}/`: `aviso-{uuid}.{ext}` y `actualizacion-{uuid}.{ext}`.
+
+**Permisos.** Adjuntar exige gestionar proyectos, lo mismo que capturar el SIROC.
+**Abrir el papel sólo pide sesión y alcance**: quien puede leer el número del
+aviso puede ver el aviso. Fuera de alcance, 404.
+
+**Sin migración**: campos nuevos y opcionales; los SIROC que ya existen quedan con
+`archivo: null`, y sus renovaciones también.
+
+**Qué NO se hizo.** No hay forma de **quitar** un archivo dejando el SIROC sin él
+—no se pidió—. Tampoco un `PUT /siroc/archivo` simétrico para el aviso: reenviar
+`PUT /siroc` con el número y la fecha que ya tiene lo resuelve —el 409 excluye al
+propio contrato— y el front ya lo hace así. El límite de subida sigue en 10 MB;
+subirlo es la tarea #17.

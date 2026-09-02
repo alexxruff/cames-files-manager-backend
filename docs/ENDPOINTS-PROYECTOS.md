@@ -1,11 +1,15 @@
 # Carteras, proyectos y asignaciones
 
-Referencia de los **27 endpoints** de este dominio para el equipo de front.
+Referencia de los **30 endpoints** de este dominio para el equipo de front.
 
-> **Actualizado hasta D-76.** Lo último es la **actualización del SIROC cada dos
-> meses** (§4.1): dos endpoints nuevos, `siroc.actualizaciones` dentro del SIROC y
-> el bloque `seguimientoSiroc` en **todo** `Contrato`. Es aditivo: nada de lo que
-> ya consumen cambió de forma. Antes de eso, la Fase 8 (D-70 a D-72) trajo
+> **Actualizado hasta D-80.** Lo último es el **archivo del SIROC** (§4.2): el
+> aviso escaneado y el acuse de cada refrendo, tres endpoints nuevos —dos para
+> pedir un enlace fresco y uno para **ponerle el acuse a un refrendo ya
+> capturado**— y `archivo` dentro de `Siroc` y de cada `SirocActualizacion`. Es
+> aditivo: `PUT /contratos/:id/siroc` y `POST …/actualizaciones` siguen aceptando
+> el mismo JSON de siempre. Antes de eso, la actualización del SIROC cada dos
+> meses (§4.1, D-76) trajo dos endpoints y el bloque `seguimientoSiroc` en
+> **todo** `Contrato`. Y antes, la Fase 8 (D-70 a D-72) trajo
 > contratos y SIROC, `GET /asignaciones/:id` y dos campos nuevos en cada
 > `Asignacion`; el único comportamiento distinto sigue siendo el `message` del
 > alta de asignaciones, que puede traer un aviso — ver §3.
@@ -15,35 +19,38 @@ Base: `/api/v1`. Envelope, códigos y convenciones generales: ver
 
 ## Índice
 
-| #   | Endpoint                                             | Quién                    |
-| --- | ---------------------------------------------------- | ------------------------ |
-| 1   | `GET /empresas/:id/clientes`                         | sesión                   |
-| 2   | `POST /empresas/:id/clientes`                        | `rh_admin` · `jefe_area` |
-| 3   | `PATCH /carteras/:id`                                | `rh_admin` · `jefe_area` |
-| 4   | `PATCH /carteras/:id/estado`                         | `rh_admin` · `jefe_area` |
-| 5   | `GET /proyectos`                                     | sesión                   |
-| 6   | `GET /proyectos/:id`                                 | sesión                   |
-| 7   | `POST /proyectos`                                    | `rh_admin` · `jefe_area` |
-| 8   | `PATCH /proyectos/:id`                               | `rh_admin` · `jefe_area` |
-| 9   | `POST /proyectos/:id/aplazar`                        | `rh_admin` · `jefe_area` |
-| 10  | `POST /proyectos/:id/finalizar`                      | `rh_admin` · `jefe_area` |
-| 11  | `POST /proyectos/:id/reabrir`                        | `rh_admin` · `jefe_area` |
-| 12  | `POST /proyectos/:id/categorias/clonar`              | `rh_admin` · `jefe_area` |
-| 13  | `GET /proyectos/:id/asignables`                      | sesión                   |
-| 14  | `GET /proyectos/:id/asignaciones`                    | sesión                   |
-| 15  | `POST /proyectos/:id/asignaciones`                   | asignar a proyectos      |
-| 16  | `GET /asignaciones/:id`                              | sesión                   |
-| 17  | `PATCH /asignaciones/:id/salida`                     | asignar a proyectos      |
-| 18  | `GET /proyectos/:id/contratos`                       | sesión                   |
-| 19  | `POST /proyectos/:id/contratos`                      | `rh_admin` · `jefe_area` |
-| 20  | `PATCH /contratos/:id`                               | `rh_admin` · `jefe_area` |
-| 21  | `PUT /contratos/:id/siroc`                           | `rh_admin` · `jefe_area` |
-| 22  | `DELETE /contratos/:id/siroc`                        | `rh_admin` · `jefe_area` |
-| 23  | `POST /contratos/:id/siroc/actualizaciones`          | `rh_admin` · `jefe_area` |
-| 24  | `DELETE /contratos/:id/siroc/actualizaciones/ultima` | `rh_admin` · `jefe_area` |
-| 25  | `POST /contratos/:id/finalizar`                      | `rh_admin` · `jefe_area` |
-| 26  | `POST /contratos/:id/reabrir`                        | `rh_admin` · `jefe_area` |
-| 27  | `PATCH /contratos/:id/estado`                        | `rh_admin` · `jefe_area` |
+| #   | Endpoint                                                   | Quién                    |
+| --- | ---------------------------------------------------------- | ------------------------ |
+| 1   | `GET /empresas/:id/clientes`                               | sesión                   |
+| 2   | `POST /empresas/:id/clientes`                              | `rh_admin` · `jefe_area` |
+| 3   | `PATCH /carteras/:id`                                      | `rh_admin` · `jefe_area` |
+| 4   | `PATCH /carteras/:id/estado`                               | `rh_admin` · `jefe_area` |
+| 5   | `GET /proyectos`                                           | sesión                   |
+| 6   | `GET /proyectos/:id`                                       | sesión                   |
+| 7   | `POST /proyectos`                                          | `rh_admin` · `jefe_area` |
+| 8   | `PATCH /proyectos/:id`                                     | `rh_admin` · `jefe_area` |
+| 9   | `POST /proyectos/:id/aplazar`                              | `rh_admin` · `jefe_area` |
+| 10  | `POST /proyectos/:id/finalizar`                            | `rh_admin` · `jefe_area` |
+| 11  | `POST /proyectos/:id/reabrir`                              | `rh_admin` · `jefe_area` |
+| 12  | `POST /proyectos/:id/categorias/clonar`                    | `rh_admin` · `jefe_area` |
+| 13  | `GET /proyectos/:id/asignables`                            | sesión                   |
+| 14  | `GET /proyectos/:id/asignaciones`                          | sesión                   |
+| 15  | `POST /proyectos/:id/asignaciones`                         | asignar a proyectos      |
+| 16  | `GET /asignaciones/:id`                                    | sesión                   |
+| 17  | `PATCH /asignaciones/:id/salida`                           | asignar a proyectos      |
+| 18  | `GET /proyectos/:id/contratos`                             | sesión                   |
+| 19  | `POST /proyectos/:id/contratos`                            | `rh_admin` · `jefe_area` |
+| 20  | `PATCH /contratos/:id`                                     | `rh_admin` · `jefe_area` |
+| 21  | `PUT /contratos/:id/siroc`                                 | `rh_admin` · `jefe_area` |
+| 22  | `DELETE /contratos/:id/siroc`                              | `rh_admin` · `jefe_area` |
+| 23  | `POST /contratos/:id/siroc/actualizaciones`                | `rh_admin` · `jefe_area` |
+| 24  | `DELETE /contratos/:id/siroc/actualizaciones/ultima`       | `rh_admin` · `jefe_area` |
+| 25  | `GET /contratos/:id/siroc/archivo`                         | sesión                   |
+| 26  | `GET /contratos/:id/siroc/actualizaciones/:indice/archivo` | sesión                   |
+| 27  | `PUT /contratos/:id/siroc/actualizaciones/:indice/archivo` | `rh_admin` · `jefe_area` |
+| 28  | `POST /contratos/:id/finalizar`                            | `rh_admin` · `jefe_area` |
+| 29  | `POST /contratos/:id/reabrir`                              | `rh_admin` · `jefe_area` |
+| 30  | `PATCH /contratos/:id/estado`                              | `rh_admin` · `jefe_area` |
 
 > **Orden obligado para probar.** Un proyecto no se puede crear si su cliente no
 > está antes en la cartera de la empresa:
@@ -589,11 +596,24 @@ interface Siroc {
   numero: string // único en TODO el sistema; el servidor lo pasa a MAYÚSCULAS
   fechaRegistro: string // 'YYYY-MM-DD'; la ÚNICA fecha del aviso — no hay final
   actualizaciones: SirocActualizacion[] // los refrendos de cada 2 meses; [] al nacer
+  archivo: Archivo | null // el aviso escaneado, ver §4.2
 }
 
 interface SirocActualizacion {
   fecha: string // 'YYYY-MM-DD'
   nota: string | null // folio del acuse, quién fue… máximo 200 caracteres
+  archivo: Archivo | null // el acuse de ESTE refrendo, ver §4.2
+}
+
+interface Archivo {
+  nombre: string // el del archivo original, para mostrar
+  mime: string
+  tamanoBytes: number
+  subidoPor: string | null // el NOMBRE de quien lo subió
+  subidoEn: string // ISO
+  previsualizable: boolean // false → ofrece descargar, no un visor
+  nombreDescarga: string // con el que se guarda: 'SIR-2026-0001.pdf'
+  url: string // firmada; CADUCA A LOS 10 MINUTOS
 }
 ```
 
@@ -827,6 +847,127 @@ Para empezar de cero está `DELETE /contratos/:id/siroc`, que se lleva el aviso
 entero. Y si la nueva `fechaRegistro` quedara **después** de una actualización ya
 registrada, el `PUT` responde `400` diciéndolo, en vez de dejar el SIROC en un
 estado imposible.
+
+## 4.2 El papel del SIROC (D-80)
+
+**Son dos archivos distintos y los dos son opcionales.** `siroc.archivo` es el
+aviso escaneado; `siroc.actualizaciones[n].archivo` es el acuse de **ese**
+refrendo. Refrendar no sustituye al aviso original —el número no cambia—, así que
+el papel nuevo se suma en vez de pisar al anterior: lo que se enseña si el IMSS
+revisa es la serie completa.
+
+### Subirlos
+
+Las dos rutas que ya usas aceptan ahora `multipart/form-data` con el campo
+`archivo`, **además de seguir aceptando el mismo `application/json` de siempre**.
+No hay endpoint nuevo para subir: si no mandas archivo, nada cambia.
+
+```js
+// El aviso, al registrar o corregir el SIROC
+const fd = new FormData()
+fd.append('numero', 'SIR-2026-0001')
+fd.append('fechaRegistro', '2026-09-05')
+fd.append('archivo', file) // opcional
+await api.put(`/contratos/${id}/siroc`, fd)
+
+// El acuse, al capturar un refrendo
+const fd2 = new FormData()
+fd2.append('fecha', '2026-11-12') // opcional (hoy)
+fd2.append('archivo', file) // opcional
+await api.post(`/contratos/${id}/siroc/actualizaciones`, fd2)
+```
+
+**Un solo archivo por petición**, en el campo `archivo`. Tipos aceptados: PDF,
+JPG, PNG, WEBP, DOC, DOCX, XLS, XLSX y CSV — se detectan **por contenido**, así
+que renombrar la extensión no engaña a nadie. `415` si no es uno de ésos, con el
+motivo en `message`. Límite **10 MB** por archivo, `413` si se pasa.
+
+### Qué se conserva y qué se borra
+
+| Acción                               | Qué le pasa a los archivos                                          |
+| ------------------------------------ | ------------------------------------------------------------------- |
+| `PUT /siroc` sin archivo             | **No se toca ninguno.** Corregir el número no tira nada             |
+| `PUT /siroc` con archivo             | Reemplaza el del aviso; el anterior se borra                        |
+| `POST …/actualizaciones` con archivo | Se guarda como acuse **de esa** renovación                          |
+| `PUT …/actualizaciones/:i/archivo`   | Le pone o reemplaza el acuse a **ese** refrendo, sin tocar nada más |
+| `DELETE …/actualizaciones/ultima`    | Se lleva su acuse, y sólo el suyo                                   |
+| `DELETE /siroc`                      | Se lleva el aviso y **todos** los acuses                            |
+
+No se versiona: reemplazar borra. No hay forma de quitar un archivo dejando el
+SIROC sin él.
+
+### Ponerle el acuse a un refrendo ya capturado
+
+```jsonc
+// PUT /contratos/:id/siroc/actualizaciones/0/archivo
+// multipart/form-data, campo `archivo` — OBLIGATORIO aquí
+// data: { "contrato": { … } }   → 200
+```
+
+**El acuse sellado casi siempre llega después** de capturar el refrendo, así que
+esta ruta existe para no obligar a nadie a deshacer la actualización y volver a
+capturarla: eso movería la ventana de dos meses y con ella todos los avisos de
+vencimiento.
+
+- **Sirve para cualquiera**, no sólo la última: `…/0/archivo`, `…/1/archivo`…
+- **Toca sólo el archivo.** Ni la fecha, ni la nota, ni el orden, ni la cuenta de
+  refrendos, ni `seguimientoSiroc`: la respuesta trae el mismo bloque de antes.
+- **Reemplaza** el que hubiera, borrando el anterior. No se versiona.
+- **Se puede aunque el contrato esté finalizado** — el acuse tardío es justo el
+  caso que resuelve.
+- Mismos tipos y mismo límite que el aviso.
+
+**Permiso:** `rh_admin` o `jefe_area`, el mismo que capturar el refrendo. El `GET`
+de esa misma ruta sigue pidiendo sólo sesión y alcance.
+
+| Código | `message` (o `errors[0].msg` donde se indica)              | Qué lo dispara                     |
+| ------ | ---------------------------------------------------------- | ---------------------------------- |
+| `400`  | `Envía el archivo en el campo "archivo"` (`errors[0].msg`) | La petición no trae archivo        |
+| `400`  | `Ese contrato no tiene SIROC registrado`                   | El contrato todavía no tiene aviso |
+| `404`  | `Esa actualización del SIROC no existe`                    | La posición está fuera del arreglo |
+
+Un `415` **no deja la actualización a medias**: si el archivo se rechaza, el
+refrendo se queda exactamente como estaba.
+
+### Pedir un enlace fresco
+
+`archivo.url` viene firmada y **caduca a los 10 minutos**, así que una pantalla
+abierta un rato se queda con un enlace muerto. Para uno nuevo, sin recargar el
+proyecto entero:
+
+```jsonc
+// GET /contratos/:id/siroc/archivo
+// GET /contratos/:id/siroc/actualizaciones/0/archivo
+// data: { "archivo": { …, "url": "https://…" } }
+```
+
+`?descargar=true` fuerza la descarga. Lo que trae `previsualizable: false` —Word,
+Excel, CSV— se descarga siempre, aunque no lo pidas: servirlo `inline` sería una
+pantalla de basura binaria.
+
+**Las renovaciones se piden por posición** (`0`, `1`, `2`…), no por id: no tienen
+`_id`. El índice es estable porque el arreglo sólo crece y sólo se puede quitar la
+última.
+
+| Código | Cuándo                                 | `message`                                                     |
+| ------ | -------------------------------------- | ------------------------------------------------------------- |
+| `400`  | El índice no es un número              | `La actualización indicada no es válida` (en `errors[0].msg`) |
+| `404`  | El contrato no tiene SIROC             | `Ese contrato no tiene SIROC registrado`                      |
+| `404`  | El SIROC no tiene archivo              | `Ese SIROC no tiene archivo`                                  |
+| `404`  | Esa posición no existe                 | `Esa actualización del SIROC no existe`                       |
+| `404`  | Contrato inexistente o de otra empresa | `El contrato no existe`                                       |
+
+**Permisos.** Subir exige `rh_admin` o `jefe_area`, lo mismo que capturar el
+SIROC. **Abrir el papel sólo pide sesión y alcance**: quien puede leer el número
+del aviso puede ver el aviso.
+
+### Dónde más viene el enlace
+
+En **todos** los lugares donde ya venía el SIROC, sin pedir nada extra: los
+contratos del proyecto (`GET /proyectos/:id/contratos`, y toda respuesta que
+devuelva un `contrato`) y las **obras del expediente** de quien está asignado a
+ellas (`GET /empleados/:id/expediente` → `obras[].siroc`, D-77). Se firma al leer,
+así que siempre llega vivo.
 
 ### `POST /contratos/:id/finalizar` · `/reabrir`
 

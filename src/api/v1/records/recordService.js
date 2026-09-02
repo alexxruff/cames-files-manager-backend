@@ -682,10 +682,17 @@ class RecordService {
     const contratos = await Contract.find({ proyectoId: { $in: [...visibles.keys()] } })
 
     const porProyecto = new Map()
+    /*
+     * El documento de Mongoose se guarda al lado del `toJSON` porque la clave de
+     * almacenamiento del archivo del SIROC no viaja en la forma pública —ni
+     * debe—, y sin ella no hay nada que firmar (D-80).
+     */
+    const originales = new Map()
     for (const contrato of contratos) {
       const clave = contrato.proyectoId.toString()
       if (!porProyecto.has(clave)) porProyecto.set(clave, [])
       porProyecto.get(clave).push(contrato.toJSON())
+      originales.set(contrato._id.toString(), contrato)
     }
 
     const filas = []
@@ -710,7 +717,12 @@ class RecordService {
           fechaFin: contrato.fechaFin,
           estado: contrato.estado
         },
-        siroc: contrato.siroc,
+        // Con el aviso escaneado y el acuse de cada renovación (D-80): quien
+        // ve el SIROC de la obra ve también su papel, sin ir al proyecto.
+        siroc: await storage.firmarSiroc(
+          contrato.siroc,
+          originales.get(contrato._id)?.siroc
+        ),
         /*
          * `false` = la obra ya pasó y esto es el último aviso que la cubrió. Se
          * dice explícito para que el front no tenga que compararlo con hoy: la
