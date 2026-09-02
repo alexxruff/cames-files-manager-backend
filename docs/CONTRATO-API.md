@@ -122,8 +122,9 @@ lista, no dentro.
 | GET    | `/asignaciones/:id`                                        | sesión                       | `asignacion` · `trazabilidad`                                                                                                                    | El detalle con la **cadena resuelta**: empleado → empresa → registro patronal → proyecto → registro de obra (D-71)                                           |
 | PATCH  | `/asignaciones/:id/salida`                                 | asignar a proyectos          | `asignacion`                                                                                                                                     | Cierra, no borra                                                                                                                                             |
 | GET    | `/proyectos/:id/contratos`                                 | sesión                       | `contratos[]`                                                                                                                                    | Contratos del proyecto por número; `?incluirInactivos=true` (D-70)                                                                                           |
-| POST   | `/proyectos/:id/contratos`                                 | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | El `numero` **lo asigna el servidor**; 400 si el proyecto está finalizado (D-70)                                                                             |
-| PATCH  | `/contratos/:id`                                           | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Nombre, fase y fechas. El SIROC y el estado van por sus rutas                                                                                                |
+| POST   | `/proyectos/:id/contratos`                                 | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | El `numero` **lo asigna el servidor**; 400 si el proyecto está finalizado (D-70); acepta `multipart` con el contrato escaneado en `archivo` (D-81)           |
+| PATCH  | `/contratos/:id`                                           | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Nombre, fase y fechas. El SIROC y el estado van por sus rutas; acepta `multipart`, y **sólo el archivo sin campos** es válido (D-81)                         |
+| GET    | `/contratos/:id/archivo`                                   | sesión y alcance             | `archivo`                                                                                                                                        | Enlace fresco al contrato escaneado; `?descargar=true` fuerza la descarga (D-81)                                                                             |
 | PUT    | `/contratos/:id/siroc`                                     | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Registra o corrige el SIROC entero; acepta `multipart` con el aviso en `archivo` (D-80); **409 `SIROC_DUPLICADO`** si el número ya existe (G4)               |
 | DELETE | `/contratos/:id/siroc`                                     | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Lo quita y libera el número; 400 si no tenía                                                                                                                 |
 | POST   | `/contratos/:id/siroc/actualizaciones`                     | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Registra que el SIROC se actualizó; conserva el número. `fecha` opcional (hoy) y `nota` opcional (D-76); acepta `multipart` con el acuse en `archivo` (D-80) |
@@ -136,7 +137,7 @@ lista, no dentro.
 | GET    | `/expedientes`                                             | ver empleados                | `expedientes[]` + `total` · `pagina` · `porPagina`                                                                                               | Paginado; mismos filtros que `/empleados` **más `estatus`** (D-45)                                                                                           |
 | GET    | `/empleados/:id/expediente`                                | ver empleados                | `expediente` · `empleado` · `avance` · `obras`                                                                                                   | Crea el expediente si no existía; `data: { expediente, empleado, avance, obras }` (D-77)                                                                     |
 | GET    | `/expedientes/:id`                                         | ver empleados                | `expediente` · `empleado` · `avance` · `obras`                                                                                                   | Lo mismo por id de expediente; 404 si el empleado no es visible                                                                                              |
-| POST   | `/expedientes/:id/documentos/:tipo`                        | subir documentos             | `expediente` · `empleado` · `avance`                                                                                                             | `multipart`, campo `archivo`. Versiona; 413 >10 MB, 415 si no es PDF/JPG/PNG/WEBP                                                                            |
+| POST   | `/expedientes/:id/documentos/:tipo`                        | subir documentos             | `expediente` · `empleado` · `avance`                                                                                                             | `multipart`, campo `archivo`. Versiona; 413 >30 MB (D-81), 415 si no es de un tipo aceptado                                                                  |
 | GET    | `/expedientes/:id/documentos/:tipo/versiones/:version/url` | ver documentos               | `url` · `expiraEnSegundos` · `archivo`                                                                                                           | URL firmada temporal; **queda en la bitácora** (D-41)                                                                                                        |
 | POST   | `/expedientes/:id/documentos/:tipo/revisar`                | `rh_admin` · `rh_consulta`   | `expediente` · `empleado` · `avance`                                                                                                             | `{ aprobado, motivo? }`: valida o rechaza la versión en revisión (D-43, D-44)                                                                                |
 | GET    | `/empresas/:id/adscripciones`                              | ver empleados                | `adscripciones[]`                                                                                                                                | `?activo=&area=&tipo=&categoriaId=&orden=`; el jefe de área sólo ve sus propias áreas (D-45, D-51)                                                           |
@@ -246,7 +247,8 @@ columnas, no viene el archivo o no viene `empresaId` · `403` no es `rh_admin` �
 `404` la empresa no está en su alcance · `409` con `code: 'RFC_DISTINTO'` cuando
 el RFC del archivo no es el de la empresa (en `data` va la previsualización
 completa; para continuar, reenviar con `confirmarRfcDistinto: true`) · `413` el
-archivo pasa de 10 MB · `415` no es un .xlsx.
+archivo pasa de 10 MB —esta ruta conserva el tope viejo a propósito, ver D-81— ·
+`415` no es un .xlsx.
 
 **Las filas malas no detienen a las buenas.** Un archivo con 2 filas sin CURP y
 143 correctas responde `201`, importa las 143 y las 2 salen en `conError` con su
@@ -274,6 +276,7 @@ este cambio salen con `"fase": null`.
   "fechaInicio": "2026-09-01",
   "fechaFin": "2026-12-31",
   "siroc": null, // o { numero, fechaRegistro, actualizaciones[], archivo }
+  "archivo": null, // o el contrato escaneado (D-81); null, nunca ausente
   "estado": "en_curso", // en_curso | finalizado
   "activo": true,
   "seguimientoSiroc": {
@@ -463,6 +466,35 @@ Corregir el SIROC con `PUT /contratos/:id/siroc` **conserva sus actualizaciones*
 son del mismo aviso. Para empezar de cero está `DELETE /contratos/:id/siroc`, que
 se lleva el aviso entero.
 
+#### El contrato escaneado, y el tope de subida (D-81)
+
+`contrato.archivo` es el contrato firmado, con la misma forma de `Archivo` que el
+resto de los adjuntos. **Uno solo y se reemplaza**, al revés que los del SIROC.
+
+**Cómo se sube.** `POST /proyectos/:id/contratos` y `PATCH /contratos/:id`
+aceptan `multipart/form-data` con el campo `archivo`, opcional, además de seguir
+aceptando el JSON de siempre. Un `PATCH` con **sólo el archivo y ningún campo**
+es válido —así se adjunta el papel a un contrato ya capturado, que es el caso
+normal— y devuelve `message: 'Contrato actualizado con su archivo'`. Un `PATCH`
+sin campos **y** sin archivo sigue siendo `400`.
+
+Editar sin archivo **no tira el papel**; mandar uno nuevo reemplaza y borra el
+anterior de R2. No se versiona y no hay forma de quitarlo dejando el contrato sin
+él.
+
+**El nombre de descarga** es `nombre`, o `fase` si no hay nombre, o el ordinal
+—`Contrato 2.pdf`— si no hay ninguno de los dos.
+
+**El enlace caduca a los 10 minutos.** `GET /contratos/:id/archivo` da uno
+fresco; `?descargar=true` fuerza la descarga. Lo lee cualquier sesión con alcance
+sobre el proyecto; subir exige `rh_admin` o `jefe_area`. `404` si el contrato no
+tiene archivo y `404 —no 403—` si el proyecto no está a su alcance.
+
+**El tope de subida son 30 MB**, no 10: un contrato de obra escaneado pasa de 20.
+Vale para todos los adjuntos —expediente, registro de obra y SIROC incluidos—
+**menos la importación de nómina**, que se queda en 10 MB porque ahí el `.xlsx`
+se abre entero en memoria. El `413` dice el tope de la ruta que lo rechazó.
+
 ### El SIROC de su obra, en el expediente (D-77)
 
 El detalle del expediente —`GET /empleados/:id/expediente` y
@@ -492,7 +524,9 @@ una fase. Mismo criterio que D-71.
           "fase": "Fase 2",
           "fechaInicio": "2026-03-01",
           "fechaFin": "2026-12-31",
-          "estado": "en_curso"
+          "estado": "en_curso",
+          // El contrato escaneado, con su url firmada (D-81). null si no lo hay.
+          "archivo": { "...": "la misma forma que en el contrato" }
         },
         "siroc": {
           "numero": "SIR-2026-0002",
@@ -658,7 +692,7 @@ tiene archivo, y **404 —no 403—** si el cliente no está a su alcance.
 
 | Código | Cuándo                                                                       |
 | ------ | ---------------------------------------------------------------------------- |
-| `413`  | El archivo pasa de 10 MB                                                     |
+| `413`  | El archivo pasa de 30 MB (D-81)                                              |
 | `415`  | El contenido no es de un tipo permitido (se valida el archivo, no el nombre) |
 | `403`  | Adjuntar o reemplazar sin poder administrar clientes                         |
 

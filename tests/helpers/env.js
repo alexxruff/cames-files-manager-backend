@@ -18,3 +18,9 @@ process.env.R2_BUCKET = ''
 process.env.R2_PREFIX = ''
 process.env.R2_ACCESS_KEY_ID = ''
 process.env.R2_SECRET_ACCESS_KEY = ''
+// Los topes de subida se fijan aquí por la misma razón que los de R2: dotenv
+// carga el `.env` del desarrollador para lo que no esté puesto, y una prueba
+// que afirma «22 MB entran y 11 MB de nómina no» no puede depender de eso. Los
+// valores por omisión del esquema se comprueban aparte (D-81).
+process.env.MAX_UPLOAD_BYTES = String(30 * 1024 * 1024)
+process.env.MAX_IMPORT_UPLOAD_BYTES = String(10 * 1024 * 1024)

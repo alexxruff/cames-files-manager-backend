@@ -92,8 +92,24 @@ const schema = z.object({
   /** Vida de la URL firmada, en segundos. 10 minutos por defecto (spec §7). */
   R2_SIGNED_URL_TTL: z.coerce.number().int().positive().default(600),
 
-  /** Tamaño máximo de un documento del expediente. 10 MB (spec §6.5). */
+  /**
+   * Tamaño máximo de un adjunto: expediente, registro de obra, SIROC y contrato.
+   * 30 MB (D-81): un contrato de obra escaneado pasa de 20 con facilidad, y el
+   * tope anterior de 10 MB lo rebotaba.
+   */
   MAX_UPLOAD_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(30 * 1024 * 1024),
+
+  /**
+   * El tope de la importación de nómina, aparte y más bajo (D-81). `exceljs`
+   * abre el libro entero en memoria y lo expande a objetos, así que ahí el
+   * archivo grande tira la máquina; un reporte de nómina real pesa cientos de
+   * KB.
+   */
+  MAX_IMPORT_UPLOAD_BYTES: z.coerce
     .number()
     .int()
     .positive()

@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-80)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-81)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -266,6 +266,11 @@ dos opcionales y ninguno derivado del otro (D-75).
   serie completa de acuses es lo que se enseña si el IMSS revisa. Corregir el
   SIROC con `PUT` **conserva los archivos**; sólo se reemplaza el del aviso si la
   petición trae uno nuevo, y entonces el anterior se borra de R2.
+- **El contrato también lleva el suyo** (D-81): `archivo`, con el mismo
+  `attachmentSchema`, es el contrato firmado escaneado. Es **uno y se
+  reemplaza** —al revés que los del SIROC, que se suman—, y se adjunta al
+  capturar o después, con el `PATCH` de siempre: el papel llega días más tarde
+  que las fechas.
 - **Las renovaciones siguen sin `_id`**, así que su archivo se pide **por
   posición**. Dárselo obligaría a migrar las ya capturadas y Mongoose les
   inventaría uno distinto en cada lectura mientras tanto.
@@ -376,6 +381,7 @@ colección: `records.documentos[].tipo` apunta a `DOCUMENT_TYPES` en
 | **Reemplazar el archivo de un registro de obra** | El anterior **se borra de R2** (D-79): no hay versiones a las que volver                                        |
 | **`siroc.actualizaciones`**                      | Mueve la ventana de dos meses y con ella todo `seguimientoSiroc`: quitar una hace reaparecer el aviso (D-76)    |
 | **Quitar el SIROC o su última renovación**       | Sus archivos **se borran de R2** (D-80): el del aviso y el acuse de cada refrendo. No hay versiones             |
+| **Reemplazar el archivo de un contrato**         | El anterior **se borra de R2** (D-81): uno solo, sin versiones. El tope de subida son 30 MB, salvo la nómina    |
 | **`affiliations.registroPatronalId`**            | El aviso de coherencia al asignar y en el listado (D-71). Manda sobre el texto; no bloquea nada                 |
 | **`affiliations.condiciones.registroPatronal`**  | Lo mismo, pero **sólo mientras no haya vínculo**: es el respaldo de las que M3 no resolvió (D-72)               |
 | **`projects.registroPatronalId`**                | Lo mismo: el aviso se recalcula al leer, así que cambiarlo mueve toda la trazabilidad ya registrada             |

@@ -139,7 +139,7 @@ reintroduce el objeto vacío.
 ### 3.3 Documento del expediente
 
 - **Entrada:** `POST /api/v1/expedientes/:id/documentos/:tipo` (multipart, `archivo` + `vigenciaHasta?`)
-- **Módulos:** `uploadMiddleware` (multer memoria, 10 MB) → `recordService` → `storageService` (R2)
+- **Módulos:** `uploadMiddleware` (multer memoria, 30 MB) → `recordService` → `storageService` (R2)
 - **Datos:** `records.documentos[].versiones[]` (array embebido creciente)
 - **Efectos:** sube a R2; si la escritura en Mongo falla, **borra el objeto** (`recordService.js:339`); numera versión, marca `reemplazadaEn`, inserta al inicio, pone `in_review` y **limpia `motivoRechazo`, `revisadoPor`, `revisadoEn`**
 - **Revisión:** `POST …/:tipo/revisar` con `{ aprobado, motivo? }` — **un solo endpoint** (D‑43), sólo desde `in_review`
@@ -208,7 +208,7 @@ El contrato vive en **prosa versionada** y en **pruebas de integración**.
 - **Idioma:** rutas y llaves JSON en español (contrato); código en inglés
 - **Auth:** JWT 12 h, `Authorization: Bearer`. `protect` relee al usuario en cada petición
 - **Paginación:** `?pagina=&porPagina=` (base 1, 25 por defecto). Respuesta con `total`, `pagina`, `porPagina`. Una página más allá del final da lista vacía y el `total` real, no `404`
-- **Uploads:** `multipart/form-data`, campo `archivo`, multer en memoria, `MAX_UPLOAD_BYTES` (10 MB), errores traducidos a `413`/`415`. Tipos: PDF/JPG/PNG/WEBP/DOC/DOCX/XLS/XLSX/CSV por _magic bytes_ (D-78); cada archivo dice si es `previsualizable`
+- **Uploads:** `multipart/form-data`, campo `archivo`, multer en memoria, `MAX_UPLOAD_BYTES` (30 MB) y `MAX_IMPORT_UPLOAD_BYTES` (10 MB, sólo la importación de nómina — D-81), errores traducidos a `413`/`415`. Tipos: PDF/JPG/PNG/WEBP/DOC/DOCX/XLS/XLSX/CSV por _magic bytes_ (D-78); cada archivo dice si es `previsualizable`
 - **Descargas:** URL firmada de R2, 10 min, bucket privado, cada emisión a `access_logs`
 - **WebSockets/eventos:** **ninguno.** Todo es petición‑respuesta
 

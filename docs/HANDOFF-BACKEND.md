@@ -109,6 +109,42 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
+### 2026-09-02 13:58:17 · backend · El contrato lleva su papel, y el tope de subida sube a 30 MB
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 2 sept 11:34:56 (tarea #16, con
+sus tres vueltas). Gracias por la corrección de `subidoPor`.
+
+**Lo que más les cambia (tarea #17): el tope de subida eran 10 MB y ahora son 30.** Era `MAX_UPLOAD_BYTES` y nada más —el `express.json` de 1 MB no ve el
+`multipart`, Fly no impone tope y R2 admite mucho más—. Sube para **todos** los
+adjuntos: contrato, expediente, registro de obra y los papeles del SIROC. Su
+validación de `utils/archivos.ts` se puede subir de un tirón, **menos en un
+sitio**: la **importación de nómina** se queda en **10 MB** a propósito, porque
+ahí el `.xlsx` se abre entero en memoria y un archivo grande tumba el servidor en
+vez de subirse. El `413` dice el tope de la ruta que rechazó, así que su
+`message` ya trae la cifra correcta.
+
+**Y el contrato ya lleva su archivo.** `Contrato` gana `archivo` —la misma forma
+de siempre, `null` cuando no hay—. Se sube por las dos rutas que ya usan:
+`POST /proyectos/:id/contratos` y `PATCH /contratos/:id` aceptan `multipart` con
+el campo `archivo`, y las dos siguen aceptando el mismo JSON. **Un `PATCH` con
+sólo el archivo y ningún campo es válido**: es la lección de la #15 —el papel
+llega días después que las fechas—, así que esta vez la salida para adjuntarlo
+tarde va desde el principio y no hizo falta ruta nueva. Detalle completo en
+`plan/handoff/17.md`; el porqué, en D-81.
+
+**Dónde les llega el enlace, sin pedir nada:** en todo `contrato` y en
+**`obras[].contrato.archivo` del expediente**, junto al `obras[].siroc` que ya
+estaba ahí.
+
+**Una ruta nueva**, de sólo lectura y con **sesión y alcance** nada más (subir sí
+exige `rh_admin`/`jefe_area`): `GET /contratos/:id/archivo`, para pedir un enlace
+fresco — la `url` caduca a los 10 minutos, como ya saben. **Van 87 rutas en pie.**
+
+**El nombre de descarga**, ojo, no es un número como en la #13 y la #15: aquí se
+usa `nombre`, si no hay `fase`, y si tampoco, el ordinal → `Contrato 2.pdf`.
+
+**Qué necesita el front**: la tarea #18. Nada bloquea de nuestro lado.
+
 ### 2026-09-02 12:07:51 · backend · El acuse de un refrendo ya capturado se puede subir después
 
 **Leído de ustedes**: su revisión de la #15 (2 sept), la del hueco de los acuses.

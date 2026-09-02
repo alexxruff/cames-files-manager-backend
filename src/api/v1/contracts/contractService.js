@@ -41,6 +41,16 @@ class ContractService {
     }
 
     /*
+     * El id se genera aquí y no lo pone Mongoose al escribir, porque la clave del
+     * archivo en R2 cuelga de él y el papel se sube ANTES que la base (D-79). Es
+     * el mismo id en los reintentos: lo que choca es el número, no el documento.
+     */
+    const id = new mongoose.Types.ObjectId()
+    const archivo = datos.archivo
+      ? await this.#subirAdjunto({ _id: id }, datos.archivo, 'contrato', contexto)
+      : null
+
+    /*
      * El número es una secuencia y la asigna el servidor. Se reintenta porque dos
      * altas simultáneas calcularían el mismo siguiente y una chocaría contra el
      * índice único: reintentar recalcula sobre el estado ya escrito.
@@ -48,22 +58,36 @@ class ContractService {
     for (let intento = 0; intento < 3; intento++) {
       try {
         const contrato = await Contract.create({
+          _id: id,
           proyectoId: proyecto._id,
           numero: await this.#siguienteNumero(proyecto._id),
           nombre: datos.nombre || null,
           fase: datos.fase || null,
           fechaInicio: datos.fechaInicio,
-          fechaFin: datos.fechaFin
+          fechaFin: datos.fechaFin,
+          archivo
         })
         return { contrato: await this.#serializar(contrato) }
       } catch (error) {
         const chocaElNumero = error.code === 11000 && !this.#esChoqueDeSiroc(error)
-        if (!chocaElNumero || intento === 2) throw error
+        if (!chocaElNumero || intento === 2) {
+          // Lo recién subido se limpia: si la base no lo guardó, nadie lo alcanza.
+          if (archivo) await storage.borrar(archivo.claveAlmacenamiento)
+          throw error
+        }
       }
     }
   }
 
-  /** PATCH /contratos/:id — nombre, fase y fechas. El SIROC y el estado, no. */
+  /**
+   * PATCH /contratos/:id — nombre, fase, fechas y el contrato escaneado. El
+   * SIROC y el estado, no.
+   *
+   * Acepta `multipart` con **sólo** el archivo y ningún campo: así se adjunta el
+   * papel a un contrato ya capturado, que es el caso normal —las fechas se
+   * teclean el día que se firma y el escaneo llega después— y evita una ruta
+   * aparte para lo mismo (D-81).
+   */
   async update(id, datos, contexto = {}) {
     const { contrato } = await this.#buscarVisible(id, contexto)
 
@@ -73,7 +97,28 @@ class ContractService {
     if (datos.fechaInicio !== undefined) contrato.fechaInicio = datos.fechaInicio
     if (datos.fechaFin !== undefined) contrato.fechaFin = datos.fechaFin
 
-    await contrato.save()
+    /*
+     * El papel se reemplaza, no se versiona (D-79), y sólo si viene uno nuevo:
+     * corregir la fase no puede costar el escaneo. El anterior se borra al
+     * final, cuando la base ya no lo referencia.
+     */
+    const anterior = contrato.archivo?.claveAlmacenamiento ?? null
+    const nuevo = datos.archivo
+      ? await this.#subirAdjunto(contrato, datos.archivo, 'contrato', contexto)
+      : null
+    if (nuevo) contrato.archivo = nuevo
+
+    try {
+      await contrato.save()
+    } catch (error) {
+      if (nuevo) await storage.borrar(nuevo.claveAlmacenamiento)
+      throw error
+    }
+
+    if (nuevo && anterior && anterior !== nuevo.claveAlmacenamiento) {
+      await storage.borrar(anterior)
+    }
+
     return { contrato: await this.#serializar(contrato) }
   }
 
@@ -310,6 +355,28 @@ class ContractService {
     return { contrato: await this.#serializar(contrato) }
   }
 
+  // ─── El papel del contrato (D-81) ──────────────────────────────────────────
+
+  /**
+   * GET /contratos/:id/archivo — un enlace fresco al contrato escaneado.
+   *
+   * Igual que el del aviso: la URL que ya viaja dentro de cada contrato caduca a
+   * los 10 minutos, y una pantalla de proyecto lleva abierta más que eso.
+   */
+  async urlDeArchivoContrato(id, contexto = {}) {
+    const { contrato } = await this.#buscarVisible(id, contexto)
+
+    if (!contrato.archivo) throw AppError.notFound('Ese contrato no tiene archivo')
+
+    return {
+      archivo: await storage.firmarAdjunto(
+        contrato.archivo,
+        storage.nombreDeContrato(contrato),
+        { descargar: contexto.descargar === true ? true : null }
+      )
+    }
+  }
+
   // ─── El papel del aviso (D-80) ─────────────────────────────────────────────
 
   /**
@@ -437,6 +504,11 @@ class ContractService {
       ...json,
       // El SIROC sale con la URL firmada de su aviso y la de cada acuse (D-80).
       siroc: await storage.firmarSiroc(json.siroc, contrato.siroc),
+      // Y el contrato, con la del papel firmado (D-81).
+      archivo: await storage.firmarAdjunto(
+        contrato.archivo,
+        storage.nombreDeContrato(json)
+      ),
       seguimientoSiroc: deriveSirocTracking(json)
     }
   }
@@ -448,15 +520,21 @@ class ContractService {
    * registro de obra: si la base falla, quien llama borra el objeto recién
    * subido en vez de dejarlo huérfano.
    *
-   * @param {'aviso'|'actualizacion'} clase qué papel es, para la ruta en R2
+   * @param {'aviso'|'actualizacion'|'contrato'} clase qué papel es, para la ruta
+   *   en R2
    */
   async #subirAdjunto(contrato, archivo, clase, contexto = {}) {
     const tipoReal = detectarTipo(archivo.buffer, archivo.nombreOriginal)
     if (!tipoReal) throw new AppError(415, mensajeTipoNoPermitido(archivo.buffer))
 
-    // Todo lo del SIROC de un contrato cuelga de `siroc/{contratoId}/`.
+    /*
+     * Lo del SIROC cuelga de `siroc/{contratoId}/` y el contrato escaneado de
+     * `contratos/{contratoId}/`: son papeles distintos —uno es del IMSS y el
+     * otro del cliente— y separarlos hace legible el bucket.
+     */
+    const esDelContrato = clase === 'contrato'
     const clave = storage.construirClaveAdjunto({
-      carpeta: 'siroc',
+      carpeta: esDelContrato ? 'contratos' : 'siroc',
       ids: [contrato._id, clase],
       extension: tipoReal.extension
     })
@@ -464,7 +542,9 @@ class ContractService {
     await storage.subir({ buffer: archivo.buffer, clave, contentType: tipoReal.mime })
 
     return {
-      nombre: archivo.nombreOriginal || `siroc.${tipoReal.extension}`,
+      nombre:
+        archivo.nombreOriginal ||
+        `${esDelContrato ? 'contrato' : 'siroc'}.${tipoReal.extension}`,
       mime: tipoReal.mime,
       tamanoBytes: archivo.buffer.length,
       subidoPor: contexto.user?.nombre || 'Sistema',

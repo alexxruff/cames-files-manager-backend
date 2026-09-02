@@ -3554,5 +3554,77 @@ aviso puede ver el aviso. Fuera de alcance, 404.
 **Qué NO se hizo.** No hay forma de **quitar** un archivo dejando el SIROC sin él
 —no se pidió—. Tampoco un `PUT /siroc/archivo` simétrico para el aviso: reenviar
 `PUT /siroc` con el número y la fecha que ya tiene lo resuelve —el 409 excluye al
-propio contrato— y el front ya lo hace así. El límite de subida sigue en 10 MB;
-subirlo es la tarea #17.
+propio contrato— y el front ya lo hace así. El límite de subida era de 10 MB; lo subió
+la tarea #17 (D-81), y el aviso escaneado se benefició de paso.
+
+## D-81 · El contrato lleva su papel, y el tope de subida sube para todos menos la nómina
+
+**Contexto.** Tarea #17. El contrato firmado es el documento que respalda todo lo
+demás —fechas, fases, SIROC—, y no tenía dónde ponerse. Y venía con un segundo
+problema: el front avisó que sus contratos rebotaban, porque un contrato de obra
+escaneado pasa de 20 MB con facilidad y el tope eran 10.
+
+**Qué limitaba de verdad.** Sólo multer, con `MAX_UPLOAD_BYTES`. Se revisó lo
+demás antes de tocar nada: el `express.json`/`urlencoded` de 1 MB **no ve el
+multipart** —ese cuerpo lo lee multer—, Fly no impone tope de cuerpo y R2 admite
+muchísimo más. Un solo número, en un solo sitio.
+
+**El tope sube a 30 MB, y la importación de nómina se queda en 10.** Subirlo
+parejo era lo simple —y es lo que quiere el front, que valida del lado del
+navegador con una constante—, pero las dos rutas de `/empleados/importar` comen
+del mismo middleware y ahí el archivo grande no es un archivo grande: `exceljs`
+abre el libro entero en memoria y lo expande a objetos, así que un `.xlsx` de
+30 MB —que es un ZIP— se convierte en cientos de MB de estructuras, contra los
+512 MB de la VM (`fly.toml`). Y nadie lo necesita: un reporte de nómina real pesa
+cientos de KB. Así que `recibirArchivo` se factorizó en `crearReceptor(maxBytes)`,
+el general quedó en `MAX_UPLOAD_BYTES` (30 MB) y la importación en
+`MAX_IMPORT_UPLOAD_BYTES` (10 MB), con su propio `recibirArchivoHasta`. El `413`
+dice **el tope que aplicó en esa ruta**, no una cifra global que sería mentira en
+la mitad de los casos.
+
+De paso lo ganan el expediente, el registro de obra y el aviso del SIROC, que
+compartían el tope viejo. El otro riesgo del tope alto —memoria: multer guarda en
+RAM y `Buffer.concat` pica al doble— sale sobrado con 30 MB: son ~60 MB de pico
+por subida en vuelo sobre los ~80 MB de base de Node.
+
+**El archivo del contrato es UNO y se reemplaza**, al revés que el del SIROC
+(D-80), que son dos porque cada refrendo produce papel nuevo. Aquí no: el
+contrato firmado es uno, volver a escanearlo es la operación normal, y vale el
+criterio de D-79 —subir a R2 primero, base después, y el anterior se borra cuando
+la base ya no lo referencia—.
+
+**Se adjunta con el `PATCH` de siempre, sin ruta nueva.** `POST
+/proyectos/:id/contratos` lo acepta al capturar, y `PATCH /contratos/:id` acepta
+`multipart` con **sólo** el archivo y ningún campo — eso último es lo importante:
+las fechas se teclean el día que se firma y el escaneo llega después, así que
+adjuntarlo tarde es el caso normal, no la excepción. Es la lección de la #15, que
+tuvo que reabrirse para agregar justo esa ruta al acuse del refrendo. La
+validación de edición dejó de exigir cuerpo cuando viene un archivo; con cuerpo
+vacío **y** sin archivo sigue siendo `400`.
+
+**El id del contrato se genera antes de escribirlo.** La clave en R2 cuelga de él
+(`contratos/{contratoId}/contrato-{uuid}.{ext}`) y el papel se sube antes que la
+base, así que al alta se crea el `ObjectId` a mano y se le pasa a `Contract.create`.
+Los reintentos por choque de número reutilizan el mismo id: lo que choca es el
+ordinal, no el documento.
+
+**El nombre de descarga es el del dato** (D-78), pero aquí el dato no es un
+número: `nombre` y `fase` son los dos opcionales (D-75). Se cae al que haya y, si
+no hay ninguno, al ordinal —`Contrato 2.pdf`—, que siempre existe.
+
+**Dónde sale el enlace.** Donde ya salía el contrato: en el listado del proyecto,
+en cada respuesta que devuelve un contrato y en las **obras del expediente**
+(D-77), junto al SIROC que ya iba ahí. Firmado a 10 minutos y derivado al leer
+(regla #6); `GET /contratos/:id/archivo` emite uno fresco sin recargar el
+proyecto.
+
+**Permisos.** Adjuntar y reemplazar exige gestionar proyectos, lo mismo que
+capturar el contrato. **Abrir el papel sólo pide sesión y alcance.** Fuera de
+alcance, 404.
+
+**Sin migración**: campo nuevo y opcional; los contratos que ya existen quedan con
+`archivo: null`.
+
+**Qué NO se hizo.** No hay forma de **quitar** el archivo dejando el contrato sin
+él —no se pidió, y reemplazarlo cubre el error de captura—. Tampoco se versiona,
+por lo mismo que en D-79.

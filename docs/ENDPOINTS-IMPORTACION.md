@@ -27,7 +27,7 @@ El por qué de cada decisión: `DECISIONES.md` D-46.
 
 | Campo                  | Tipo     | Obligatorio | Qué es                                      |
 | ---------------------- | -------- | ----------- | ------------------------------------------- |
-| `archivo`              | file     | sí          | El .xlsx. Máximo 10 MB                      |
+| `archivo`              | file     | sí          | El .xlsx. Máximo 10 MB (D-81)               |
 | `empresaId`            | string   | sí          | A qué empresa se importa el personal        |
 | `confirmarRfcDistinto` | `'true'` | no          | Sólo tras un `409 RFC_DISTINTO` (ver abajo) |
 
@@ -214,7 +214,7 @@ y las 2 salen en `conError`. No hay «todo o nada».
 | `403`  | No es `rh_admin`                                                                   |
 | `404`  | La empresa no está en su alcance                                                   |
 | `409`  | `code: 'RFC_DISTINTO'` — ver abajo                                                 |
-| `413`  | El archivo pasa de 10 MB                                                           |
+| `413`  | El archivo pasa de 10 MB — **esta ruta conserva el tope viejo** (D-81)             |
 | `415`  | No es un .xlsx                                                                     |
 
 ### El `409 RFC_DISTINTO`

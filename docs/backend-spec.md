@@ -851,7 +851,8 @@ pending ──subir──▶ in_review ──revisar (aprobado: true)──▶ v
   empresa.
 - Validar el `mime` **por contenido, no por la extensión ni por el header**: es
   un archivo de usuario y el `Content-Type` es manipulable. `415` si no es PDF ni
-  imagen, `413` si pasa de 10 MB.
+  imagen, `413` si pasa del tope de la ruta — 30 MB en general, 10 MB en la
+  importación de nómina (D-81).
 
 ### 6.6 Alertas, métricas y reportes
 
@@ -1032,7 +1033,7 @@ prueba automatizada.
 **Archivos**
 - [ ] Un archivo que no es PDF ni imagen se rechaza aunque el `Content-Type`
       diga lo contrario.
-- [ ] Más de 10 MB responde `413`.
+- [ ] Más de 30 MB responde `413` (10 MB en la importación de nómina, D-81).
 - [ ] Las URLs firmadas caducan y quedan registradas en la bitácora.
 
 ---

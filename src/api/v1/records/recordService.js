@@ -715,7 +715,13 @@ class RecordService {
           fase: contrato.fase,
           fechaInicio: contrato.fechaInicio,
           fechaFin: contrato.fechaFin,
-          estado: contrato.estado
+          estado: contrato.estado,
+          // Con el contrato escaneado, si lo tiene (D-81): quien ve bajo qué
+          // obra trabaja alguien puede abrir el documento que la respalda.
+          archivo: await storage.firmarAdjunto(
+            originales.get(contrato._id)?.archivo,
+            storage.nombreDeContrato(contrato)
+          )
         },
         // Con el aviso escaneado y el acuse de cada renovación (D-80): quien
         // ve el SIROC de la obra ve también su papel, sin ir al proyecto.

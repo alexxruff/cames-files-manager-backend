@@ -6,6 +6,7 @@ const asyncHandler = require('../../../utils/asyncHandler')
 const validateRequest = require('../../../middlewares/validateRequest')
 const { protect, requireCapability } = require('../../../middlewares/authMiddleware')
 const { applyScope } = require('../../../middlewares/scopeMiddleware')
+const { recibirArchivo } = require('../../../middlewares/uploadMiddleware')
 const { requirePasswordDefinitiva } = require('../../../middlewares/passwordMiddleware')
 const { CAPABILITIES } = require('../../../utils/permissions')
 const {
@@ -122,6 +123,8 @@ router
   )
   .post(
     gestionarProyectos,
+    // Multer primero: es quien llena `req.body` cuando viene como `multipart`.
+    recibirArchivo,
     createContractValidation,
     validateRequest,
     asyncHandler(contractController.create)

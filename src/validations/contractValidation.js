@@ -55,15 +55,31 @@ exports.createContractValidation = [
   fecha('fechaFin', 'La fecha de fin')
 ]
 
+/**
+ * Pedir un enlace fresco al contrato escaneado (D-81). Sólo el id y la bandera
+ * de descarga: no hay cuerpo.
+ */
+exports.contractFileValidation = [
+  param('id').isMongoId().withMessage('El contrato indicado no es válido'),
+  query('descargar')
+    .optional()
+    .isBoolean()
+    .withMessage('descargar debe ser verdadero o falso')
+]
+
 exports.contractIdValidation = [
   param('id').isMongoId().withMessage('El contrato indicado no es válido')
 ]
 
 exports.updateContractValidation = [
   param('id').isMongoId().withMessage('El contrato indicado no es válido'),
-  body().custom((cuerpo) => {
+  body().custom((cuerpo, { req }) => {
     const campos = Object.keys(cuerpo || {})
-    if (campos.length === 0) throw new Error('No hay nada que actualizar')
+    /*
+     * Un `multipart` con SÓLO el archivo no trae campos, y es una petición
+     * legítima: así se le adjunta el papel a un contrato ya capturado (D-81).
+     */
+    if (campos.length === 0 && !req.file) throw new Error('No hay nada que actualizar')
 
     const invalidos = campos.filter((c) => !CAMPOS_EDITABLES.includes(c))
     if (invalidos.length > 0) {

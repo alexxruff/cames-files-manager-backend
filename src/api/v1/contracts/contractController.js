@@ -28,11 +28,16 @@ class ContractController {
     return ok(res, datos)
   }
 
-  /** POST /proyectos/:id/contratos */
+  /**
+   * POST /proyectos/:id/contratos
+   *
+   * Acepta `multipart` con el contrato escaneado en el campo `archivo`, opcional
+   * (D-81), y sigue aceptando el mismo JSON de siempre.
+   */
   create = async (req, res) => {
     const datos = await contractService.create(
       req.params.id,
-      req.body,
+      { ...req.body, archivo: this.#archivo(req) },
       this.#contexto(req)
     )
     req.log.info('Contrato creado', {
@@ -43,14 +48,37 @@ class ContractController {
     return created(res, datos, 'Contrato creado')
   }
 
-  /** PATCH /contratos/:id */
+  /**
+   * PATCH /contratos/:id
+   *
+   * También por `multipart`: mandar sólo el archivo, sin ningún campo, es cómo
+   * se le adjunta el papel a un contrato ya capturado (D-81).
+   */
   update = async (req, res) => {
     const datos = await contractService.update(
       req.params.id,
-      req.body,
+      { ...req.body, archivo: this.#archivo(req) },
       this.#contexto(req)
     )
-    return ok(res, datos, 'Contrato actualizado')
+    return ok(
+      res,
+      datos,
+      req.file ? 'Contrato actualizado con su archivo' : 'Contrato actualizado'
+    )
+  }
+
+  /**
+   * GET /contratos/:id/archivo
+   *
+   * Un enlace fresco al contrato escaneado. `?descargar=true` fuerza la
+   * descarga; los tipos que el navegador no previsualiza se descargan siempre.
+   */
+  urlArchivoContrato = async (req, res) => {
+    const datos = await contractService.urlDeArchivoContrato(req.params.id, {
+      ...this.#contexto(req),
+      descargar: req.query.descargar === 'true'
+    })
+    return ok(res, datos)
   }
 
   /**

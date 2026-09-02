@@ -604,6 +604,23 @@ describe('POST /api/v1/empleados/importar', () => {
       expect(res.body.message).toContain('.xlsx')
     })
 
+    /*
+     * El tope de esta ruta es PROPIO y más bajo que el general de 30 MB (D-81):
+     * `exceljs` abre el libro entero en memoria y lo expande a objetos, así que
+     * aquí el archivo grande no se sube, tira la máquina. Un reporte de nómina
+     * real pesa cientos de KB.
+     */
+    it('413 pasando de 10 MB, aunque el tope general sean 30', async () => {
+      const { empresa, sesion } = await escenario()
+
+      const res = await importar(sesion.token, Buffer.alloc(11 * 1024 * 1024, 0x20), {
+        empresaId: empresa._id
+      })
+
+      expect(res.status).toBe(413)
+      expect(res.body.message).toBe('El archivo pasa de 10 MB. Comprímelo o divídelo.')
+    })
+
     it('400 si no se adjunta archivo', async () => {
       const { empresa, sesion } = await escenario()
 

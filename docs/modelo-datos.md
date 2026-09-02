@@ -480,6 +480,11 @@ const contratoSchema = new mongoose.Schema({
 
   siroc: { type: sirocSchema, default: null },
 
+  // El contrato firmado, escaneado (2 sept 2026, D-81). Opcional, uno solo y se
+  // reemplaza: no se versiona. El aviso del SIROC y el acuse de cada refrendo
+  // son OTROS archivos, y viven dentro de `siroc` (D-80).
+  archivo: { type: attachmentSchema, default: null },  // models/attachmentSchema.js
+
   // OJO: `estado` y `activo` NO son lo mismo, y se mueven por rutas distintas.
   //   estado: 'finalizado' → la fase terminó bien   (POST /contratos/:id/finalizar)
   //   activo: false        → se capturó por error   (PATCH /contratos/:id/estado)

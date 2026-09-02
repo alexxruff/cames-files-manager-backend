@@ -165,6 +165,14 @@ const contractSchema = new mongoose.Schema(
     /** `null` hasta que se registre. Se pone y se corrige por `PUT .../siroc`. */
     siroc: { type: sirocSchema, default: null },
 
+    /**
+     * El contrato firmado, escaneado (D-81). Opcional y **reemplazable**: se
+     * puede capturar el contrato en cuanto se conocen las fechas y adjuntar el
+     * papel después, con el mismo `PATCH` de siempre. No se versiona (D-79): es
+     * una copia del documento que respalda al registro, no un expediente.
+     */
+    archivo: { type: attachmentSchema, default: null },
+
     estado: {
       type: String,
       enum: { values: ['en_curso', 'finalizado'], message: 'Estado no válido' },
@@ -205,6 +213,8 @@ const contractSchema = new mongoose.Schema(
                 archivo: attachmentToJson(ret.siroc.archivo)
               }
             : null,
+          // Sin `url`: firmarla es asíncrono, y la agrega el servicio.
+          archivo: attachmentToJson(ret.archivo),
           estado: ret.estado,
           activo: ret.activo,
           createdAt: ret.createdAt,

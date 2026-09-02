@@ -9,6 +9,7 @@ const { requirePasswordDefinitiva } = require('../../../middlewares/passwordMidd
 const { CAPABILITIES } = require('../../../utils/permissions')
 const {
   contractIdValidation,
+  contractFileValidation,
   updateContractValidation,
   contractEstadoValidation,
   setSirocValidation,
@@ -37,12 +38,31 @@ router.use(protect, requirePasswordDefinitiva, applyScope)
 // Los contratos son parte de gestionar el proyecto: misma capacidad.
 const gestionarProyectos = requireCapability(CAPABILITIES.MANAGE_PROJECTS)
 
+/*
+ * `recibirArchivo` va antes de las validaciones también aquí: mandar el contrato
+ * escaneado —solo o junto con las fechas— es una edición del contrato, no un
+ * recurso aparte (D-81). Sigue aceptando el mismo JSON sin archivo.
+ */
 router.patch(
   '/:id',
   gestionarProyectos,
+  recibirArchivo,
   updateContractValidation,
   validateRequest,
   asyncHandler(contractController.update)
+)
+
+/*
+ * Abrir el contrato escaneado. Como el papel del aviso: sólo pide sesión y
+ * alcance —quien puede leer el contrato puede ver el documento que lo
+ * respalda—, y existe porque la URL que viaja en cada respuesta caduca a los 10
+ * minutos.
+ */
+router.get(
+  '/:id/archivo',
+  contractFileValidation,
+  validateRequest,
+  asyncHandler(contractController.urlArchivoContrato)
 )
 
 /*

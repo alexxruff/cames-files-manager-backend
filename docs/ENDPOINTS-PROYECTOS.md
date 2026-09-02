@@ -1,8 +1,15 @@
 # Carteras, proyectos y asignaciones
 
-Referencia de los **30 endpoints** de este dominio para el equipo de front.
+Referencia de los **31 endpoints** de este dominio para el equipo de front.
 
-> **Actualizado hasta D-80.** Lo último es el **archivo del SIROC** (§4.2): el
+> **Actualizado hasta D-81.** Lo último es el **contrato escaneado** (§4.3): un
+> endpoint nuevo para pedir su enlace, `archivo` dentro de `Contrato`, y el
+> **tope de subida arriba, de 10 a 30 MB** —lo que pidieron: un contrato de obra
+> pasa de 20—. `POST /proyectos/:id/contratos` y `PATCH /contratos/:id` aceptan
+> ahora `multipart`, y **un `PATCH` con sólo el archivo** es cómo se le adjunta
+> el papel a un contrato ya capturado. Ojo: el tope de la **importación de
+> nómina** se queda en 10 MB, y sólo ése. Antes de eso, el **archivo del SIROC**
+> (§4.2): el
 > aviso escaneado y el acuse de cada refrendo, tres endpoints nuevos —dos para
 > pedir un enlace fresco y uno para **ponerle el acuse a un refrendo ya
 > capturado**— y `archivo` dentro de `Siroc` y de cada `SirocActualizacion`. Es
@@ -51,6 +58,7 @@ Base: `/api/v1`. Envelope, códigos y convenciones generales: ver
 | 28  | `POST /contratos/:id/finalizar`                            | `rh_admin` · `jefe_area` |
 | 29  | `POST /contratos/:id/reabrir`                              | `rh_admin` · `jefe_area` |
 | 30  | `PATCH /contratos/:id/estado`                              | `rh_admin` · `jefe_area` |
+| 31  | `GET /contratos/:id/archivo`                               | sesión                   |
 
 > **Orden obligado para probar.** Un proyecto no se puede crear si su cliente no
 > está antes en la cartera de la empresa:
@@ -585,6 +593,7 @@ interface Contrato {
   fechaInicio: string // 'YYYY-MM-DD'
   fechaFin: string // 'YYYY-MM-DD'
   siroc: Siroc | null // null hasta que se registre
+  archivo: Archivo | null // el contrato escaneado, ver §4.3
   estado: 'en_curso' | 'finalizado'
   activo: boolean // la BAJA, que no es lo mismo que `estado`
   seguimientoSiroc: SeguimientoSiroc // derivado al leer; SIEMPRE viene, ver §4.1
@@ -612,7 +621,7 @@ interface Archivo {
   subidoPor: string | null // el NOMBRE de quien lo subió
   subidoEn: string // ISO
   previsualizable: boolean // false → ofrece descargar, no un visor
-  nombreDescarga: string // con el que se guarda: 'SIR-2026-0001.pdf'
+  nombreDescarga: string // con el que se guarda: 'SIR-2026-0001.pdf', 'Fase 1.pdf'
   url: string // firmada; CADUCA A LOS 10 MINUTOS
 }
 ```
@@ -651,6 +660,9 @@ devuelve `null`, nunca cadena vacía. (Hasta el 31 ago 2026 el alta con
 servidor (`max + 1`, contando también los dados de baja). Tampoco `siroc`, que va
 por su propia ruta.
 
+También acepta `multipart/form-data` con el **contrato escaneado** en el campo
+`archivo`, opcional (§4.3). Sin archivo, el JSON de siempre funciona igual.
+
 Ojo con la asimetría: **el alta IGNORA los campos de más en silencio** —mandar
 `monto` o `clienteId` devuelve `201` y un contrato sin ellos—, mientras que
 `PATCH /contratos/:id` sí los rechaza con `400`. Verificado contra el servidor.
@@ -676,7 +688,10 @@ responde `400` diciendo por dónde va:
 | `numero`     | el número lo asigna el servidor y no se cambia   |
 | `proyectoId` | un contrato no cambia de proyecto                |
 
-Un cuerpo vacío también es `400` («No hay nada que actualizar»).
+Un cuerpo vacío también es `400` («No hay nada que actualizar») — **salvo si trae
+archivo**: un `multipart` con sólo el campo `archivo` y ningún dato es una
+petición legítima, y es cómo se le adjunta el contrato escaneado a uno ya
+capturado (§4.3).
 
 Para **borrar** el nombre o la fase, manda `""` o `null`: los dos vuelven el campo
 a `null`. Mandar sólo uno de ellos no toca el otro ni las fechas.
@@ -880,7 +895,7 @@ await api.post(`/contratos/${id}/siroc/actualizaciones`, fd2)
 **Un solo archivo por petición**, en el campo `archivo`. Tipos aceptados: PDF,
 JPG, PNG, WEBP, DOC, DOCX, XLS, XLSX y CSV — se detectan **por contenido**, así
 que renombrar la extensión no engaña a nadie. `415` si no es uno de ésos, con el
-motivo en `message`. Límite **10 MB** por archivo, `413` si se pasa.
+motivo en `message`. Límite **30 MB** por archivo desde D-81, `413` si se pasa.
 
 ### Qué se conserva y qué se borra
 
@@ -968,6 +983,95 @@ contratos del proyecto (`GET /proyectos/:id/contratos`, y toda respuesta que
 devuelva un `contrato`) y las **obras del expediente** de quien está asignado a
 ellas (`GET /empleados/:id/expediente` → `obras[].siroc`, D-77). Se firma al leer,
 así que siempre llega vivo.
+
+## 4.3 El contrato escaneado, y el tope de subida (D-81)
+
+El **contrato firmado** ya se puede adjuntar. Es **uno solo y se reemplaza**, al
+revés que el del SIROC —donde cada refrendo produce un papel nuevo que se suma—:
+aquí volver a escanear es corregir, no historiar.
+
+### Lo primero: el tope subió a 30 MB
+
+Lo que rebotaba sus contratos era `MAX_UPLOAD_BYTES`, y eran 10 MB. **Ahora son
+30**, y no sólo para el contrato: también para el expediente, el registro de obra
+y el aviso del SIROC. Pueden subir la constante de su validación de un tirón.
+
+**Con una excepción, y es importante**: las dos rutas de **importación de
+nómina** (`POST /empleados/importar[/previsualizar]`) se quedan en **10 MB**.
+No es un olvido: ahí el `.xlsx` se abre entero en memoria y se expande, y un
+archivo grande tumba el servidor en vez de subirse. Un reporte de nómina real
+pesa cientos de KB. El `413` dice **el tope de esa ruta**, así que el mensaje de
+error ya trae la cifra correcta y pueden mostrarlo tal cual.
+
+### Subirlo
+
+No hay endpoint nuevo para subir: se manda por las dos rutas que ya usan, como
+`multipart/form-data` con el campo `archivo`, y las dos **siguen aceptando el
+mismo `application/json` de siempre**.
+
+```js
+// Al capturar el contrato
+const fd = new FormData()
+fd.append('nombre', 'Contrato 001-A')
+fd.append('fechaInicio', '2026-09-01')
+fd.append('fechaFin', '2026-12-31')
+fd.append('archivo', file) // opcional
+await api.post(`/proyectos/${id}/contratos`, fd)
+
+// Adjuntarlo DESPUÉS, que es el caso normal: sólo el archivo, sin más campos
+const fd2 = new FormData()
+fd2.append('archivo', file)
+await api.patch(`/contratos/${contratoId}`, fd2)
+```
+
+Ese segundo caso es el que importa: **las fechas se capturan el día que se firma
+y el escaneo llega después**, así que un `PATCH` con sólo el archivo y ningún
+campo es válido y no responde «No hay nada que actualizar». Con archivo, el
+`message` es `Contrato actualizado con su archivo`.
+
+Tipos aceptados y detección por contenido: los mismos de §4.2 (D-78).
+
+| Acción                        | Qué le pasa al archivo                            |
+| ----------------------------- | ------------------------------------------------- |
+| `PATCH` sin archivo           | **No se toca.** Corregir la fase no tira el papel |
+| `PATCH` con archivo           | Reemplaza el que hubiera; el anterior se borra    |
+| `POST /contratos` con archivo | Se guarda con el contrato recién creado           |
+
+No se versiona: reemplazar borra. **No hay forma de quitar el archivo** dejando
+el contrato sin él — no se pidió; para corregir una subida equivocada, se
+reemplaza.
+
+### `GET /contratos/:id/archivo`
+
+Un enlace fresco, igual que el del aviso: `archivo.url` caduca a los 10 minutos.
+
+```jsonc
+// data: { "archivo": { …, "url": "https://…" } }
+```
+
+`?descargar=true` fuerza la descarga; lo que trae `previsualizable: false` se
+descarga siempre.
+
+| Código | Cuándo                                 | `message`                       |
+| ------ | -------------------------------------- | ------------------------------- |
+| `404`  | El contrato no tiene archivo           | `Ese contrato no tiene archivo` |
+| `404`  | Contrato inexistente o de otra empresa | `El contrato no existe`         |
+
+**Permisos.** Subir y reemplazar exige `rh_admin` o `jefe_area`, lo mismo que
+capturar el contrato. **Abrir el papel sólo pide sesión y alcance.**
+
+### El nombre de descarga
+
+Es el del **dato** (D-78), pero aquí el dato no es un número: `nombre` y `fase`
+son los dos opcionales. Se usa `nombre`; si no hay, `fase`; si tampoco, el
+ordinal — `Contrato 2.pdf`.
+
+### Dónde viene el enlace
+
+Donde ya viene el contrato: `GET /proyectos/:id/contratos`, toda respuesta que
+devuelva un `contrato`, y las **obras del expediente** (`GET
+/empleados/:id/expediente` → `obras[].contrato.archivo`, junto al SIROC que ya
+estaba ahí). Un contrato sin papel dice `archivo: null`; la llave siempre viene.
 
 ### `POST /contratos/:id/finalizar` · `/reabrir`
 

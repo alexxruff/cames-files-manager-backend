@@ -266,6 +266,17 @@ function nombreDeActualizacion(numero, fecha) {
 }
 
 /**
+ * Con qué nombre baja el contrato escaneado (D-81).
+ *
+ * El del DATO, como todo lo demás (D-78), pero aquí el dato no es un número:
+ * `nombre` y `fase` son los dos opcionales (D-75), así que se cae al que haya y,
+ * si no hay ninguno, al ordinal —que siempre existe—.
+ */
+function nombreDeContrato(contrato) {
+  return contrato?.nombre || contrato?.fase || `Contrato ${contrato?.numero ?? ''}`.trim()
+}
+
+/**
  * Borra un objeto. **Las versiones de un documento no se borran** (el versionado
  * es el requisito de trazabilidad): esto existe para limpiar una subida que
  * falló a medias, no para el flujo normal.
@@ -308,6 +319,7 @@ module.exports = {
   firmarRegistro,
   firmarSiroc,
   nombreDeActualizacion,
+  nombreDeContrato,
   subir,
   urlDeDescarga,
   borrar,

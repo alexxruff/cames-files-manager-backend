@@ -6,7 +6,8 @@ const validateRequest = require('../../../middlewares/validateRequest')
 const { protect, requireCapability } = require('../../../middlewares/authMiddleware')
 const { applyScope } = require('../../../middlewares/scopeMiddleware')
 const { requirePasswordDefinitiva } = require('../../../middlewares/passwordMiddleware')
-const { recibirArchivo } = require('../../../middlewares/uploadMiddleware')
+const { recibirArchivoHasta } = require('../../../middlewares/uploadMiddleware')
+const env = require('../../../config/env')
 const { CAPABILITIES } = require('../../../utils/permissions')
 const {
   importEmployeesValidation
@@ -69,6 +70,14 @@ router
  * catálogo, y pedir al administrador de plataforma para importar la nómina de
  * una empresa dejaría la función inservible. Ver D-46.
  */
+/*
+ * El .xlsx entra con un tope PROPIO y más bajo que el general (D-81): `exceljs`
+ * abre el libro entero en memoria y lo expande a objetos, así que aquí un
+ * archivo grande no es un archivo grande, es la máquina caída. Un reporte de
+ * nómina real pesa cientos de KB.
+ */
+const recibirLibro = recibirArchivoHasta(env.MAX_IMPORT_UPLOAD_BYTES)
+
 const importarPersonal = [
   requireCapability(CAPABILITIES.MANAGE_AFFILIATIONS),
   requireCapability(CAPABILITIES.MANAGE_ADMIN_EMPLOYEES)
@@ -77,7 +86,7 @@ const importarPersonal = [
 router.post(
   '/importar/previsualizar',
   importarPersonal,
-  recibirArchivo,
+  recibirLibro,
   importEmployeesValidation,
   validateRequest,
   asyncHandler(employeeController.previewImport)
@@ -86,7 +95,7 @@ router.post(
 router.post(
   '/importar',
   importarPersonal,
-  recibirArchivo,
+  recibirLibro,
   importEmployeesValidation,
   validateRequest,
   asyncHandler(employeeController.import)
