@@ -767,6 +767,12 @@ describe('registro patronal y registro de obra del proyecto (D-67)', () => {
       numero: 'OB-2026-0145',
       descripcion: 'Torre Andares'
     })
+    /*
+     * El de obra puede llevar archivo (D-79) y el patronal NO: el campo no
+     * existe en su esquema y no debe aparecer en su respuesta ni en `null`.
+     */
+    expect(p.registroObra.archivo).toBeNull()
+    expect(p.registroPatronal).not.toHaveProperty('archivo')
   })
 
   it('son OBLIGATORIOS: sin ellos el alta falla (D-69)', async () => {

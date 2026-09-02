@@ -7,6 +7,8 @@
  * levantar una base.
  */
 
+const { attachmentToJson } = require('../attachments')
+
 /**
  * La forma del subdocumento en el contrato, o `null`.
  *
@@ -14,10 +16,19 @@
  * los dos son subdocumentos `{ _id, numero, descripcion, activo }` y el front
  * los pinta igual. Una sola función evita que los dos formatos deriven.
  *
+ * **`archivo` es la única asimetría, y por eso hay que pedirlo.** Sólo el de
+ * obra puede llevar el papel escaneado (D-79); el patronal no tiene ese campo.
+ * Devolverlo siempre metería un `archivo: null` en el registro patronal, que es
+ * un cambio de contrato que nadie pidió y que el front tendría que ignorar.
+ *
  * @param {Array} registros subdocumentos del padre, ya cargados
  * @param {*} id el que referencia el proyecto
+ * @param {object} [opciones]
+ * @param {boolean} [opciones.conArchivo] incluir `archivo` — sólo registros de
+ *   obra. Va **sin `url`** porque firmarla es asíncrono y esto es puro: quien
+ *   responde la agrega con `storage.firmarRegistro`.
  */
-function findRegistry(registros, id) {
+function findRegistry(registros, id, { conArchivo = false } = {}) {
   if (!id || !Array.isArray(registros)) return null
 
   const encontrado = registros.find((r) => String(r._id) === String(id))
@@ -27,6 +38,7 @@ function findRegistry(registros, id) {
     _id: encontrado._id.toString(),
     numero: encontrado.numero,
     descripcion: encontrado.descripcion ?? null,
+    ...(conArchivo ? { archivo: attachmentToJson(encontrado.archivo) } : {}),
     activo: encontrado.activo
   }
 }

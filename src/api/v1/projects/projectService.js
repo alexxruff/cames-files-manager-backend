@@ -6,6 +6,7 @@ const companyService = require('../companies/companyService')
 const Category = require('../categories/categoryModel')
 const Assignment = require('../assignments/assignmentModel')
 const portfolioService = require('../portfolios/portfolioService')
+const storage = require('../../../services/storageService')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { normalize, escapeRegex } = require('../../../utils/text')
 const { today, isAfter, isBefore, daysBetween } = require('../../../utils/dates')
@@ -74,13 +75,13 @@ class ProjectService {
       total,
       pagina,
       porPagina,
-      proyectos: proyectos.map((p) => this.#formatear(p))
+      proyectos: await Promise.all(proyectos.map((p) => this.#formatear(p)))
     }
   }
 
   async getById(id, contexto = {}) {
     const proyecto = await this.#buscarVisible(id, contexto, { poblar: true })
-    return { proyecto: this.#formatear(proyecto) }
+    return { proyecto: await this.#formatear(proyecto) }
   }
 
   async create(datos, contexto = {}) {
@@ -472,8 +473,13 @@ class ProjectService {
     return proyecto
   }
 
-  /** Agrega los nombres de empresa y cliente, y los días que faltan para cerrar. */
-  #formatear(proyecto) {
+  /**
+   * Agrega los nombres de empresa y cliente, y los días que faltan para cerrar.
+   *
+   * Es asíncrono desde D-79: el registro de obra puede traer archivo, y su URL
+   * se firma al leer igual que todo lo demás que se deriva.
+   */
+  async #formatear(proyecto) {
     const json = proyecto.toJSON()
     const cliente = proyecto.clienteId
     const empresa = proyecto.empresaId
@@ -492,7 +498,12 @@ class ProjectService {
         empresa?.registrosPatronales,
         proyecto.registroPatronalId
       ),
-      registroObra: findRegistry(cliente?.registrosObra, proyecto.registroObraId),
+      registroObra: await storage.firmarRegistro(
+        findRegistry(cliente?.registrosObra, proyecto.registroObraId, {
+          conArchivo: true
+        }),
+        cliente?.registrosObra
+      ),
       empresaId: (empresa?._id || empresa)?.toString() ?? null,
       clienteId: (cliente?._id || cliente)?.toString() ?? null,
       empresaNombre: empresa?.nombre ?? null,

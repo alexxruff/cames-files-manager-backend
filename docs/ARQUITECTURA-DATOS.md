@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-77)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-79)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -48,6 +48,14 @@ y esto importa más de lo que parece:
 | --------------------------------- | ----------- | ----------------------- | ----------------------------- |
 | `companies.registrosPatronales[]` | `companies` | `numero`, en su empresa | `projects.registroPatronalId` |
 | `clients.registrosObra[]`         | `clients`   | `numero`, en su cliente | `projects.registroObraId`     |
+
+Desde **D-79**, el registro de obra lleva además su papel escaneado en
+`clients.registrosObra[].archivo` (`models/attachmentSchema.js`): opcional, uno
+solo y **sin versiones** —reemplazarlo borra el anterior de R2—. Su
+`claveAlmacenamiento` **no** va `select: false`, al revés que en el expediente
+(D-41): el cliente se guarda entero cada vez que se toca uno de sus registros, y
+un campo no cargado se escribiría vacío. Lo que impide que se filtre es el
+`toJSON`, que nunca la incluye.
 
 No son colecciones porque no tienen vida fuera de su padre: un registro patronal
 sin empresa no significa nada. Pero **sí tienen `_id`**, porque hay que apuntarles
@@ -341,26 +349,27 @@ colección: `records.documentos[].tipo` apunta a `DOCUMENT_TYPES` en
 
 ## 5. Matriz de impacto: si tocas esto, revisa aquello
 
-| Si cambias…                                     | Revisa                                                                                                          |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **`employees.categoriaId`**                     | `tipo` se deriva de ahí (D-59) → cambia **quién puede gestionar a esa persona**                                 |
-| **`employees.tipo`**                            | `utils/permissions.js` (`canManageEmployeeType`), el desplegable de puestos                                     |
-| **`affiliations.areas`**                        | El checklist (se resuelve por área) → puede cambiar **qué documentos se le exigen**                             |
-| **`affiliations.dirigeAreas`**                  | `scopeMiddleware` → **qué gente ve un jefe de área**                                                            |
-| **`affiliations.activo`**                       | El alcance del usuario, el checklist, las alertas, y si se queda sin ninguna activa, su baja del sistema (D-55) |
-| **`areas` (dar de baja)**                       | Bloqueado si alguien la tiene. Al reactivar, vuelve a ofrecerse en los desplegables                             |
-| **`categories.tipo`**                           | El `tipo` de todos los que tienen ese puesto                                                                    |
-| **`checklist_templates`**                       | El checklist de **todos** los que caigan en esa plantilla; hay que re-sincronizar expedientes                   |
-| **`companies.activo`**                          | Nadie puede importar ni adscribir a una empresa de baja                                                         |
-| **Dar de baja un registro patronal o de obra**  | Bloqueado si un proyecto **en curso** lo usa. Hay que cerrarlos o cambiárselo primero                           |
-| **Crear un contrato**                           | Traba el `clienteId` y el `registroPatronalId` de su proyecto (D-70)                                            |
-| **Registrar un SIROC**                          | Traba además el `registroObraId`. Quitarlo lo libera                                                            |
-| **`siroc.actualizaciones`**                     | Mueve la ventana de dos meses y con ella todo `seguimientoSiroc`: quitar una hace reaparecer el aviso (D-76)    |
-| **`affiliations.registroPatronalId`**           | El aviso de coherencia al asignar y en el listado (D-71). Manda sobre el texto; no bloquea nada                 |
-| **`affiliations.condiciones.registroPatronal`** | Lo mismo, pero **sólo mientras no haya vínculo**: es el respaldo de las que M3 no resolvió (D-72)               |
-| **`projects.registroPatronalId`**               | Lo mismo: el aviso se recalcula al leer, así que cambiarlo mueve toda la trazabilidad ya registrada             |
-| **Un enum de `src/constants/`**                 | Es **contrato**: el front compara por igualdad estricta. Cambiar un valor lo rompe                              |
-| **Cualquier índice único**                      | `npm run db:indices` en producción — `autoIndex` está apagado ahí                                               |
+| Si cambias…                                      | Revisa                                                                                                          |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| **`employees.categoriaId`**                      | `tipo` se deriva de ahí (D-59) → cambia **quién puede gestionar a esa persona**                                 |
+| **`employees.tipo`**                             | `utils/permissions.js` (`canManageEmployeeType`), el desplegable de puestos                                     |
+| **`affiliations.areas`**                         | El checklist (se resuelve por área) → puede cambiar **qué documentos se le exigen**                             |
+| **`affiliations.dirigeAreas`**                   | `scopeMiddleware` → **qué gente ve un jefe de área**                                                            |
+| **`affiliations.activo`**                        | El alcance del usuario, el checklist, las alertas, y si se queda sin ninguna activa, su baja del sistema (D-55) |
+| **`areas` (dar de baja)**                        | Bloqueado si alguien la tiene. Al reactivar, vuelve a ofrecerse en los desplegables                             |
+| **`categories.tipo`**                            | El `tipo` de todos los que tienen ese puesto                                                                    |
+| **`checklist_templates`**                        | El checklist de **todos** los que caigan en esa plantilla; hay que re-sincronizar expedientes                   |
+| **`companies.activo`**                           | Nadie puede importar ni adscribir a una empresa de baja                                                         |
+| **Dar de baja un registro patronal o de obra**   | Bloqueado si un proyecto **en curso** lo usa. Hay que cerrarlos o cambiárselo primero                           |
+| **Crear un contrato**                            | Traba el `clienteId` y el `registroPatronalId` de su proyecto (D-70)                                            |
+| **Registrar un SIROC**                           | Traba además el `registroObraId`. Quitarlo lo libera                                                            |
+| **Reemplazar el archivo de un registro de obra** | El anterior **se borra de R2** (D-79): no hay versiones a las que volver                                        |
+| **`siroc.actualizaciones`**                      | Mueve la ventana de dos meses y con ella todo `seguimientoSiroc`: quitar una hace reaparecer el aviso (D-76)    |
+| **`affiliations.registroPatronalId`**            | El aviso de coherencia al asignar y en el listado (D-71). Manda sobre el texto; no bloquea nada                 |
+| **`affiliations.condiciones.registroPatronal`**  | Lo mismo, pero **sólo mientras no haya vínculo**: es el respaldo de las que M3 no resolvió (D-72)               |
+| **`projects.registroPatronalId`**                | Lo mismo: el aviso se recalcula al leer, así que cambiarlo mueve toda la trazabilidad ya registrada             |
+| **Un enum de `src/constants/`**                  | Es **contrato**: el front compara por igualdad estricta. Cambiar un valor lo rompe                              |
+| **Cualquier índice único**                       | `npm run db:indices` en producción — `autoIndex` está apagado ahí                                               |
 
 ### Los tres efectos en cadena más largos
 

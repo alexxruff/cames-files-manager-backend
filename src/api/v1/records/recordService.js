@@ -10,7 +10,11 @@ const AccessLog = require('../accessLogs/accessLogModel')
 const employeeService = require('../employees/employeeService')
 const storage = require('../../../services/storageService')
 const { AppError } = require('../../../middlewares/errorHandler')
-const { detectarTipo, pareceHeic, TIPOS_PERMITIDOS } = require('../../../utils/fileTypes')
+const {
+  detectarTipo,
+  esPrevisualizable,
+  mensajeTipoNoPermitido
+} = require('../../../utils/fileTypes')
 const { isCalendarDate, addMonths, today, compare } = require('../../../utils/dates')
 const {
   construirChecklist,
@@ -284,16 +288,10 @@ class RecordService {
       ])
     }
 
-    const tipoReal = detectarTipo(archivo.buffer)
-    if (!tipoReal) {
-      const pista = pareceHeic(archivo.buffer)
-        ? ' Las fotos de iPhone (HEIC) no se pueden abrir en todos los navegadores: conviértela a JPG o PDF.'
-        : ''
-      throw new AppError(
-        415,
-        `El archivo no es un ${TIPOS_PERMITIDOS.join(', ')}.${pista}`
-      )
-    }
+    // El nombre sólo desempata entre formatos que comparten contenedor y
+    // habilita el CSV, que no tiene firma; nunca decide por sí solo (D-78).
+    const tipoReal = detectarTipo(archivo.buffer, archivo.nombreOriginal)
+    if (!tipoReal) throw new AppError(415, mensajeTipoNoPermitido(archivo.buffer))
 
     // 2. La vigencia, si este documento caduca.
     const vigenciaHasta = await this.#resolverVigencia(documento, empleado, datos)
@@ -442,7 +440,9 @@ class RecordService {
 
     const url = await storage.urlDeDescarga(laVersion.archivo.claveAlmacenamiento, {
       nombreArchivo: laVersion.archivo.nombre,
-      descargar: contexto.descargar === true
+      // Un Word o un Excel servidos `inline` son una pantalla de basura: lo que
+      // el navegador no previsualiza se descarga siempre (D-78).
+      descargar: contexto.descargar === true || !esPrevisualizable(laVersion.archivo.mime)
     })
 
     await AccessLog.create({
@@ -464,7 +464,8 @@ class RecordService {
       archivo: {
         nombre: laVersion.archivo.nombre,
         mime: laVersion.archivo.mime,
-        tamanoBytes: laVersion.archivo.tamanoBytes
+        tamanoBytes: laVersion.archivo.tamanoBytes,
+        previsualizable: esPrevisualizable(laVersion.archivo.mime)
       }
     }
   }

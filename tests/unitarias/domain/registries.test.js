@@ -29,6 +29,55 @@ describe('domain/registries — findRegistry', () => {
     })
   })
 
+  /**
+   * `archivo` es la ÚNICA asimetría entre los dos registros (D-79): sólo el de
+   * obra puede llevarlo. Que no se cuele en el patronal no es cosmético — sería
+   * un campo nuevo en una respuesta que nadie pidió cambiar.
+   */
+  describe('el archivo, que sólo tiene el registro de obra (D-79)', () => {
+    const conArchivo = [
+      {
+        _id: 'ccc',
+        numero: 'OB-2026-0145',
+        descripcion: 'Torre Andares',
+        activo: true,
+        archivo: {
+          nombre: 'escaneo.pdf',
+          mime: 'application/pdf',
+          tamanoBytes: 1024,
+          subidoPor: 'Ana Ruiz',
+          subidoEn: new Date('2026-09-01T10:00:00Z'),
+          claveAlmacenamiento: 'registros-obra/abc/ccc-uuid.pdf'
+        }
+      },
+      { _id: 'ddd', numero: 'OB-0002', descripcion: null, activo: true }
+    ]
+
+    it('por omisión NO aparece: el registro patronal no lo tiene', () => {
+      expect(findRegistry(registros, 'aaa')).not.toHaveProperty('archivo')
+      // Ni siquiera pidiéndolo sobre un registro que no lo lleva: sale null.
+      expect(findRegistry(registros, 'aaa', { conArchivo: true }).archivo).toBeNull()
+    })
+
+    it('pedido, sale con su forma pública y SIN la clave de almacenamiento', () => {
+      const registro = findRegistry(conArchivo, 'ccc', { conArchivo: true })
+
+      expect(registro.archivo).toMatchObject({
+        nombre: 'escaneo.pdf',
+        mime: 'application/pdf',
+        tamanoBytes: 1024,
+        previsualizable: true
+      })
+      expect(registro.archivo.claveAlmacenamiento).toBeUndefined()
+      // La `url` la agrega quien puede firmarla: esto es puro.
+      expect(registro.archivo.url).toBeUndefined()
+    })
+
+    it('un registro de obra sin papel lo dice con null, no omitiéndolo', () => {
+      expect(findRegistry(conArchivo, 'ddd', { conArchivo: true }).archivo).toBeNull()
+    })
+  })
+
   it('la descripción ausente sale en null, nunca en cadena vacía', () => {
     expect(findRegistry(registros, 'bbb').descripcion).toBeNull()
   })

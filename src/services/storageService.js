@@ -8,6 +8,7 @@ const {
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner')
 const env = require('../config/env')
 const logger = require('../utils/logger')
+const { attachmentToJson, nombreDeDescarga } = require('../utils/attachments')
 
 /**
  * Almacenamiento de los documentos del expediente (backend-spec §7).
@@ -103,6 +104,27 @@ function construirClave({ empleadoId, tipo, version, extension }) {
   return env.R2_PREFIX ? `${env.R2_PREFIX}/${ruta}` : ruta
 }
 
+/**
+ * Clave de un **adjunto administrativo** (D-79): el archivo que respalda un dato
+ * del catálogo, no un documento del expediente.
+ *
+ * `{carpeta}/{ids...}-{uuid}.{ext}` — por ejemplo
+ * `registros-obra/{clienteId}/{registroId}-{uuid}.pdf`. Misma convención que
+ * `construirClave`: el nombre que puso el usuario **no** entra en la ruta (path
+ * traversal), y el `uuid` hace que reemplazar el archivo nunca pise al anterior
+ * mientras se sube.
+ */
+function construirClaveAdjunto({ carpeta, ids = [], extension }) {
+  const ext = String(extension || 'bin')
+    .replace(/[^a-z0-9]/gi, '')
+    .toLowerCase()
+  const tramos = ids.map((id) => String(id).replace(/[^a-z0-9]/gi, ''))
+  const ultimo = tramos.pop()
+  const ruta = [carpeta, ...tramos, `${ultimo}-${randomUUID()}.${ext}`].join('/')
+
+  return env.R2_PREFIX ? `${env.R2_PREFIX}/${ruta}` : ruta
+}
+
 /** Sube el contenido y devuelve la clave con la que quedó guardado. */
 async function subir({ buffer, clave, contentType }) {
   if (!buffer || !clave) {
@@ -162,6 +184,51 @@ async function urlDeDescarga(clave, opciones = {}) {
 }
 
 /**
+ * El adjunto como lo ve el front, con su URL firmada (D-79).
+ *
+ * `null` si no hay archivo, para que quien lo pinte no tenga que distinguir
+ * entre «no hay» y «no se pudo». Lo que **no se previsualiza** se firma siempre
+ * como descarga: un DOCX servido `inline` es una pantalla de basura binaria.
+ *
+ * @param {object} archivo el subdocumento guardado
+ * @param {string} nombreBase con qué nombre se descarga — el del DATO (D-78)
+ * @param {object} [opciones]
+ * @param {?boolean} [opciones.descargar] fuerza `attachment`; por omisión se
+ *   decide con `previsualizable`.
+ */
+async function firmarAdjunto(archivo, nombreBase, { descargar = null } = {}) {
+  const publico = attachmentToJson(archivo)
+  if (!publico) return null
+
+  const nombreArchivo = nombreDeDescarga(nombreBase, publico.mime)
+
+  return {
+    ...publico,
+    nombreDescarga: nombreArchivo,
+    url: await urlDeDescarga(archivo.claveAlmacenamiento, {
+      nombreArchivo,
+      // Lo que no se previsualiza se descarga siempre; lo demás, si lo piden.
+      descargar: descargar ?? !publico.previsualizable
+    })
+  }
+}
+
+/**
+ * Lo que devuelve `findRegistry`, con la URL firmada de su archivo.
+ *
+ * Necesita el arreglo original porque la clave de almacenamiento no viaja en la
+ * forma pública —ni debe—, así que hay que volver al subdocumento para firmarla.
+ */
+async function firmarRegistro(registro, registrosOriginales) {
+  if (!registro?.archivo) return registro
+
+  const original = (registrosOriginales || []).find((r) => String(r._id) === registro._id)
+  if (!original?.archivo) return registro
+
+  return { ...registro, archivo: await firmarAdjunto(original.archivo, registro.numero) }
+}
+
+/**
  * Borra un objeto. **Las versiones de un documento no se borran** (el versionado
  * es el requisito de trazabilidad): esto existe para limpiar una subida que
  * falló a medias, no para el flujo normal.
@@ -199,6 +266,9 @@ module.exports = {
   driver,
   estaConfigurado,
   construirClave,
+  construirClaveAdjunto,
+  firmarAdjunto,
+  firmarRegistro,
   subir,
   urlDeDescarga,
   borrar,

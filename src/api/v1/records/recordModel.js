@@ -6,6 +6,7 @@ const {
 } = require('../../../constants')
 const { isCalendarDate } = require('../../../utils/dates')
 const { idAString, idsAString } = require('../../../utils/ids')
+const { esPrevisualizable } = require('../../../utils/fileTypes')
 
 /**
  * Expediente (modelo-datos §5.6). **Uno por empleado**, con el checklist
@@ -120,6 +121,9 @@ function archivoAJson(archivo) {
     nombre: archivo.nombre,
     mime: archivo.mime,
     tamanoBytes: archivo.tamanoBytes,
+    // Desde D-78 se aceptan Word, Excel y CSV, que el navegador NO abre: la
+    // interfaz necesita saberlo para ofrecer descargar en vez de un visor.
+    previsualizable: esPrevisualizable(archivo.mime),
     subidoPor: archivo.subidoPor,
     subidoEn: archivo.subidoEn
   }

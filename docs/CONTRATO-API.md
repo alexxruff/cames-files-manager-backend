@@ -102,8 +102,9 @@ lista, no dentro.
 | POST   | `/clientes`                                                | `rh_admin` o `jefe_area`     | `cliente`                                                                                                                                        | 409 en nombre o RFC repetidos                                                                                                           |
 | PATCH  | `/clientes/:id`                                            | `rh_admin` o `jefe_area`     | `cliente`                                                                                                                                        | Nombre, RFC y contactos                                                                                                                 |
 | PATCH  | `/clientes/:id/estado`                                     | `rh_admin` o `jefe_area`     | `cliente`                                                                                                                                        | Baja lógica; no hay borrado real (D-36)                                                                                                 |
-| POST   | `/clientes/:id/registros-obra`                             | `rh_admin` o `jefe_area`     | `cliente` · `registro`                                                                                                                           | Registros de obra del cliente; idempotente por número (D-66)                                                                            |
-| PATCH  | `/clientes/:id/registros-obra/:roId`                       | `rh_admin` o `jefe_area`     | `cliente` · `registro`                                                                                                                           | Número y descripción                                                                                                                    |
+| POST   | `/clientes/:id/registros-obra`                             | `rh_admin` o `jefe_area`     | `cliente` · `registro`                                                                                                                           | Registros de obra del cliente; idempotente por número (D-66). JSON o `multipart` con `archivo` opcional (D-79)                          |
+| PATCH  | `/clientes/:id/registros-obra/:roId`                       | `rh_admin` o `jefe_area`     | `cliente` · `registro`                                                                                                                           | Número, descripción y `archivo`: mandarlo **reemplaza** el anterior, que se borra (D-79)                                                |
+| GET    | `/clientes/:id/registros-obra/:roId/archivo`               | sesión                       | `archivo`                                                                                                                                        | Enlace fresco al papel del registro; `?descargar=true`. 404 si no tiene archivo (D-79)                                                  |
 | PATCH  | `/clientes/:id/registros-obra/:roId/estado`                | `rh_admin` o `jefe_area`     | `cliente` · `registro`                                                                                                                           | Baja y reactivación                                                                                                                     |
 | GET    | `/empresas/:id/clientes`                                   | sesión                       | `cartera[]` (el vínculo, con su `cliente` resuelto dentro)                                                                                       | La cartera de la empresa, con el cliente resuelto                                                                                       |
 | POST   | `/empresas/:id/clientes`                                   | `rh_admin` o `jefe_area`     | `cartera`                                                                                                                                        | Mete un cliente a la cartera; 200 si reactiva un vínculo previo                                                                         |
@@ -525,6 +526,7 @@ consulta, así que corregir el registro de la adscripción se refleja solo.
       "_id": "66f…",
       "numero": "OB-0012",
       "descripcion": null,
+      "archivo": null, // o el adjunto con su url firmada (D-79)
       "activo": true
     },
     "registroPatronalCoincide": false
@@ -543,6 +545,72 @@ número de la persona sale del catálogo —canónico— y no del texto; por eso
 `registroPatronalCoincide` de una adscripción vinculada es exacto por
 construcción. `null` mientras la migración M3 no lo haya resuelto: el respaldo
 sigue siendo el texto.
+
+### El archivo del registro de obra (D-79)
+
+Un registro de obra puede traer el papel escaneado. **Es opcional**: donde no lo
+hay, `archivo` viene en `null`, y ésa es la única forma de la que hay que
+distinguirlo.
+
+Sale igual en **todos** los lugares donde se devuelve un registro de obra: el
+cliente y su listado, el detalle del proyecto (`proyecto.registroObra`) y la
+cadena de `GET /asignaciones/:id`.
+
+**El registro patronal NO lo lleva**, y la llave `archivo` ni siquiera aparece en
+él: no tiene ese campo y su forma no cambió.
+
+```jsonc
+{
+  "_id": "66f…",
+  "numero": "OB-2026-0145",
+  "descripcion": "Torre Andares",
+  "activo": true,
+  "archivo": {
+    "nombre": "escaneo (2) final_v3.pdf", // el original, para mostrar
+    "nombreDescarga": "OB-2026-0145.pdf", // con el que se guarda al bajarlo
+    "mime": "application/pdf",
+    "tamanoBytes": 184320,
+    "previsualizable": true, // false en Word, Excel y CSV: hay que descargarlo
+    "subidoPor": "Ana Ruiz",
+    "subidoEn": "2026-09-01T18:22:04.113Z",
+    "url": "https://…" // FIRMADA, caduca a los 10 minutos
+  }
+}
+```
+
+**Subirlo.** `POST /clientes/:id/registros-obra` y
+`PATCH /clientes/:id/registros-obra/:roId` aceptan `multipart/form-data` con el
+campo **`archivo`** junto a `numero` y `descripcion`. Las dos rutas siguen
+aceptando `application/json` sin archivo, así que lo que ya se manda funciona
+igual. En el `PATCH`, mandar **sólo** el archivo es una edición válida y
+**reemplaza** el que hubiera —el anterior se borra: no hay versiones—.
+
+Subir con un `numero` que ya existía guarda el archivo en **ese** registro y
+responde `200` con `«Ese registro de obra ya existía»`, sin duplicar nada.
+
+**Abrirlo.** La `url` que viaja en la respuesta caduca a los 10 minutos.
+`GET /clientes/:id/registros-obra/:roId/archivo` devuelve `{ archivo }` con una
+nueva, sin recargar el cliente entero; `?descargar=true` fuerza la descarga. Lo
+lee cualquier sesión con alcance sobre el cliente. **404** si ese registro no
+tiene archivo, y **404 —no 403—** si el cliente no está a su alcance.
+
+| Código | Cuándo                                                                       |
+| ------ | ---------------------------------------------------------------------------- |
+| `413`  | El archivo pasa de 10 MB                                                     |
+| `415`  | El contenido no es de un tipo permitido (se valida el archivo, no el nombre) |
+| `403`  | Adjuntar o reemplazar sin poder administrar clientes                         |
+
+### Tipos de archivo aceptados (D-78)
+
+En **todo** el backend —también en los documentos del expediente—: **PDF, JPG,
+PNG, WEBP, DOC, DOCX, XLS, XLSX y CSV**. Se valida **el contenido**, no la
+extensión ni el `Content-Type`, salvo el CSV, que no tiene firma posible: ése
+exige que el nombre declare `.csv` y que el contenido sea texto.
+
+Cada archivo devuelve **`previsualizable`**. Los de Office y el CSV vienen en
+`false`: el navegador no los abre, su URL firmada se emite siempre como descarga
+y la interfaz debe ofrecer **descargar**, no un visor. HEIC sigue rechazado, y el
+mensaje del `415` explica que hay que convertirlo.
 
 ### `AuthUser`
 

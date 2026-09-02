@@ -185,6 +185,26 @@ interface RegistroResuelto {
   _id: string
   numero: string
   descripcion: string | null
+  /**
+   * El papel escaneado del registro, cuando lo hay (D-79). **Sólo en
+   * `registroObra`**: el patronal no lleva archivo y la llave **ni siquiera
+   * aparece** en él, así que su forma es la de siempre. En un registro de obra
+   * sin papel, `null`.
+   *
+   * La `url` está firmada y **caduca a los 10 minutos**: para un enlace fresco,
+   * `GET /clientes/:id/registros-obra/:roId/archivo`. Forma completa en
+   * `CONTRATO-API.md` §«El archivo del registro de obra».
+   */
+  archivo: {
+    nombre: string
+    nombreDescarga: string // `<numero>.<ext>`, con el que se guarda
+    mime: string
+    tamanoBytes: number
+    previsualizable: boolean // false en Word, Excel y CSV: hay que descargarlo
+    subidoPor: string | null
+    subidoEn: string // ISO
+    url: string
+  } | null
   activo: boolean
 }
 ```

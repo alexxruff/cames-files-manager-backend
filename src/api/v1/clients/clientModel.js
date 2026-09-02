@@ -1,5 +1,7 @@
 const mongoose = require('mongoose')
 const { normalize } = require('../../../utils/text')
+const attachmentSchema = require('../../../models/attachmentSchema')
+const { attachmentToJson } = require('../../../utils/attachments')
 
 /**
  * Cliente — catálogo compartido (modelo-datos §5.3).
@@ -38,6 +40,12 @@ const constructionRegistrationSchema = new mongoose.Schema({
     default: null,
     maxlength: [120, 'La descripción no puede exceder 120 caracteres']
   },
+  /**
+   * El papel del registro de obra, escaneado (D-79). **Opcional**: el número
+   * sigue siendo el dato, y los registros que ya existen no tienen archivo.
+   * Uno solo, sin versiones: se reemplaza.
+   */
+  archivo: { type: attachmentSchema, default: null },
   activo: { type: Boolean, default: true }
 })
 
@@ -93,6 +101,9 @@ const clientSchema = new mongoose.Schema(
               _id: r._id.toString(),
               numero: r.numero,
               descripcion: r.descripcion ?? null,
+              // Sin `url`: firmarla es asíncrono y esto no lo es. El servicio
+              // la agrega antes de responder (`clientService.#conArchivos`).
+              archivo: attachmentToJson(r.archivo),
               activo: r.activo
             })),
           contactoNombre: ret.contactoNombre ?? null,

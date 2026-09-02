@@ -4,6 +4,7 @@ const Project = require('../projects/projectModel')
 const Employee = require('../employees/employeeModel')
 const Affiliation = require('../affiliations/affiliationModel')
 const Company = require('../companies/companyModel')
+const storage = require('../../../services/storageService')
 const { AppError } = require('../../../middlewares/errorHandler')
 const {
   empresaEsVisible,
@@ -120,7 +121,12 @@ class AssignmentService {
       empresa.registrosPatronales,
       proyecto.registroPatronalId
     )
-    const registroObra = findRegistry(cliente?.registrosObra, proyecto.registroObraId)
+    const registroObra = await storage.firmarRegistro(
+      findRegistry(cliente?.registrosObra, proyecto.registroObraId, {
+        conArchivo: true
+      }),
+      cliente?.registrosObra
+    )
 
     const aviso = employerRegistryWarning({
       empleadoNombre: empleado?.nombre,

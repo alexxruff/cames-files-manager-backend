@@ -286,6 +286,36 @@ describe('POST /api/v1/expedientes/:id/documentos/:tipo — subir', () => {
       expect(res.body.message).toMatch(/JPG o PDF/)
     })
 
+    it('un Word se acepta y se marca como NO previsualizable (D-78)', async () => {
+      const { token, persona } = await escenario()
+      const expedienteId = await abrirExpediente(token, persona._id)
+      // Un DOCX es un ZIP con `word/document.xml` dentro.
+      const docx = Buffer.concat([
+        Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+        Buffer.from('[Content_Types].xmlword/document.xml'),
+        Buffer.alloc(32)
+      ])
+
+      const res = await request(app)
+        .post(`/api/v1/expedientes/${expedienteId}/documentos/contrato`)
+        .set(auth(token))
+        .attach('archivo', docx, 'contrato firmado.docx')
+
+      expect(res.status).toBe(201)
+      const doc = res.body.data.expediente.documentos.find((d) => d.tipo === 'contrato')
+      expect(doc.archivo).toMatchObject({
+        mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        previsualizable: false
+      })
+
+      // Y la URL de esa versión se emite como descarga, sin pedirlo.
+      const url = await request(app)
+        .get(`/api/v1/expedientes/${expedienteId}/documentos/contrato/versiones/1/url`)
+        .set(auth(token))
+      expect(url.status).toBe(200)
+      expect(url.body.data.archivo.previsualizable).toBe(false)
+    })
+
     it('400 si no se adjunta archivo', async () => {
       const { token, persona } = await escenario()
       const expedienteId = await abrirExpediente(token, persona._id)

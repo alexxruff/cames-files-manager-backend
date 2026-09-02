@@ -2,8 +2,11 @@ const mongoose = require('mongoose')
 const Client = require('./clientModel')
 const Portfolio = require('../portfolios/portfolioModel')
 const Project = require('../projects/projectModel')
+const storage = require('../../../services/storageService')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { normalize, escapeRegex } = require('../../../utils/text')
+const { attachmentToJson } = require('../../../utils/attachments')
+const { detectarTipo, mensajeTipoNoPermitido } = require('../../../utils/fileTypes')
 const { CAPABILITIES, can, isPlatformAdmin } = require('../../../utils/permissions')
 
 /**
@@ -74,7 +77,12 @@ class ClientService {
         .limit(porPagina)
     ])
 
-    return { total, pagina, porPagina, clientes: clientes.map((c) => c.toJSON()) }
+    return {
+      total,
+      pagina,
+      porPagina,
+      clientes: await Promise.all(clientes.map((c) => this.#conArchivos(c)))
+    }
   }
 
   /**
@@ -120,7 +128,7 @@ class ClientService {
     if (!cliente) throw AppError.notFound('El cliente no existe')
 
     await this.#assertEnAlcance(cliente, contexto)
-    return { cliente: cliente.toJSON() }
+    return { cliente: await this.#conArchivos(cliente) }
   }
 
   /**
@@ -150,7 +158,7 @@ class ClientService {
     await this.#assertRfcLibre(datos.rfc)
 
     const cliente = await Client.create(this.#soloCamposPermitidos(datos))
-    return { cliente: cliente.toJSON() }
+    return { cliente: await this.#conArchivos(cliente) }
   }
 
   async update(id, datos) {
@@ -167,7 +175,7 @@ class ClientService {
     Object.assign(cliente, this.#soloCamposPermitidos(datos, { parcial: true }))
     await cliente.save()
 
-    return { cliente: cliente.toJSON() }
+    return { cliente: await this.#conArchivos(cliente) }
   }
 
   /**
@@ -183,7 +191,7 @@ class ClientService {
 
     cliente.activo = activo
     await cliente.save()
-    return { cliente: cliente.toJSON() }
+    return { cliente: await this.#conArchivos(cliente) }
   }
 
   // ─── Registros de obra (D-66) ─────────────────────────────────────────────
@@ -193,26 +201,34 @@ class ClientService {
    * registros patronales (D-65) y por lo mismo: la interfaz no tiene que
    * preguntar antes de crear.
    */
-  async agregarRegistroObra(clienteId, { numero, descripcion }, contexto = {}) {
+  async agregarRegistroObra(clienteId, { numero, descripcion, archivo }, contexto = {}) {
     const cliente = await this.#buscarEnAlcance(clienteId, contexto)
     const buscado = String(numero).trim().toUpperCase()
 
     const existente = cliente.registrosObra.find((r) => r.numero === buscado)
+    /*
+     * Ya estaba. Si además venía archivo se guarda igual: quien llenó el
+     * formulario con número y archivo espera que el archivo quede, y la
+     * alternativa —descartarlo en silencio— es la peor de las dos.
+     */
     if (existente) {
+      if (archivo) await this.#guardarArchivo(cliente, existente, archivo, contexto)
       return {
-        cliente: cliente.toJSON(),
-        registro: this.#registro(existente),
+        cliente: await this.#conArchivos(cliente),
+        registro: await this.#registroFirmado(existente),
         yaExistia: true
       }
     }
 
     cliente.registrosObra.push({ numero: buscado, descripcion: descripcion || null })
-    await cliente.save()
-
     const creado = cliente.registrosObra.find((r) => r.numero === buscado)
+
+    if (archivo) await this.#guardarArchivo(cliente, creado, archivo, contexto)
+    else await cliente.save()
+
     return {
-      cliente: cliente.toJSON(),
-      registro: this.#registro(creado),
+      cliente: await this.#conArchivos(cliente),
+      registro: await this.#registroFirmado(creado),
       yaExistia: false
     }
   }
@@ -231,8 +247,14 @@ class ClientService {
     if (datos.numero !== undefined) registro.numero = datos.numero
     if (datos.descripcion !== undefined) registro.descripcion = datos.descripcion || null
 
-    await cliente.save()
-    return { cliente: cliente.toJSON(), registro: this.#registro(registro) }
+    if (datos.archivo)
+      await this.#guardarArchivo(cliente, registro, datos.archivo, contexto)
+    else await cliente.save()
+
+    return {
+      cliente: await this.#conArchivos(cliente),
+      registro: await this.#registroFirmado(registro)
+    }
   }
 
   /**
@@ -265,7 +287,97 @@ class ClientService {
 
     registro.activo = activo
     await cliente.save()
-    return { cliente: cliente.toJSON(), registro: this.#registro(registro) }
+    return {
+      cliente: await this.#conArchivos(cliente),
+      registro: await this.#registroFirmado(registro)
+    }
+  }
+
+  /**
+   * URL firmada del archivo, para abrirlo o descargarlo (D-79).
+   *
+   * Existe además de la URL que ya viaja en cada registro porque esa caduca a
+   * los 10 minutos: sin esto, quien deja la pantalla abierta un rato tiene que
+   * recargar el cliente entero para volver a bajar el mismo papel.
+   */
+  async urlDeArchivoRegistroObra(clienteId, registroId, contexto = {}) {
+    const { registro } = await this.#buscarRegistroObra(clienteId, registroId, contexto)
+
+    if (!registro.archivo) {
+      throw AppError.notFound('Ese registro de obra no tiene archivo')
+    }
+
+    return {
+      archivo: await storage.firmarAdjunto(registro.archivo, registro.numero, {
+        descargar: contexto.descargar === true ? true : null
+      })
+    }
+  }
+
+  /**
+   * Guarda el archivo del registro y **borra el que reemplaza**.
+   *
+   * Al almacenamiento primero y a la base después, como en el expediente: si la
+   * base falla, se limpia el objeto recién subido en vez de dejarlo huérfano. El
+   * anterior se borra al final, cuando ya nadie lo referencia — al revés, un
+   * fallo al guardar dejaría el registro apuntando a un archivo borrado.
+   */
+  async #guardarArchivo(cliente, registro, archivo, contexto = {}) {
+    const tipoReal = detectarTipo(archivo.buffer, archivo.nombreOriginal)
+    if (!tipoReal) throw new AppError(415, mensajeTipoNoPermitido(archivo.buffer))
+
+    const clave = storage.construirClaveAdjunto({
+      carpeta: 'registros-obra',
+      ids: [cliente._id, registro._id],
+      extension: tipoReal.extension
+    })
+
+    await storage.subir({
+      buffer: archivo.buffer,
+      clave,
+      contentType: tipoReal.mime
+    })
+
+    const anterior = registro.archivo?.claveAlmacenamiento || null
+
+    registro.archivo = {
+      nombre: archivo.nombreOriginal || `registro-obra.${tipoReal.extension}`,
+      mime: tipoReal.mime,
+      tamanoBytes: archivo.buffer.length,
+      subidoPor: contexto.user?.nombre || 'Sistema',
+      subidoPorId: contexto.user?._id ?? null,
+      subidoEn: new Date(),
+      claveAlmacenamiento: clave
+    }
+
+    try {
+      await cliente.save()
+    } catch (error) {
+      await storage.borrar(clave)
+      throw error
+    }
+
+    if (anterior && anterior !== clave) await storage.borrar(anterior)
+  }
+
+  /** El cliente serializado, con la URL firmada de cada archivo. */
+  async #conArchivos(cliente) {
+    const json = cliente.toJSON()
+
+    json.registrosObra = await Promise.all(
+      (cliente.registrosObra || [])
+        .filter((r) => r && r.numero)
+        .map((r) => this.#registroFirmado(r))
+    )
+
+    return json
+  }
+
+  async #registroFirmado(r) {
+    return {
+      ...this.#registro(r),
+      archivo: await storage.firmarAdjunto(r.archivo, r.numero)
+    }
   }
 
   #registro(r) {
@@ -273,6 +385,8 @@ class ClientService {
       _id: r._id.toString(),
       numero: r.numero,
       descripcion: r.descripcion ?? null,
+      // Sin `url`: firmarla es asíncrono. `#registroFirmado` la agrega.
+      archivo: attachmentToJson(r.archivo),
       activo: r.activo
     }
   }
@@ -328,7 +442,7 @@ class ClientService {
         errors: [{ msg: 'Ya existe un cliente con ese nombre', path: 'nombre' }],
         // Con el id, la interfaz puede ofrecer «ya existe, ¿lo usas?» en vez de
         // dejar a la persona atorada en un error.
-        data: { cliente: existente.toJSON() }
+        data: { cliente: await this.#conArchivos(existente) }
       })
     }
   }
@@ -343,7 +457,7 @@ class ClientService {
       throw AppError.conflict('Ya existe un cliente con ese RFC', {
         code: 'RFC_DUPLICADO',
         errors: [{ msg: 'Ya existe un cliente con ese RFC', path: 'rfc' }],
-        data: { cliente: existente.toJSON() }
+        data: { cliente: await this.#conArchivos(existente) }
       })
     }
   }

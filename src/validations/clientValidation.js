@@ -147,13 +147,23 @@ exports.addConstructionRegistrationValidation = [
 exports.updateConstructionRegistrationValidation = [
   param('id').isMongoId().withMessage('El cliente indicado no es válido'),
   param('roId').isMongoId().withMessage('El registro de obra indicado no es válido'),
-  body().custom((cuerpo) => {
-    if (Object.keys(cuerpo || {}).length === 0)
+  // Mandar SÓLO el archivo es una edición válida (D-79): reemplaza el que haya.
+  body().custom((cuerpo, { req }) => {
+    if (!req.file && Object.keys(cuerpo || {}).length === 0)
       throw new Error('No hay nada que actualizar')
     return true
   }),
   numeroObra(false),
   descripcionObra()
+]
+
+exports.constructionRegistrationFileValidation = [
+  param('id').isMongoId().withMessage('El cliente indicado no es válido'),
+  param('roId').isMongoId().withMessage('El registro de obra indicado no es válido'),
+  query('descargar')
+    .optional()
+    .isBoolean()
+    .withMessage('descargar debe ser verdadero o falso')
 ]
 
 exports.constructionRegistrationEstadoValidation = [

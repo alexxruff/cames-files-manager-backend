@@ -3380,3 +3380,104 @@ quien puede ver el expediente puede ver bajo qué aviso trabaja esa persona.
 **Qué NO se hizo.** El renglón del empleado en `/empleados` sigue con
 `asignaciones: []` —codificado vacío desde antes de esto—, y las alertas del
 SIROC siguen sin aparecer en `GET /alertas`: las dos cosas van aparte.
+
+---
+
+## D-78 · Se aceptan Word, Excel y CSV, y el contrato dice qué se puede previsualizar
+
+**Contexto.** Hasta aquí sólo se aceptaban PDF, JPG, PNG y WEBP, con un criterio
+explícito: que cualquiera del equipo pudiera abrir lo que otro subió. En la
+práctica el criterio dejaba fuera trabajo real —los registros de obra, los avisos
+de SIROC y los contratos llegan en Word y en Excel—, y la consecuencia no era que
+la gente convirtiera los archivos: era que no los subía.
+
+**Decisión.** `utils/fileTypes.js` acepta además **DOC, DOCX, XLS, XLSX y CSV**,
+y aplica **en todo el backend**, también en los documentos del expediente. La
+detección sigue siendo **por contenido**:
+
+- **DOCX y XLSX** son ZIP. Se distinguen buscando `word/document.xml` o
+  `xl/workbook.xml` dentro del buffer: los nombres de las entradas viajan sin
+  comprimir, así que no hay que descomprimir nada. Un `.zip` cualquiera **no**
+  pasa.
+- **DOC y XLS** comparten contenedor OLE2. Decide el nombre del flujo interno
+  (`WordDocument` o `Workbook`, en UTF-16LE); la extensión sólo desempata cuando
+  ninguno aparece.
+- **CSV es la excepción y hay que decirlo**: es texto plano, no tiene firma que
+  lo distinga de cualquier otro texto. Se exige que el nombre declare `.csv` **y**
+  que el contenido sea texto de verdad (sin bytes de control, decodifica como
+  UTF-8). Es el único tipo donde la extensión pesa, y se acepta porque lo que
+  entra es texto y **nunca se sirve `inline`**.
+
+**Lo que sustituye al criterio viejo: `previsualizable`.** Cada archivo devuelve
+esa bandera en el contrato, y lo que no se previsualiza se firma **siempre como
+`attachment`**, sin que el front tenga que pedirlo. Así el equipo sigue sin
+toparse con un visor en blanco: un DOCX se descarga, y eso es una acción que la
+interfaz puede ofrecer bien. HEIC sigue fuera —ahí no hay nada que descargar que
+sirva— y el mensaje del `415` lo explica aparte.
+
+**El mensaje del 415 se centralizó** en `mensajeTipoNoPermitido`: son nueve tipos
+y enumerarlos a mano en cada servicio garantizaba que una lista se quedara vieja.
+
+**Cómo se descarga.** Con el nombre del **dato**, no el del archivo original: el
+registro de obra `OB-2026-0145` baja como `OB-2026-0145.pdf` y no como
+`escaneo (2) final_v3.pdf`. Lo decidió el cliente en la tarea #13, y aplica a
+todos los adjuntos administrativos (D-79). Los documentos del expediente
+conservan su nombre original, que ahí sí es información.
+
+**Sin migración**: los archivos que ya existen son PDF e imágenes, todos
+previsualizables, y la bandera se deriva del `mime` guardado.
+
+---
+
+## D-79 · El registro de obra lleva su papel adjunto, y se reemplaza en vez de versionarse
+
+**Contexto.** Tarea #13. El número del registro de obra es el dato, pero quien lo
+captura tiene el documento escaneado en la mano y no tenía dónde ponerlo.
+
+**Decisión.** `clients.registrosObra[]` gana un subdocumento `archivo`
+—`models/attachmentSchema.js`, reutilizable por el SIROC y por el contrato—, y
+las rutas de alta y edición del registro aceptan `multipart/form-data` con el
+campo `archivo`, **opcional**. Las mismas rutas siguen aceptando `application/json`
+sin archivo: multer deja pasar lo que no es multipart, así que el front no tiene
+que cambiar lo que ya manda.
+
+**Se reemplaza, no se versiona.** Al contrario del expediente, donde el
+versionado es el requisito de trazabilidad: aquí el archivo es una copia del
+papel que respalda un número, volver a escanearlo es la operación normal, y el
+objeto anterior se borra de R2 en cuanto el nuevo quedó guardado. Se sube al
+almacenamiento primero y a la base después —si la base falla se limpia el objeto
+recién subido—, y el anterior se borra al final, cuando ya nadie lo referencia.
+
+**`claveAlmacenamiento` NO va `select: false`,** al revés que en el expediente
+(D-41). El motivo es la forma de guardar: un cliente se escribe entero cada vez
+que se toca cualquiera de sus registros, así que un campo no cargado se guardaría
+vacío y el archivo quedaría inalcanzable. Lo que impide que la clave se filtre es
+el `toJSON`, que enumera campos uno por uno y nunca la incluye — y hay prueba.
+
+**Sólo el de obra.** `findRegistry` resuelve los dos registros —el patronal de la
+empresa y el de obra del cliente— con la misma forma, y ahí `archivo` es la única
+asimetría: se pide con `{ conArchivo: true }` y sin eso la llave **no aparece**.
+Devolverla siempre habría metido un `archivo: null` en el registro patronal, que
+es un cambio de contrato que nadie pidió.
+
+**El enlace se deriva al leer**, como todo lo demás (regla #6): cada lugar que
+devuelve un registro de obra —el cliente, su listado, el detalle del proyecto y
+la cadena de la asignación— trae `archivo.url` firmada a 10 minutos. Firmar es
+cómputo local, no una llamada a R2, así que hacerlo por renglón no cuesta una
+petición. Y como caduca, `GET /clientes/:id/registros-obra/:roId/archivo` emite
+uno fresco sin recargar el cliente entero.
+
+**Subir con un número que ya existía guarda el archivo en ese registro.** El alta
+es idempotente por número (D-66); descartar el archivo en silencio porque el
+número ya estaba sería la peor de las dos salidas.
+
+**Permisos.** Adjuntar y reemplazar exige administrar clientes (`rh_admin` o
+`jefe_area`), lo mismo que el registro. **Abrirlo sólo pide sesión y alcance**:
+quien puede leer el número puede ver el papel que lo respalda. Fuera de alcance, 404.
+
+**Sin migración**: campo nuevo y opcional; los registros que ya existen quedan
+con `archivo: null`.
+
+**Qué NO se hizo.** No hay forma de **quitar** el archivo dejando el registro sin
+él —no se pidió—, ni bitácora de accesos como la del expediente: el registro de
+obra no es un dato personal.

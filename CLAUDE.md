@@ -105,6 +105,18 @@ tiempo en una tarea, asi que:
   `pgrep -f jest` debe salir vacio (ojo con el watch de la extension de Jest del
   editor).
 
+**Como esperar a que termine.** Dos formas de perder media hora, las dos vistas ya:
+
+- **No encadenes** `npm test` detras de otros comandos con `&&` ni le pongas
+  `| tail`. El `tail` retiene TODA la salida hasta el final, asi que mientras
+  corre no ves nada y no sabes si avanza. Redirige a un archivo:
+  `npm test > /tmp/suite.log 2>&1` y despues consulta lo que necesites.
+- **No esperes con `pgrep -f jest` en un bucle.** El propio comando de espera
+  lleva la palabra `jest` en su linea, asi que se encuentra a si mismo y el bucle
+  no termina nunca. Si tienes que esperar, busca la linea de resumen en el archivo
+  de salida, no un proceso.
+
+
 ## Idiomas — la regla que más se equivoca
 
 | Qué                                                                   | Idioma                               |

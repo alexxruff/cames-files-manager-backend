@@ -590,8 +590,9 @@ de referencia —corregir un dígito la rompería en silencio—.
 | `POST` | `/empresas/:id/registros-patronales` | `{ numero, descripcion? }` |
 | `PATCH` | `/empresas/:id/registros-patronales/:rpId` | `{ numero?, descripcion? }` |
 | `PATCH` | `/empresas/:id/registros-patronales/:rpId/estado` | `{ activo }` |
-| `POST` | `/clientes/:id/registros-obra` | `{ numero, descripcion? }` |
-| `PATCH` | `/clientes/:id/registros-obra/:roId` | `{ numero?, descripcion? }` |
+| `POST` | `/clientes/:id/registros-obra` | `{ numero, descripcion? }` o `multipart` con `archivo?` |
+| `PATCH` | `/clientes/:id/registros-obra/:roId` | `{ numero?, descripcion? }` o `multipart` con `archivo?` |
+| `GET` | `/clientes/:id/registros-obra/:roId/archivo` | — (`?descargar=true`) |
 | `PATCH` | `/clientes/:id/registros-obra/:roId/estado` | `{ activo }` |
 
 Mismo comportamiento en los dos: `POST` **idempotente por número** (`201` si lo
@@ -601,6 +602,12 @@ curso** lo usa, diciendo cuántos. Los finalizados no lo impiden.
 
 **No hay `GET` propio**: las listas vienen dentro de `GET /empresas/:id` y
 `GET /clientes/:id`.
+
+**Sólo el de obra lleva archivo** (D-79): opcional, uno solo y sin versiones —
+subir otro reemplaza y borra el anterior—. Sale como `archivo` en todo lugar
+donde se devuelve el registro, con su `url` firmada a 10 minutos, y
+`GET …/archivo` emite una nueva cuando esa caduca. La forma exacta está en
+`CONTRATO-API.md` §«El archivo del registro de obra».
 
 El proyecto los referencia con `registroPatronalId`/`registroObraId`, y la
 respuesta los trae **ya resueltos** en `registroPatronal`/`registroObra`

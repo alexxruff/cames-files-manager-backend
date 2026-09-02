@@ -109,136 +109,44 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
-### 2026-09-01 11:36:01 · backend · El expediente ya dice bajo qué SIROC trabaja esa persona
+### 2026-09-01 15:41:58 · backend · El registro de obra lleva su papel, y se abrieron los tipos de archivo
 
-**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 1 sept 10:52:50.
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 1 sept 12:01:42.
 
-**Qué se hizo (tarea #11).** El **detalle** del expediente
-—`GET /empleados/:id/expediente` y `GET /expedientes/:id`— trae una cuarta llave,
-**`obras`**: un renglón por asignación activa, con el proyecto, el contrato, su
-SIROC y el **mismo `seguimientoSiroc`** que ya reciben en la pantalla del
-contrato. Nada de lo que ya consumen cambió de forma, y no hay ruta nueva.
+**Qué se hizo (tarea #13).** El registro de obra del cliente ya puede llevar su
+**archivo escaneado**: opcional al crearlo, reemplazable al editarlo, y con el
+enlace firmado en **todos** los lugares donde ya les llega el registro —el
+cliente y su listado, `proyecto.registroObra` y la cadena de
+`GET /asignaciones/:id`—. Las dos rutas siguen aceptando `application/json` sin
+archivo, así que **lo que mandan hoy funciona igual**. Detalle completo, con la
+forma exacta y los errores, en `plan/handoff/13.md`.
 
-**No se guardó ningún campo.** La cadena `empleado → asignación → proyecto →
-contrato → siroc` se resuelve al leer, así que **no la cacheen**: cambia sola en
-cuanto alguien refrenda el aviso o cierra una fase.
+**Su consulta, contestada:** el archivo se descarga con **el número del registro
+de obra** (`OB-2026-0145.pdf`), no con el nombre que traía. Ya va en la cabecera
+de la URL firmada; el campo `nombreDescarga` está para que lo puedan mostrar
+antes de bajarlo.
 
-**Lo que necesitan saber para pintarlo**, en tres renglones:
+**Lo que sí les cambia lo que ya tienen (D-78).** Se abrieron los tipos **en
+todo el backend, expediente incluido**: además de PDF, JPG, PNG y WEBP ahora se
+aceptan **DOC, DOCX, XLS, XLSX y CSV**. Con eso, cada `archivo` —el del registro
+de obra y **el de cada documento del expediente**— trae
+**`previsualizable: boolean`**. En `false` la URL firmada se emite **siempre como
+descarga**, sin que ustedes pidan `?descargar=true`: ahí no ofrezcan visor. Si su
+interfaz abre todo en un visor, ése es el punto a tocar.
 
-- `seguimientoSiroc` es **el objeto que ya saben pintar**. Mismo `mensaje`, mismo
-  semáforo por `estado`. Nada nuevo que aprender.
-- **`vigente`** dice si ese aviso cubre hoy (`true`) o si es el último que cubrió
-  una obra ya terminada (`false`). **No lo deduzcan de las fechas**: un proyecto
-  tiene varias fases con su propio SIROC y cuál manda lo decide el servidor.
-- `obras` **siempre viene**, `[]` incluido. No ramifiquen por «existe o no».
+**Una ruta nueva**: `GET /clientes/:id/registros-obra/:roId/archivo`, para pedir
+un enlace fresco —la `url` de la respuesta caduca a los 10 minutos— sin recargar
+el cliente entero. Van 83 rutas en pie.
 
-**El listado `GET /expedientes` NO la trae**, sólo el detalle: por renglón serían
-dos consultas más en algo que pagina de a 100. Es la única diferencia entre un
-renglón de la tabla y el detalle. Si la quieren en la tabla, díganlo y se resuelve
-en lote para toda la página.
+**Qué necesita backend**: nada. El límite sigue en **10 MB** y subirlo es la
+tarea #17, así que si les rebota un contrato grande, es eso y ya está en el plan.
 
-**Ojo con una trampa vieja:** `asignaciones` en el renglón del empleado **sigue
-viniendo `[]`** —está codificado vacío desde antes de esto—. Si necesitan en qué
-obra está alguien, hoy es `obras`, en el detalle del expediente.
-
-El detalle, en `plan/handoff/11.md` y en
-[`ENDPOINTS-EXPEDIENTES.md`](./ENDPOINTS-EXPEDIENTES.md) §1 y 2. El porqué, en
-[`DECISIONES.md`](./DECISIONES.md) D-77.
-
-**Y lo suyo, anotado:** su aviso de que **hacen falta alertas del SIROC** está
-recogido. Hoy `GET /alertas` sigue siendo sólo documentos y cumpleaños (D-76
-cierra el porqué); se va a proponer como tarea aparte, no se olvidó.
-
-### 2026-09-01 10:22:52 · backend · La migración del SIROC corrió en LOCAL: sus dos contratos de prueba cambiaron solos
-
-**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 31 ago 22:36:33.
-
-**Esto no es un bug.** Si al abrir contratos ven algo distinto a ayer, es esto.
-
-Corrió `npm run migrate:siroc-vigencia`, que quita `siroc.vigenciaHasta` de los
-contratos que la traían — el campo de la entrada anterior. Tocó **los dos
-contratos con SIROC de la base local**, y ahora su vigencia se deriva en vez de
-leerse:
-
-| Contrato | SIROC           | Qué responde ahora                                         |
-| -------- | --------------- | ---------------------------------------------------------- |
-| 1        | `SIR-2026-0001` | `al_dia`, vigencia al **2026-10-31**, 60 días, 1 pendiente |
-| 2        | `SIR-2026-0002` | `vencida` desde el **2026-05-01**, 123 días, 4 pendientes  |
-
-El 2 sale rojo y pidiendo actualización. Es correcto: se registró el 2026-03-01,
-nadie lo ha refrendado, y el contrato sigue `en_curso` hasta el 2026-12-31.
-
-**Sólo en local.** En Fly **no** ha corrido, y el código de la corrección tampoco
-está desplegado: contra producción siguen viendo lo de antes, con el campo
-guardado. Cuando se despliegue lo avisamos aquí.
-
-**Lo único que les queda de la #9**: quitar `vigenciaHasta` del formulario del
-SIROC. Su entrada de las 22:36 daba la tarea por buena, pero es de **antes** de
-la corrección de las 23:35 — que no habían leído todavía. No corre prisa y no
-rompe nada: `PUT /contratos/:id/siroc` lo sigue aceptando y lo ignora.
-
-### 2026-08-31 23:35:02 · backend · El SIROC ya no tiene fecha final, y el contrato vencido sí pide actualización
-
-**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 31 ago 19:24:10.
-
-**Qué se hizo.** Dos correcciones sobre la tarea #9, salidas de probarla:
-
-1. **`siroc.vigenciaHasta` desapareció.** Del aviso se capturan **su número y su
-   fecha de registro, y nada más**: su vigencia son siempre dos meses desde ahí
-   —o desde la última actualización— y ya venía derivada en
-   `seguimientoSiroc.vigenciaPeriodoHasta`. Pedirla además hacía que se tecleara
-   ahí la fecha de fin del contrato, y el contrato acababa mostrando una vigencia
-   que el seguimiento no usaba y que lo contradecía.
-2. **Un contrato que se pasó de su `fechaFin` y que nadie finalizó ahora sí exige
-   la actualización.** Antes respondía `no_requiere` —«la ventana ya cubre lo que
-   queda del contrato»— sin mirar que ese contrato ya había quedado atrás. Para
-   el IMSS la obra sigue abierta y el aviso vence igual. Era el caso más común de
-   todos, porque las obras se alargan y nadie corre a finalizarlas.
-
-**Qué necesita el front.** Una cosa: **quiten `vigenciaHasta` del formulario del
-SIROC.** No corre prisa y no rompe nada mientras tanto —`PUT /contratos/:id/siroc`
-lo sigue aceptando y lo **ignora**—, pero ya no se guarda ni vuelve en la
-respuesta. Y al pintar «faltan N actualizaciones», usen
-`actualizacionesPendientes`, no la resta: en un contrato vencido
-`actualizacionesRequeridas` puede ser `0` y `pendientes` valer `1`.
-
-El detalle, en `plan/handoff/9.md` (encabezado «Corrección del 2026-08-31») y en
-[`ENDPOINTS-PROYECTOS.md`](./ENDPOINTS-PROYECTOS.md) §4.1. El porqué, en
-[`DECISIONES.md`](./DECISIONES.md) D-76.
-
-### 2026-08-31 22:08:33 · backend · Tarea #9: el SIROC se actualiza cada 2 meses, y el aviso ya viene calculado
-
-**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 31 ago 19:24:10 (tarea #8 cerrada,
-`fase` capturándose en dos casillas).
-
-**Qué se hizo.** El aviso de obra **se refrenda cada dos meses conservando el
-mismo número**. Se guarda sólo el hecho —`siroc.actualizaciones: [{ fecha, nota }]`—
-y **todo contrato viaja ahora con `seguimientoSiroc`**: cuántas actualizaciones
-pide (predichas desde `fechaInicio`/`fechaFin`), cuántas lleva, cuándo cumple los
-dos meses la ventana vigente, `estado`
-(`sin_siroc | no_requiere | al_dia | por_vencer | vencida`) y un `mensaje` en
-español listo para pintar. Derivado en cada lectura, como todo lo demás: no hay
-nada que marcar ni apagar. Dos rutas nuevas,
-`POST /contratos/:id/siroc/actualizaciones` y
-`DELETE /contratos/:id/siroc/actualizaciones/ultima`.
-
-**Qué necesita el front.** Es **aditivo**: nada de lo que consumen cambió de
-forma. Cuando pinten la tarea #10, tres cosas que ahorran errores:
-
-1. **`requiereActualizacion` es `true` sólo con `estado: 'vencida'`.**
-   `por_vencer` avisa 5 días antes, pero todavía no se debe nada.
-2. **La ventana corre desde la última actualización** —o desde `fechaRegistro`—,
-   **no desde el inicio del contrato**: un SIROC tramitado tarde vence tarde.
-3. **No cacheen `seguimientoSiroc`**: el mismo contrato responde distinto mañana.
-
-El detalle petición por petición, en `plan/handoff/9.md` y en
-[`ENDPOINTS-PROYECTOS.md`](./ENDPOINTS-PROYECTOS.md) §4.1. El porqué, en
-[`DECISIONES.md`](./DECISIONES.md) D-76.
-
-**Lo que quedó fuera, a propósito:** estas alertas **no entran en `GET /alertas`**
-—esa bandeja agrupa por `empleadoId` y el SIROC cuelga de un contrato—, y no hay
-listado global de «contratos que requieren actualización». Si lo quieren, se
-decide aparte.
+**Aviso de recorte**: las cuatro entradas de las tareas **#9 y #11** —que ustedes
+ya dieron por buenas el 1 sept 12:01:42— bajaron a dos renglones en «Cerrado». Lo
+que decían sigue completo en `plan/handoff/9.md` y `plan/handoff/11.md`, en
+`ENDPOINTS-PROYECTOS.md` §4.1, `ENDPOINTS-EXPEDIENTES.md` §1-2 y en D-76 y D-77.
+Sigue anotado lo que quedó abierto de ahí: **faltan alertas del SIROC** en
+`GET /alertas`, y se propondrá como tarea aparte.
 
 ### 2026-08-31 18:39:32 · backend · El contrato tiene fase, y es un campo suyo — no una entidad nueva
 
@@ -429,6 +337,8 @@ Si quedaba algo más vivo de ese documento, dígannoslo: lo damos por cerrado.
 
 | Fecha       | Tarea                                                                                                                                                          | Dónde quedó el detalle                                                                                                                         |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 sept 2026 | Tarea #11: el expediente dice bajo qué SIROC trabaja la persona (`obras`, derivado al leer, D-77)                                                              | `plan/handoff/11.md`, [`ENDPOINTS-EXPEDIENTES.md`](./ENDPOINTS-EXPEDIENTES.md) §1-2, [`DECISIONES.md`](./DECISIONES.md) D-77                   |
+| 1 sept 2026 | Tarea #9: el SIROC se actualiza cada 2 meses, sin fecha final, y la migración corrió en local y en Fly                                                         | `plan/handoff/9.md`, [`ENDPOINTS-PROYECTOS.md`](./ENDPOINTS-PROYECTOS.md) §4.1, [`DECISIONES.md`](./DECISIONES.md) D-76                        |
 | 29 ago 2026 | Barrida de documentación desfasada, y guardia automática de las cifras                                                                                         | `tests/unitarias/docs.test.js`; el aviso de `/organizacion` sigue en «Pendientes»                                                              |
 | 29 ago 2026 | Adoptados `modelo-datos.md` y `backend-spec.md`, con la versión del front como base                                                                            | Los dos documentos, y sus encabezados dicen desde cuándo son nuestros                                                                          |
 | 29 ago 2026 | Creada esta bitácora, y el reparto de documentos con el front                                                                                                  | Arriba, «Cómo funciona»                                                                                                                        |

@@ -55,3 +55,47 @@ describe('construirClave', () => {
     expect(clave.endsWith('.etcpasswd')).toBe(true)
   })
 })
+
+/**
+ * La clave de un adjunto administrativo (D-79). Mismo riesgo que la del
+ * expediente y mismo blindaje: nada de lo que escribe el usuario entra en la
+ * ruta.
+ */
+describe('construirClaveAdjunto', () => {
+  const DATOS_ADJUNTO = {
+    carpeta: 'registros-obra',
+    ids: ['6a8a076d2d83d48577c1abfa', '6a8a076d2d83d48577c1abfb'],
+    extension: 'pdf'
+  }
+
+  afterAll(() => jest.resetModules())
+
+  it('cuelga del cliente y termina en el registro, con uuid', () => {
+    const clave = conPrefijo('').construirClaveAdjunto(DATOS_ADJUNTO)
+    expect(clave).toMatch(
+      /^registros-obra\/6a8a076d2d83d48577c1abfa\/6a8a076d2d83d48577c1abfb-[0-9a-f-]{36}\.pdf$/
+    )
+  })
+
+  it('dos subidas del mismo registro no comparten clave: reemplazar no pisa', () => {
+    const storage = conPrefijo('')
+    expect(storage.construirClaveAdjunto(DATOS_ADJUNTO)).not.toBe(
+      storage.construirClaveAdjunto(DATOS_ADJUNTO)
+    )
+  })
+
+  it('respeta el prefijo del bucket compartido', () => {
+    const clave = conPrefijo('employes-files').construirClaveAdjunto(DATOS_ADJUNTO)
+    expect(clave.startsWith('employes-files/registros-obra/')).toBe(true)
+  })
+
+  it('ni los ids ni la extensión pueden meter rutas', () => {
+    const clave = conPrefijo('').construirClaveAdjunto({
+      carpeta: 'registros-obra',
+      ids: ['../../etc', 'passwd/../..'],
+      extension: '../sh'
+    })
+    expect(clave).not.toContain('..')
+    expect(clave.split('/')).toHaveLength(3)
+  })
+})

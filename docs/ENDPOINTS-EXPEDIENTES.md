@@ -259,21 +259,26 @@ guardar.
 - **`vigenciaHasta` la calcula el backend** si no la mandas: `contrato` hereda la
   fecha de término de contrato más próxima; los demás usan los meses de vigencia
   de la plantilla.
-- **Máximo 10 MB.** PDF, JPG, PNG y WEBP, y se verifica **el contenido del
-  archivo**, no su extensión: un `.pdf` que en realidad es otra cosa da `415`.
+- **Máximo 10 MB.** PDF, JPG, PNG, WEBP, DOC, DOCX, XLS, XLSX y CSV (D-78), y se
+  verifica **el contenido del archivo**, no su extensión: un `.pdf` que en
+  realidad es otra cosa da `415`. El CSV es la única excepción —es texto plano y
+  no tiene firma—: ahí se exige que el nombre declare `.csv`.
+- Cada `archivo` devuelve **`previsualizable`**. Los de Office y el CSV vienen en
+  `false`: el navegador no los abre, su URL firmada se emite siempre como
+  descarga y la interfaz debe ofrecer **descargar**, no un visor.
 - **HEIC se rechaza**, con un mensaje que pide convertirlo. Es lo que manda un
   iPhone por defecto y Chrome no lo muestra, así que un expediente en HEIC no se
   puede revisar. Conviene avisarlo en el input.
 
 ### Errores
 
-| Código | Cuándo                                                                 |
-| ------ | ---------------------------------------------------------------------- |
-| `400`  | Falta `archivo`, `tipo` fuera de los 12, o `vigenciaHasta` mal formada |
-| `403`  | `jefe_area` (ve el expediente, no sube)                                |
-| `404`  | El expediente no existe **o el empleado no es visible**                |
-| `413`  | Pesa más de 10 MB                                                      |
-| `415`  | No es PDF/JPG/PNG/WEBP (el mensaje distingue el caso HEIC)             |
+| Código | Cuándo                                                                      |
+| ------ | --------------------------------------------------------------------------- |
+| `400`  | Falta `archivo`, `tipo` fuera de los 12, o `vigenciaHasta` mal formada      |
+| `403`  | `jefe_area` (ve el expediente, no sube)                                     |
+| `404`  | El expediente no existe **o el empleado no es visible**                     |
+| `413`  | Pesa más de 10 MB                                                           |
+| `415`  | El contenido no es de un tipo permitido (el mensaje distingue el caso HEIC) |
 
 ---
 

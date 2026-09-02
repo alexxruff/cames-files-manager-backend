@@ -2,6 +2,7 @@ const request = require('supertest')
 const mongoose = require('mongoose')
 const app = require('../../src/app')
 const Client = require('../../src/api/v1/clients/clientModel')
+const storage = require('../../src/services/storageService')
 const {
   crearEmpleadoConSesion,
   crearEmpresa,
@@ -699,5 +700,240 @@ describe('registros de obra de un cliente', () => {
 
     expect(res.status).toBe(400)
     expect(res.body.errors[0].path).toBe('numero')
+  })
+})
+
+/**
+ * El archivo del registro de obra (D-79).
+ *
+ * Lo que se prueba aquí no es que un archivo suba —eso lo hace multer—, sino
+ * las tres decisiones: que el archivo sea OPCIONAL, que reemplazarlo borre el
+ * anterior, y que el enlace salga en todas las lecturas con el nombre de
+ * descarga del DATO y no el del archivo original.
+ */
+describe('archivo del registro de obra', () => {
+  const RO = (id) => `${RUTA}/${id}/registros-obra`
+
+  const PDF = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(64, 0x20)])
+  const OTRO_PDF = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(128, 0x21)])
+  /** Un DOCX es un ZIP con `word/document.xml` dentro. */
+  const DOCX = Buffer.concat([
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+    Buffer.from('[Content_Types].xmlword/document.xml'),
+    Buffer.alloc(32)
+  ])
+
+  const conCliente = async () => {
+    const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
+    const cliente = await crearCliente({ nombre: 'Constructora Del Bajío' })
+    await agregarACartera(sesion.empresa, cliente)
+    return { ...sesion, cliente }
+  }
+
+  /** Alta con archivo adjunto, que es como lo manda el front. */
+  const alta = (token, clienteId, { numero, archivo, nombre = 'escaneo.pdf' }) => {
+    const peticion = request(app)
+      .post(RO(clienteId))
+      .set(auth(token))
+      .field('numero', numero)
+    return archivo ? peticion.attach('archivo', archivo, nombre) : peticion
+  }
+
+  beforeEach(() => storage.limpiarMemoria())
+
+  it('el archivo es opcional: sin él, el registro nace igual', async () => {
+    const { token, cliente } = await conCliente()
+
+    const res = await request(app)
+      .post(RO(cliente._id))
+      .set(auth(token))
+      .send({ numero: 'OB-SIN-PAPEL' })
+
+    expect(res.status).toBe(201)
+    expect(res.body.data.registro.archivo).toBeNull()
+  })
+
+  it('se sube al crear, y el enlace viene en la respuesta', async () => {
+    const { token, cliente } = await conCliente()
+
+    const res = await alta(token, cliente._id, { numero: 'OB-2026-0145', archivo: PDF })
+
+    expect(res.status).toBe(201)
+    expect(res.body.data.registro.archivo).toMatchObject({
+      nombre: 'escaneo.pdf',
+      mime: 'application/pdf',
+      tamanoBytes: PDF.length,
+      previsualizable: true,
+      // El del DATO, no el del archivo original: es lo que pidió el cliente.
+      nombreDescarga: 'OB-2026-0145.pdf'
+    })
+    expect(res.body.data.registro.archivo.url).toEqual(expect.any(String))
+    // La clave de almacenamiento no se filtra jamás.
+    expect(res.body.data.registro.archivo.claveAlmacenamiento).toBeUndefined()
+    expect(res.body.data.cliente.registrosObra[0].archivo.url).toEqual(expect.any(String))
+  })
+
+  it('el enlace también sale al leer el cliente y en el listado', async () => {
+    const { token, cliente } = await conCliente()
+    await alta(token, cliente._id, { numero: 'OB-0001', archivo: PDF })
+
+    const detalle = await request(app).get(`${RUTA}/${cliente._id}`).set(auth(token))
+    expect(detalle.body.data.cliente.registrosObra[0].archivo.url).toEqual(
+      expect.any(String)
+    )
+
+    const listado = await request(app)
+      .get(`${RUTA}?catalogoCompleto=true`)
+      .set(auth(token))
+    const elCliente = listado.body.data.clientes.find(
+      (c) => c._id === String(cliente._id)
+    )
+    expect(elCliente.registrosObra[0].archivo.url).toEqual(expect.any(String))
+  })
+
+  it('editar lo reemplaza y BORRA el anterior: no se versiona', async () => {
+    const { token, cliente } = await conCliente()
+    const creado = await alta(token, cliente._id, { numero: 'OB-0002', archivo: PDF })
+    const registroId = creado.body.data.registro._id
+
+    const antes = await Client.findById(cliente._id)
+    const claveVieja = antes.registrosObra.id(registroId).archivo.claveAlmacenamiento
+    expect(storage.contenidoEnMemoria(claveVieja)).not.toBeNull()
+
+    const res = await request(app)
+      .patch(`${RO(cliente._id)}/${registroId}`)
+      .set(auth(token))
+      .attach('archivo', OTRO_PDF, 'nuevo-escaneo.pdf')
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.registro.archivo.tamanoBytes).toBe(OTRO_PDF.length)
+
+    const despues = await Client.findById(cliente._id)
+    const claveNueva = despues.registrosObra.id(registroId).archivo.claveAlmacenamiento
+    expect(claveNueva).not.toBe(claveVieja)
+    expect(storage.contenidoEnMemoria(claveVieja)).toBeNull()
+  })
+
+  it('mandar sólo el archivo es una edición válida', async () => {
+    const { token, cliente } = await conCliente()
+    const creado = await request(app)
+      .post(RO(cliente._id))
+      .set(auth(token))
+      .send({ numero: 'OB-0003', descripcion: 'Circuito norte' })
+
+    const res = await request(app)
+      .patch(`${RO(cliente._id)}/${creado.body.data.registro._id}`)
+      .set(auth(token))
+      .attach('archivo', PDF, 'escaneo.pdf')
+
+    expect(res.status).toBe(200)
+    // Y no se llevó por delante lo que ya estaba capturado.
+    expect(res.body.data.registro).toMatchObject({
+      numero: 'OB-0003',
+      descripcion: 'Circuito norte'
+    })
+  })
+
+  it('un Word se acepta, pero avisa que no se previsualiza (D-78)', async () => {
+    const { token, cliente } = await conCliente()
+
+    const res = await alta(token, cliente._id, {
+      numero: 'OB-0004',
+      archivo: DOCX,
+      nombre: 'registro de obra.docx'
+    })
+
+    expect(res.status).toBe(201)
+    expect(res.body.data.registro.archivo).toMatchObject({
+      mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      previsualizable: false,
+      nombreDescarga: 'OB-0004.docx'
+    })
+  })
+
+  it('415 si el contenido no es de un tipo permitido', async () => {
+    const { token, cliente } = await conCliente()
+
+    const res = await alta(token, cliente._id, {
+      numero: 'OB-0005',
+      archivo: Buffer.from([0x4d, 0x5a, 0x90, 0x00]),
+      nombre: 'registro.pdf'
+    })
+
+    expect(res.status).toBe(415)
+    expect(res.body.message).toMatch(/PDF/)
+  })
+
+  it('subir con un número que ya existía guarda el archivo en ese registro', async () => {
+    const { token, cliente } = await conCliente()
+    await request(app).post(RO(cliente._id)).set(auth(token)).send({ numero: 'OB-0006' })
+
+    const res = await alta(token, cliente._id, { numero: 'OB-0006', archivo: PDF })
+
+    expect(res.status).toBe(200)
+    expect(res.body.message).toMatch(/ya existía/)
+    expect(res.body.data.registro.archivo.url).toEqual(expect.any(String))
+    expect(res.body.data.cliente.registrosObra).toHaveLength(1)
+  })
+
+  describe('GET .../archivo — un enlace fresco', () => {
+    it('lo devuelve firmado, con el nombre del registro', async () => {
+      const { token, cliente } = await conCliente()
+      const creado = await alta(token, cliente._id, { numero: 'OB-0007', archivo: PDF })
+
+      const res = await request(app)
+        .get(`${RO(cliente._id)}/${creado.body.data.registro._id}/archivo`)
+        .set(auth(token))
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.archivo).toMatchObject({
+        nombreDescarga: 'OB-0007.pdf',
+        previsualizable: true
+      })
+      expect(res.body.data.archivo.url).toEqual(expect.any(String))
+    })
+
+    it('404 si ese registro no tiene archivo', async () => {
+      const { token, cliente } = await conCliente()
+      const creado = await request(app)
+        .post(RO(cliente._id))
+        .set(auth(token))
+        .send({ numero: 'OB-0008' })
+
+      const res = await request(app)
+        .get(`${RO(cliente._id)}/${creado.body.data.registro._id}/archivo`)
+        .set(auth(token))
+
+      expect(res.status).toBe(404)
+    })
+
+    it('404 —no 403— para quien no alcanza al cliente', async () => {
+      const { token: tokenDueno, cliente } = await conCliente()
+      const creado = await alta(tokenDueno, cliente._id, {
+        numero: 'OB-0009',
+        archivo: PDF
+      })
+      /*
+       * Otra empresa, sin ese cliente en su cartera. Tiene que ser
+       * `rh_consulta`: quien ADMINISTRA clientes ve el catálogo completo a
+       * propósito (D-40), y el jefe de área administra.
+       */
+      const { token } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_consulta' })
+
+      const res = await request(app)
+        .get(`${RO(cliente._id)}/${creado.body.data.registro._id}/archivo`)
+        .set(auth(token))
+
+      expect(res.status).toBe(404)
+    })
+  })
+
+  it('403 para quien no administra clientes', async () => {
+    const { cliente } = await conCliente()
+    const { token } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_consulta' })
+
+    const res = await alta(token, cliente._id, { numero: 'OB-0010', archivo: PDF })
+
+    expect(res.status).toBe(403)
   })
 })

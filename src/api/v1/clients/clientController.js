@@ -7,6 +7,13 @@ class ClientController {
     return { user: req.user, empresasVisibles: req.empresasVisibles }
   }
 
+  /** El archivo adjunto de un `multipart`, o `null` si no vino ninguno. */
+  #archivo(req) {
+    return req.file
+      ? { buffer: req.file.buffer, nombreOriginal: req.file.originalname }
+      : null
+  }
+
   /** GET /clientes?busqueda=&incluirInactivos=&orden=&catalogoCompleto=&pagina=&porPagina= */
   list = async (req, res) => {
     const datos = await clientService.list(
@@ -66,11 +73,16 @@ class ClientController {
 
   // ─── Registros de obra (D-66) ─────────────────────────────────────────────
 
-  /** POST /clientes/:id/registros-obra — idempotente por número */
+  /**
+   * POST /clientes/:id/registros-obra — idempotente por número.
+   *
+   * `application/json` o `multipart/form-data` con el campo `archivo`, que es
+   * **opcional** (D-79): el dato es el número; el papel puede llegar después.
+   */
   addRegistroObra = async (req, res) => {
     const { cliente, registro, yaExistia } = await clientService.agregarRegistroObra(
       req.params.id,
-      req.body,
+      { ...req.body, archivo: this.#archivo(req) },
       this.#contexto(req)
     )
 
@@ -84,15 +96,39 @@ class ClientController {
     return created(res, { cliente, registro }, 'Registro de obra agregado')
   }
 
-  /** PATCH /clientes/:id/registros-obra/:roId */
+  /**
+   * PATCH /clientes/:id/registros-obra/:roId
+   *
+   * Igual que el alta, acepta `multipart`: mandar sólo el archivo **reemplaza**
+   * el que hubiera, y el anterior se borra del almacenamiento.
+   */
   updateRegistroObra = async (req, res) => {
     const datos = await clientService.actualizarRegistroObra(
       req.params.id,
       req.params.roId,
-      req.body,
+      { ...req.body, archivo: this.#archivo(req) },
       this.#contexto(req)
     )
-    return ok(res, datos, 'Registro de obra actualizado')
+    return ok(
+      res,
+      datos,
+      req.file ? 'Archivo del registro de obra guardado' : 'Registro de obra actualizado'
+    )
+  }
+
+  /**
+   * GET /clientes/:id/registros-obra/:roId/archivo
+   *
+   * Un enlace fresco al papel del registro. `?descargar=true` fuerza la
+   * descarga; los tipos que el navegador no previsualiza se descargan siempre.
+   */
+  urlArchivoRegistroObra = async (req, res) => {
+    const datos = await clientService.urlDeArchivoRegistroObra(
+      req.params.id,
+      req.params.roId,
+      { ...this.#contexto(req), descargar: req.query.descargar === 'true' }
+    )
+    return ok(res, datos)
   }
 
   /** PATCH /clientes/:id/registros-obra/:roId/estado */
