@@ -28,7 +28,7 @@ tiempo de ejecución**, así que no puede mentir:
 curl -s http://localhost:8080/api/v1 | jq '.data.implementados, .data.pendientes'
 ```
 
-`GET /api/v1` es público. Hoy son **98 rutas** en pie y 6 anunciadas como
+`GET /api/v1` es público. Hoy son **105 rutas** en pie y 6 anunciadas como
 pendientes. Dónde está el detalle de cada familia:
 
 | Familia                                               | Detalle en                                             |
@@ -45,6 +45,7 @@ pendientes. Dónde está el detalle de cada familia:
 | `/clientes`, `/categorias`                            | `CONTRATO-API.md` (§«El archivo del registro de obra») |
 | `/subidas` — subir un archivo sin pasar por aquí      | `ENDPOINTS-SUBIDAS.md`                                 |
 | `/maquinas` y su asignación a la obra — la maquinaria | `ENDPOINTS-MAQUINAS.md`                                |
+| `/maquinas/:id/incidencias` y `/tipos-incidencia`     | `ENDPOINTS-MAQUINAS.md`, §12 a §18                     |
 | `/usuarios*`                                          | Responde **410**: se movió, y el mensaje dice a dónde  |
 
 > **`data.empleado` significa siempre lo mismo:** el **RenglonEmpleado**

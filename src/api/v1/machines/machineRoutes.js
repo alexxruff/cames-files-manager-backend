@@ -1,6 +1,7 @@
 const express = require('express')
 const machineController = require('./machineController')
 const machineAssignmentController = require('../machineAssignments/machineAssignmentController')
+const machineIncidentController = require('../machineIncidents/machineIncidentController')
 const asyncHandler = require('../../../utils/asyncHandler')
 const validateRequest = require('../../../middlewares/validateRequest')
 const { protect, requireCapability } = require('../../../middlewares/authMiddleware')
@@ -19,6 +20,10 @@ const {
   devolverMaquinaValidation,
   machineHistoryValidation
 } = require('../../../validations/machineAssignmentValidation')
+const {
+  listIncidentsValidation,
+  createIncidentValidation
+} = require('../../../validations/machineIncidentValidation')
 
 /**
  * `/maquinas/:id` — operar sobre una máquina concreta (D-86).
@@ -110,6 +115,30 @@ router.get(
   machineHistoryValidation,
   validateRequest,
   asyncHandler(machineAssignmentController.historial)
+)
+
+/*
+ * ─── Las incidencias de la máquina (D-88) ───────────────────────────────────
+ *
+ * Se levantan aquí, bajo la máquina, porque son de ella; resolverlas es
+ * `POST /incidencias/:id/resolucion`, que opera sobre la incidencia.
+ *
+ * El cuerpo NO lleva trabajador ni obra: eso se deriva de la historia de
+ * asignaciones con la fecha en que sucedió.
+ */
+router.post(
+  '/:id/incidencias',
+  gestionarProyectos,
+  createIncidentValidation,
+  validateRequest,
+  asyncHandler(machineIncidentController.create)
+)
+
+router.get(
+  '/:id/incidencias',
+  listIncidentsValidation,
+  validateRequest,
+  asyncHandler(machineIncidentController.list)
 )
 
 module.exports = router

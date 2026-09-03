@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-87)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-88)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -24,7 +24,7 @@ cambiar cualquier esquema.
 
 ---
 
-## 1. Panorama: 17 colecciones en tres grupos
+## 1. Panorama: 19 colecciones en tres grupos
 
 Lo primero que hay que entender es que **no todas son iguales**. Se comportan
 distinto y se rompen distinto.
@@ -34,12 +34,13 @@ distinto y se rompen distinto.
 Existen por sí solos. Nadie los "posee" y casi todo lo demás los apunta. Se dan
 de baja, **nunca se borran**.
 
-| Colección    | Qué es                   | Único por                   | Baja                                 |
-| ------------ | ------------------------ | --------------------------- | ------------------------------------ |
-| `companies`  | Las empresas del grupo   | nombre, RFC                 | `activo: false`                      |
-| `clients`    | Clientes del grupo       | nombre, RFC                 | `activo: false`                      |
-| `categories` | Puestos                  | nombre normalizado          | `activo: false`, bloqueada si en uso |
-| `areas`      | Áreas de la organización | `clave`, nombre normalizado | `activa: false`, bloqueada si en uso |
+| Colección        | Qué es                                   | Único por                   | Baja                                              |
+| ---------------- | ---------------------------------------- | --------------------------- | ------------------------------------------------- |
+| `companies`      | Las empresas del grupo                   | nombre, RFC                 | `activo: false`                                   |
+| `clients`        | Clientes del grupo                       | nombre, RFC                 | `activo: false`                                   |
+| `categories`     | Puestos                                  | nombre normalizado          | `activo: false`, bloqueada si en uso              |
+| `areas`          | Áreas de la organización                 | `clave`, nombre normalizado | `activa: false`, bloqueada si en uso              |
+| `incident_types` | Tipos de incidencia de maquinaria (D-88) | nombre normalizado          | `activo: false`, **permitida aunque esté en uso** |
 
 **Dentro de dos de ellos viven subdocumentos con identidad propia** (D-65, D-66),
 y esto importa más de lo que parece:
@@ -63,9 +64,16 @@ sin empresa no significa nada. Pero **sí tienen `_id`**, porque hay que apuntar
 ambigüedad. La alternativa que se descartó era guardarlos como cadenas: corregir
 un dígito habría roto en silencio cada proyecto que lo apuntaba.
 
-Los cuatro catálogos son **globales**, no por empresa. La razón es siempre la misma: el
+Los cinco catálogos son **globales**, no por empresa. La razón es siempre la misma: el
 empleado es global y puede estar en dos empresas, así que un catálogo por empresa
-lo dejaría con un puesto o un área ambiguos (D-32).
+lo dejaría con un puesto o un área ambiguos (D-32). `incident_types` es global por
+una razón distinta pero del mismo orden: una «falla hidráulica» es la misma en
+todas las empresas, y partir la lista impediría sumar los reportes (D-88).
+
+`incident_types` es además el único catálogo cuya **baja no se bloquea si está en
+uso**: dar de baja un tipo no deja a nadie con un dato inválido —la incidencia
+vieja lo conserva y lo sigue mostrando—, y bloquearla obligaría a arrastrar para
+siempre un tipo mal capturado.
 
 ### Entidades y vínculos — el núcleo
 
@@ -80,6 +88,7 @@ lo dejaría con un puesto o un área ambiguos (D-32).
 | `contracts`           | **El contrato/fase** de una obra, con su SIROC      | `projects`                            |
 | `machines`            | **La maquinaria** de cada empresa (D-86)            | `companies`                           |
 | `machine_assignments` | **Dónde está cada máquina y quién la tiene** (D-87) | `machines`, `projects`, `employees`   |
+| `machine_incidents`   | Las **incidencias** de una máquina (D-88)           | `machines`, `incident_types`          |
 | `checklist_templates` | Qué documentos exige cada perfil                    | `companies` (o global), `areas`       |
 | `uploads`             | **Permiso de subida directa**, efímero (D-83)       | `employees` (quien lo pidió)          |
 | `records`             | **El expediente.** Uno por persona                  | `employees`, `checklist_templates`    |
@@ -90,15 +99,16 @@ lo dejaría con un puesto o un área ambiguos (D-32).
 Esto es lo que más confunde: **hay cosas que parecen tablas y no lo son.** Se
 calculan al leer, en cada petición.
 
-| Concepto                    | Dónde se calcula                     | Por qué no se guarda                                                                      |
-| --------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------- |
-| **Alertas**                 | `utils/domain/alerts.js` (D-47)      | Se resuelven solas: un documento que se renueva deja de alertar sin que nadie marque nada |
-| **Estatus de un documento** | `utils/domain/documentStatus.js`     | `vencido` depende de la fecha de hoy, no de un campo                                      |
-| **Avance del expediente**   | `utils/domain/progress.js`           | Se deriva de los documentos; guardarlo se desincroniza                                    |
-| **El checklist**            | `utils/domain/checklist.js`          | Es la **unión** de las plantillas de sus adscripciones                                    |
-| **El alcance del usuario**  | `middlewares/scopeMiddleware.js`     | Se deriva de sus adscripciones activas. **No es un campo** (D-31)                         |
-| **Días con una máquina**    | `utils/domain/machineTime.js` (D-87) | El tramo vigente cuenta hasta hoy: guardarlo obligaría a recalcularlo cada día            |
-| **Dónde está una máquina**  | Su tramo vigente (D-87)              | La máquina no guarda `empleadoId` ni `proyectoId`: se resuelve al leer                    |
+| Concepto                                               | Dónde se calcula                          | Por qué no se guarda                                                                                                              |
+| ------------------------------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Alertas**                                            | `utils/domain/alerts.js` (D-47)           | Se resuelven solas: un documento que se renueva deja de alertar sin que nadie marque nada                                         |
+| **Estatus de un documento**                            | `utils/domain/documentStatus.js`          | `vencido` depende de la fecha de hoy, no de un campo                                                                              |
+| **Avance del expediente**                              | `utils/domain/progress.js`                | Se deriva de los documentos; guardarlo se desincroniza                                                                            |
+| **El checklist**                                       | `utils/domain/checklist.js`               | Es la **unión** de las plantillas de sus adscripciones                                                                            |
+| **El alcance del usuario**                             | `middlewares/scopeMiddleware.js`          | Se deriva de sus adscripciones activas. **No es un campo** (D-31)                                                                 |
+| **Días con una máquina**                               | `utils/domain/machineTime.js` (D-87)      | El tramo vigente cuenta hasta hoy: guardarlo obligaría a recalcularlo cada día                                                    |
+| **De quién era la máquina cuando pasó una incidencia** | `utils/domain/machineIncidents.js` (D-88) | Sale de cruzar la fecha con los tramos: guardarlo sería teclear dos veces lo mismo y mentiría en cuanto se corrigiera la historia |
+| **Dónde está una máquina**                             | Su tramo vigente (D-87)                   | La máquina no guarda `empleadoId` ni `proyectoId`: se resuelve al leer                                                            |
 
 > Regla del proyecto: **nada derivado se guarda en la base.** Si un dato se puede
 > calcular a partir de otros, se calcula al leer.
@@ -134,6 +144,10 @@ erDiagram
     EMPLOYEES  ||--o{ MACHINE_ASSIGNMENTS : "la tiene (o nadie)"
     ASSIGNMENTS ||--o{ MACHINE_ASSIGNMENTS : "de aquí sale la obra"
 
+    MACHINES   ||--o{ MACHINE_INCIDENTS : "sus incidencias (D-88)"
+    INCIDENT_TYPES ||--o{ MACHINE_INCIDENTS : "de qué tipo es"
+    MACHINE_ASSIGNMENTS }o..o{ MACHINE_INCIDENTS : "quién la tenía (derivado, sin ref)"
+
     COMPANIES  ||--o{ REGISTROS_PATRONALES : "embebidos"
     CLIENTS    ||--o{ REGISTROS_OBRA       : "embebidos"
     REGISTROS_PATRONALES ||--o{ PROJECTS     : "opera con (sin ref)"
@@ -160,6 +174,11 @@ D-72, también la adscripción— les apuntan.
 
 Las líneas de `AREAS` y las de los registros son distintas de todas las demás y
 están explicadas en la sección 4: **Mongoose no las resuelve sola**.
+
+La línea punteada entre `MACHINE_ASSIGNMENTS` y `MACHINE_INCIDENTS` es de otra
+naturaleza todavía: **no hay ninguna referencia guardada entre las dos**. La
+incidencia sólo sabe de qué máquina es y qué día pasó; el tramo que la cubría se
+busca al leer, cruzando esa fecha (D-88).
 
 ---
 
@@ -336,6 +355,41 @@ Lo que hay que entender antes de tocarla:
 - **Los días son inclusivos** y el día del cambio de manos lo cuentan los dos
   trabajadores: ese día la tuvieron ambos.
 
+### `incident_types` y `machine_incidents` — las incidencias de la máquina
+
+Una incidencia es una falla, un golpe o un servicio de una máquina (D-88). Son
+**dos colecciones y no una** porque son dos cosas distintas: el catálogo de tipos
+es del grupo y lo alimentan ellos; la incidencia es de una máquina y de un día.
+
+`incident_types` es un catálogo como los de la sección 1 —nombre único sobre
+`nombreNormalizado`, `esBase` para los sembrados, `activo: false` para la baja—
+con las dos particularidades que ya se dijeron allí: **es global** y **su baja no
+se bloquea aunque esté en uso**. Se siembra al arrancar
+(`services/seedIncidentTypes.js`, `npm run seed:tipos-incidencia`), idempotente y
+sin deshacer renombres.
+
+`machine_incidents` guarda **cuatro datos y ninguno más**: `tipoId`,
+`descripcion`, `fechaIncidencia` y —si ya se atendió— `fechaResolucion` con su
+`notaResolucion`. Lo que hay que entender antes de tocarla:
+
+- **`fechaResolucion: null` ES el estado «abierta».** No hay bandera aparte que
+  pueda contradecirlo, y por eso no hay forma de que una incidencia esté cerrada
+  sin fecha ni abierta con ella. El modelo se niega a guardar una nota de
+  resolución sin resolución, o una resolución anterior a la incidencia.
+- **El tipo se referencia, nunca se copia.** Renombrarlo corrige toda la
+  historia; darlo de baja no toca lo ya capturado. Copiar el nombre habría dejado
+  las dos cosas rotas a la vez.
+- **Quién tenía la máquina y en qué obra NO se guarda.** Se deriva al leer
+  cruzando `fechaIncidencia` con los tramos de `machine_assignments` de esa
+  máquina (`utils/domain/machineIncidents.js`). Guardarlo sería teclear dos veces
+  lo mismo y mentiría en cuanto alguien corrigiera la historia. El día del cambio
+  de manos —que cubren dos tramos— se le atribuye a **quien la recibió**.
+- **`empresaId` está copiado**, como en los tramos y por lo mismo: decide el
+  alcance sin traer la máquina. Una máquina no cambia de empresa, así que no
+  puede desfasarse.
+- **La fecha puede ser de días atrás pero nunca del futuro**: se captura cuando
+  se entera quien captura.
+
 ### `contracts` — el contrato, que es la fase, y su SIROC
 
 Cada fase de una obra tiene exactamente un contrato, y un proyecto de una sola
@@ -497,6 +551,9 @@ colección: `records.documentos[].tipo` apunta a `DOCUMENT_TYPES` en
 | **Cerrar la asignación de alguien a una obra**   | Sus máquinas se quedan **en la obra, sin trabajador** (D-87). No vuelven al patio solas: hay que devolverlas    |
 | **Dar de baja a una persona**                    | Lo mismo con todas sus máquinas, en cualquier obra, dentro de la misma transacción de la baja                   |
 | **`machine_assignments.fechaAsignacion`**        | Es de dónde salen los días de ese tramo y el acumulado del trabajador: nada de eso está guardado                |
+| **Corregir la historia de una máquina**          | Cambia **de quién era cuando pasó cada incidencia** (D-88): el contexto se deriva al leer, no está guardado     |
+| **Renombrar un tipo de incidencia**              | Cambia el nombre en **todas** las incidencias, viejas incluidas: lo referencian por id, no copiado              |
+| **Dar de baja un tipo de incidencia**            | Deja de ofrecerse en el alta; las viejas lo conservan y salen con `tipo.activo: false`. No se bloquea la baja   |
 | **`affiliations.registroPatronalId`**            | El aviso de coherencia al asignar y en el listado (D-71). Manda sobre el texto; no bloquea nada                 |
 | **`affiliations.condiciones.registroPatronal`**  | Lo mismo, pero **sólo mientras no haya vínculo**: es el respaldo de las que M3 no resolvió (D-72)               |
 | **`projects.registroPatronalId`**                | Lo mismo: el aviso se recalcula al leer, así que cambiarlo mueve toda la trazabilidad ya registrada             |

@@ -135,7 +135,7 @@ quien administra los catálogos compartidos. Detalle en la sección 8.
 
 ## 3. Mapa de colecciones
 
-Las **17 que existen hoy**. Las tres que van antes de `machines` llegaron
+Las **19 que existen hoy**. Las tres que van antes de `machines` llegaron
 después de escribir este documento y no tienen sección propia en §5: su detalle
 está en [`ARQUITECTURA-DATOS.md`](./ARQUITECTURA-DATOS.md).
 
@@ -158,6 +158,8 @@ está en [`ARQUITECTURA-DATOS.md`](./ARQUITECTURA-DATOS.md).
 | `uploads` | **Permiso de subida directa**, efímero (D-83) | — | — |
 | `machines` | **Catálogo por empresa**: la maquinaria (D-86) | Empresa | §5.5c |
 | `machine_assignments` | **Vínculo** máquina ↔ obra ↔ trabajador (D-87) | Máquina | §5.5d |
+| `incident_types` | **Catálogo compartido**: tipos de incidencia (D-88) | — | — |
+| `machine_incidents` | Las incidencias de una máquina (D-88) | Máquina | — |
 
 > **Los nombres de arriba son los de MongoDB, en inglés**; en el contrato HTTP
 > las rutas y las llaves van en español (`/empresas`, `/expedientes`). La tabla

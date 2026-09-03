@@ -25,6 +25,7 @@
     "db:indices": "node scripts/syncIndexes.js",
     "seed:admin": "node scripts/seedAdminUser.js",
     "seed:plantillas": "node scripts/seedChecklistTemplates.js",
+    "seed:tipos-incidencia": "node scripts/seedIncidentTypes.js",
     "db:expedientes": "node scripts/syncRecords.js",
     "r2:check": "node scripts/checkR2.js",
     "env:requisitos": "node scripts/printEnvRequirements.js",

@@ -313,7 +313,7 @@ desincronizadas. Índice rápido:
 | Necesitas | Sección |
 | --- | --- |
 | La jerarquía y por qué los catálogos son compartidos | §1, §2 |
-| El mapa de las 17 colecciones que existen hoy | §3 |
+| El mapa de las 19 colecciones que existen hoy | §3 |
 | Esquemas de Mongoose, ocho de ellas | §5 |
 | Las tres colecciones de vínculo: adscripciones, carteras, asignaciones | §5b |
 | Estatus efectivo, avance, semáforo, checklist por unión, alertas | §6 |

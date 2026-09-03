@@ -951,6 +951,63 @@ salen en la historia pero **no le suman días a nadie**.
 El detalle, con todos los cuerpos y ejemplos, está en
 [`ENDPOINTS-MAQUINAS.md`](./ENDPOINTS-MAQUINAS.md).
 
+### Las incidencias de la máquina (D-88)
+
+**El trabajador y la obra no se mandan: se derivan.** El cuerpo del alta lleva
+`{ tipoId, descripcion, fechaIncidencia? }` y nada más; quién tenía la máquina ese
+día sale de cruzar esa fecha con su historia de asignaciones, así que una
+incidencia de hace un mes señala a quien la traía **entonces**.
+
+```jsonc
+// data.incidencia
+{
+  "_id": "6720…",
+  "maquinaId": "66f1…",
+  "empresaId": "66a0…",
+  "tipoId": "66e0…",
+  "tipo": { "_id": "66e0…", "nombre": "Falla hidráulica", "activo": true }, // null si no se pudo resolver
+  "descripcion": "Botó aceite por la manguera del cilindro",
+  "fechaIncidencia": "2026-08-05", // cuándo PASÓ, no cuándo se capturó
+  "fechaResolucion": null, // null = abierta
+  "notaResolucion": null,
+  "abierta": true,
+  "dias": 5, // inclusivos: lo que lleva abierta, o lo que tardó en cerrarse
+  "contexto": {
+    "sinAsignar": false, // true = estaba en el patio
+    "tramoId": "6710…",
+    "empleadoId": "66b2…", // null con tramo = en la obra, sin operador
+    "empleadoNombre": "Juan Pérez",
+    "proyectoId": "66c3…",
+    "proyectoNombre": "Obra Norte",
+    "fechaAsignacion": "2026-08-01",
+    "fechaDevolucion": null,
+    "texto": "Juan Pérez · Obra Norte" // ya armado, para mostrar
+  },
+  "createdAt": "2026-09-03T…",
+  "updatedAt": "2026-09-03T…"
+}
+```
+
+En el listado, `abiertas` y `resueltas` **no cambian con el filtro**: siempre son
+del total, para que la pantalla pueda decir «2 abiertas» mientras se miran las
+resueltas.
+
+El **catálogo de tipos es del grupo**, no de cada empresa, y lo escribe quien
+gestiona proyectos (D-88). Dar de baja un tipo deja de ofrecerlo en el alta pero
+**las incidencias viejas lo conservan**, con `tipo.activo: false`; renombrarlo
+corrige el nombre en todas.
+
+| Código | Cuándo                                                                                  |
+| ------ | --------------------------------------------------------------------------------------- |
+| `400`  | Sin `tipoId` o sin `descripcion`; tipo inexistente o **dado de baja**; fecha del futuro |
+| `400`  | Resolver con fecha anterior a la de la incidencia                                       |
+| `404`  | Incidencia inexistente, o de una máquina fuera de alcance                               |
+| `409`  | `INCIDENCIA_YA_RESUELTA` — ya se cerró, y el mensaje dice cuándo. **No hay reapertura** |
+| `409`  | `TIPO_INCIDENCIA_DUPLICADO` — renombrar un tipo sobre uno que ya existe                 |
+
+El detalle, con todos los cuerpos y ejemplos, está en
+[`ENDPOINTS-MAQUINAS.md`](./ENDPOINTS-MAQUINAS.md).
+
 ### Tipos de archivo aceptados (D-78)
 
 En **todo** el backend —también en los documentos del expediente—: **PDF, JPG,

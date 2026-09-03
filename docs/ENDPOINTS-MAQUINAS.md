@@ -1,7 +1,7 @@
 # El catálogo de maquinaria
 
-Referencia de los **11 endpoints** de la maquinaria por empresa (tareas #30 y
-#31, D-86 y D-87) para el equipo de front. Base: `/api/v1`. Envelope, códigos y
+Referencia de los **18 endpoints** de la maquinaria por empresa (tareas #30, #31
+y #34; D-86, D-87 y D-88) para el equipo de front. Base: `/api/v1`. Envelope, códigos y
 convenciones generales: [`INTEGRACION-FRONTEND.md`](./INTEGRACION-FRONTEND.md).
 
 > **Qué es.** Cada empresa tiene su catálogo de **maquinaria y equipo de
@@ -10,23 +10,32 @@ convenciones generales: [`INTEGRACION-FRONTEND.md`](./INTEGRACION-FRONTEND.md).
 > baja y se reactiva. **Sólo se ve dentro del alcance de la empresa.** Y se
 > **asigna a un trabajador**, con lo que se va a la obra donde él está: la
 > máquina dice quién la tiene, la obra dice qué máquinas hay, y queda la
-> historia de por dónde ha andado. Las incidencias son la #34.
+> historia de por dónde ha andado. Y se le **levantan incidencias** —una falla,
+> un golpe, un servicio—, de un tipo elegido de un catálogo que ellos alimentan,
+> que dicen solas quién tenía la máquina ese día y en qué obra.
 
 ## Índice
 
-| #   | Endpoint                        | Quién                    |
-| --- | ------------------------------- | ------------------------ |
-| 1   | `GET /empresas/:id/maquinas`    | sesión                   |
-| 2   | `POST /empresas/:id/maquinas`   | `rh_admin` · `jefe_area` |
-| 3   | `GET /maquinas/:id`             | sesión                   |
-| 4   | `PATCH /maquinas/:id`           | `rh_admin` · `jefe_area` |
-| 5   | `PATCH /maquinas/:id/estado`    | `rh_admin` · `jefe_area` |
-| 6   | `GET /maquinas/:id/imagen`      | sesión                   |
-| 7   | `POST /maquinas/:id/asignacion` | `rh_admin` · `jefe_area` |
-| 8   | `POST /maquinas/:id/devolucion` | `rh_admin` · `jefe_area` |
-| 9   | `GET /maquinas/:id/historial`   | sesión                   |
-| 10  | `GET /proyectos/:id/maquinas`   | sesión                   |
-| 11  | `GET /empleados/:id/maquinas`   | sesión                   |
+| #   | Endpoint                             | Quién                    |
+| --- | ------------------------------------ | ------------------------ |
+| 1   | `GET /empresas/:id/maquinas`         | sesión                   |
+| 2   | `POST /empresas/:id/maquinas`        | `rh_admin` · `jefe_area` |
+| 3   | `GET /maquinas/:id`                  | sesión                   |
+| 4   | `PATCH /maquinas/:id`                | `rh_admin` · `jefe_area` |
+| 5   | `PATCH /maquinas/:id/estado`         | `rh_admin` · `jefe_area` |
+| 6   | `GET /maquinas/:id/imagen`           | sesión                   |
+| 7   | `POST /maquinas/:id/asignacion`      | `rh_admin` · `jefe_area` |
+| 8   | `POST /maquinas/:id/devolucion`      | `rh_admin` · `jefe_area` |
+| 9   | `GET /maquinas/:id/historial`        | sesión                   |
+| 10  | `GET /proyectos/:id/maquinas`        | sesión                   |
+| 11  | `GET /empleados/:id/maquinas`        | sesión                   |
+| 12  | `GET /maquinas/:id/incidencias`      | sesión                   |
+| 13  | `POST /maquinas/:id/incidencias`     | `rh_admin` · `jefe_area` |
+| 14  | `POST /incidencias/:id/resolucion`   | `rh_admin` · `jefe_area` |
+| 15  | `GET /tipos-incidencia`              | sesión                   |
+| 16  | `POST /tipos-incidencia`             | `rh_admin` · `jefe_area` |
+| 17  | `PATCH /tipos-incidencia/:id`        | `rh_admin` · `jefe_area` |
+| 18  | `PATCH /tipos-incidencia/:id/estado` | `rh_admin` · `jefe_area` |
 
 «Sesión» es cualquier usuario con alcance sobre la empresa. `rh_consulta`
 consulta y no escribe: la capacidad es `manageProjects`, la misma que los
@@ -358,6 +367,157 @@ todas — recortadas al alcance de quien pregunta.
 
 ---
 
+## La forma de una incidencia
+
+```ts
+interface Incidencia {
+  _id: string
+  maquinaId: string
+  empresaId: string
+  tipoId: string
+  tipo: { _id: string; nombre: string; activo: boolean } | null
+  descripcion: string
+  fechaIncidencia: string // 'YYYY-MM-DD' — cuándo PASÓ, no cuándo se capturó
+  fechaResolucion: string | null // null = abierta
+  notaResolucion: string | null
+  abierta: boolean // === (fechaResolucion === null)
+  dias: number // inclusivos: lo que lleva abierta, o lo que tardó en cerrarse
+  contexto: Contexto // quién la tenía ese día. NO se teclea
+  createdAt: string
+  updatedAt: string
+}
+
+interface Contexto {
+  sinAsignar: boolean // true = estaba en el patio
+  tramoId: string | null
+  empleadoId: string | null // null con tramo = en la obra, sin operador
+  empleadoNombre: string | null
+  proyectoId: string | null
+  proyectoNombre: string | null
+  fechaAsignacion: string | null
+  fechaDevolucion: string | null
+  texto: string // ya armado, para mostrar
+}
+```
+
+**`contexto` no es un campo de la incidencia.** Se deriva al leer, cruzando
+`fechaIncidencia` con la historia de asignaciones de esa máquina (D-88): por eso
+una incidencia de hace un mes señala a quien la traía HACE UN MES, aunque hoy la
+tenga otro, y por eso corregir la historia corrige también las incidencias.
+
+| `contexto`                        | `texto`                                        |
+| --------------------------------- | ---------------------------------------------- |
+| con `empleadoId`                  | `"Juan Pérez · Obra Norte"`                    |
+| con tramo pero `empleadoId: null` | `"En Obra Norte, sin operador"`                |
+| `sinAsignar: true`                | `"Sin asignar: la máquina estaba en el patio"` |
+
+El día en que la máquina cambió de manos lo cubren dos tramos —ese día la
+tuvieron los dos (D-87)—: la incidencia se le atribuye a **quien la recibió**.
+
+## 12. `GET /maquinas/:id/incidencias`
+
+Las incidencias de la máquina, **de la más reciente a la más vieja por la fecha
+en que sucedieron**. Sin paginar.
+
+| Query    | Valores                            | Por omisión | Qué hace                       |
+| -------- | ---------------------------------- | ----------- | ------------------------------ |
+| `estado` | `abiertas` · `resueltas` · `todas` | `todas`     | Filtra la lista, no las cifras |
+
+```jsonc
+// data
+{
+  "maquina": { "_id": "66f1…", "empresaId": "66a0…", "identificador": "ECO-12", "modelo": "CAT 320D", "activo": true },
+  "estado": "todas",
+  "total": 3,      // las que trae ESTA respuesta, ya filtradas
+  "abiertas": 2,   // siempre del total, filtre lo que filtre
+  "resueltas": 1,
+  "incidencias": [ { …Incidencia } ]
+}
+```
+
+`abiertas` y `resueltas` **no cambian con el filtro**: la pantalla puede mostrar
+«2 abiertas» mientras el usuario está viendo las resueltas.
+
+## 13. `POST /maquinas/:id/incidencias` → `201`
+
+```jsonc
+{
+  "tipoId": "66e0…",
+  "descripcion": "Botó aceite por la manguera del cilindro",
+  "fechaIncidencia": "2026-08-05" // opcional: sin ella, hoy
+}
+```
+
+| Campo             | Tipo   | Obligatorio | Regla                                                         |
+| ----------------- | ------ | :---------: | ------------------------------------------------------------- |
+| `tipoId`          | string |     sí      | Del catálogo, y **activo**                                    |
+| `descripcion`     | string |     sí      | 1–1000 caracteres                                             |
+| `fechaIncidencia` | string |     no      | `'YYYY-MM-DD'`; puede ser de días atrás, **nunca del futuro** |
+
+Devuelve `{ incidencia }`. **No se manda trabajador ni obra**: se derivan.
+
+Se puede levantar sobre una máquina **dada de baja** —muchas veces la incidencia
+es justo el motivo de la baja—, a diferencia de asignarla.
+
+## 14. `POST /incidencias/:id/resolucion`
+
+```jsonc
+{
+  "fechaResolucion": "2026-08-07", // opcional: sin ella, hoy
+  "notaResolucion": "Se cambió la manguera" // opcional
+}
+```
+
+Devuelve `{ incidencia }` ya con `abierta: false`. La fecha no puede ser anterior
+a la de la incidencia ni del futuro, y una incidencia ya resuelta responde `409`
+`INCIDENCIA_YA_RESUELTA` con la fecha que tiene. **No hay reapertura**: si se
+resolvió mal, se levanta otra.
+
+## 15. `GET /tipos-incidencia`
+
+El catálogo, **compartido por todo el grupo** (D-88), ordenado por nombre.
+
+| Query              | Tipo    | Por omisión | Qué hace                              |
+| ------------------ | ------- | ----------- | ------------------------------------- |
+| `incluirInactivos` | boolean | `false`     | Suma los dados de baja                |
+| `busqueda`         | string  | —           | Por nombre, sin acentos ni mayúsculas |
+
+```jsonc
+// data
+{
+  "total": 7,
+  "tipos": [
+    { "_id": "66e0…", "nombre": "Falla hidráulica", "esBase": true, "activo": true }
+  ]
+}
+```
+
+## 16. `POST /tipos-incidencia` → `201` ó `200`
+
+`{ "nombre": "Falla hidráulica" }`. **Idempotente por nombre**, como las áreas:
+si ya existe responde `200` con el que hay (`message`: «Ese tipo de incidencia ya
+existía»), no `409`. Así el formulario de la incidencia puede ofrecer «agregar
+este tipo» sin preguntar antes.
+
+Uno que existe pero está de baja **no se reactiva solo**: vuelve tal cual, y
+reactivarlo es el `PATCH …/estado`.
+
+## 17. `PATCH /tipos-incidencia/:id`
+
+Renombrar: `{ "nombre": "Falla hidráulica (mangueras)" }`. **Corrige el nombre en
+toda la historia**, porque las incidencias lo referencian por id. `409` si otro
+tipo ya se llama así.
+
+## 18. `PATCH /tipos-incidencia/:id/estado`
+
+`{ "activo": false }` deja de ofrecerlo para incidencias nuevas; las viejas lo
+conservan y lo siguen mostrando, con `tipo.activo: false` para que la pantalla lo
+pueda señalar. **Un tipo en uso SÍ se puede dar de baja** —a diferencia de las
+categorías y las áreas—: no deja nada inconsistente. Los **base** (`esBase:
+true`, los sembrados) no se dan de baja.
+
+---
+
 ## Cuando el trabajador se va, la máquina se queda en la obra (D-87)
 
 La regla, y hay que pintarla: **la máquina pierde al trabajador, no la obra.**
@@ -428,5 +588,9 @@ Igual que el contrato escaneado, en tres pasos:
 | `400`  | Devolver una máquina que no está asignada, o con fecha anterior a la entrega                                                                                            |
 | `409`  | `MAQUINA_DUPLICADA` — el identificador ya está en esa empresa                                                                                                           |
 | `409`  | `MAQUINA_YA_ASIGNADA` — ya la tiene esa misma persona en esa misma obra                                                                                                 |
+| `400`  | Incidencia: sin `tipoId` o sin `descripcion`; tipo inexistente o **dado de baja**; fecha del futuro; resolución anterior a la incidencia                                |
+| `409`  | `INCIDENCIA_YA_RESUELTA` — ya se cerró, y el mensaje dice cuándo                                                                                                        |
+| `404`  | Incidencia inexistente, o de una máquina fuera de alcance                                                                                                               |
+| `409`  | Tipo de incidencia: `TIPO_INCIDENCIA_DUPLICADO` al renombrar sobre uno que ya existe                                                                                    |
 | `413`  | La foto pasa de 30 MB                                                                                                                                                   |
 | `415`  | La «foto» no es JPG, PNG ni WEBP: un PDF, un Word, un HEIC. El mensaje dice qué llegó                                                                                   |

@@ -15,5 +15,6 @@ module.exports = {
   ...require('./statuses'),
   ...require('./alertTypes'),
   ...require('./uploadTargets'),
-  ...require('./machineReleaseReasons')
+  ...require('./machineReleaseReasons'),
+  ...require('./incidentTypes')
 }

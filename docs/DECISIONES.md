@@ -4099,3 +4099,96 @@ impide llevar una máquina nueva a un proyecto finalizado. No hay listado global
 de tramos ni filtro por rango de fechas: la historia se pide por máquina. Y no
 hay conteo de máquinas en `GET /proyectos` ni en `GET /empresas`; si la pantalla
 lo quiere, se agrega.
+
+---
+
+## D-88 · Las incidencias de la máquina, con un catálogo de tipos del grupo y el trabajador derivado de la historia
+
+**Contexto.** Tarea #34, 3 sept 2026, tercera de la cadena de maquinaria (D-86,
+D-87). A una máquina se le levantan incidencias —una falla, un golpe, un
+servicio— de un tipo elegido de una lista que ellos alimentan, con una
+descripción y la fecha en que sucedió; se resuelven poniéndoles la fecha en que
+se atendieron. La propuesta está en
+`cames-ops/plan/propuestas/2026-09-03-maquinaria.md` § incidencias.
+
+**El catálogo de tipos es del grupo, no de cada empresa.** Es la decisión que
+pedía la tarea. Una «falla hidráulica» es la misma en Maquinaria CAMES que en
+Urbanizadora, y partir la lista por empresa obligaría a alimentar dos veces lo
+mismo para después no poder sumar los reportes. Va con los otros catálogos
+compartidos —clientes, categorías, áreas—, en su propia colección
+`incident_types`, con `nombre` único sobre la forma normalizada.
+
+**Lo escribe quien gestiona proyectos, y no exige `alcanceGlobal`.** Ésta sí es
+una desviación consciente de la regla «los catálogos compartidos exigen
+alcanceGlobal» de `CLAUDE.md`. El motivo es de uso, no de arquitectura: el tipo
+se agrega en el momento de capturar una incidencia que no encaja en ninguno —«una
+incidencia sin tipo es señal de que falta un tipo, no de que sobra la
+incidencia»—, y quien está ahí es quien gestiona la obra, no el administrador de
+plataforma. Pedirle que abra un ticket para poder capturar una falla habría
+terminado en un tipo cajón de sastre. La capacidad es `manageProjects`, la misma
+de la máquina y del proyecto: `rh_admin` y `jefe_area` escriben, `rh_consulta`
+consulta.
+
+**Dar de baja un tipo en uso SÍ se permite** — a diferencia de las categorías y
+las áreas, donde se bloquea. Ahí la baja dejaría a una persona con un puesto o un
+área que ya no existe; aquí no deja nada inconsistente: la incidencia vieja
+conserva su tipo por id, lo sigue mostrando y sale con `tipo.activo: false` para
+que la pantalla lo pueda señalar. Bloquearla obligaría a arrastrar para siempre
+un tipo mal capturado. Los sembrados (`esBase`) no se dan de baja, como en los
+demás catálogos.
+
+**El tipo se referencia, nunca se copia.** Renombrarlo corrige el nombre en toda
+la historia —que es lo que se espera de una corrección de ortografía— y darlo de
+baja no toca lo ya capturado. Copiar el nombre en la incidencia habría roto las
+dos cosas a la vez: los nombres viejos se quedarían mal escritos y no habría
+forma de reagrupar.
+
+**Quién tenía la máquina y en qué obra NO se guarda: se deriva al leer.** Es la
+decisión de fondo. `machine_incidents` sólo sabe de qué máquina es y qué día pasó;
+el trabajador y la obra salen de cruzar `fechaIncidencia` con los tramos de
+`machine_assignments` de esa máquina (`utils/domain/machineIncidents.js`, funciones
+puras, regla #6). Una incidencia capturada hoy sobre algo que pasó hace un mes
+señala a quien la traía **hace un mes**, no a quien la trae ahora; y si mañana se
+corrige la historia, las incidencias viejas dejan de mentir solas. Guardar un
+`empleadoId` al capturar habría sido teclear dos veces lo mismo, con la copia
+condenada a quedarse vieja.
+
+Tres desenlaces posibles, y los tres son información: con trabajador y obra; **en
+la obra pero sin operador** (`empleadoId: null`, el estado que deja D-87); o
+`sinAsignar: true`, la máquina estaba en el patio. El `contexto` viaja además con
+un `texto` ya armado para mostrar. **El día del cambio de manos lo cubren dos
+tramos** —ese día la tuvieron los dos— y la incidencia se le atribuye a **quien la
+recibió**: es quien la tenía al final del día.
+
+**`fechaResolucion: null` es el estado «abierta».** No hay bandera aparte que
+pueda contradecirlo, igual que `activo` no decide si un tramo está vigente por su
+cuenta. `abierta` y `dias` —lo que lleva abierta, o lo que tardó en cerrarse— se
+derivan al leer con la misma cuenta de días naturales inclusivos de D-87. La fecha
+de la incidencia puede ser **de días atrás pero nunca del futuro**: se captura
+cuando se entera quien captura. Una incidencia ya resuelta no se vuelve a
+resolver (`409 INCIDENCIA_YA_RESUELTA`) y **no hay reapertura**: si se resolvió
+mal, se levanta otra, que es lo que de verdad pasó.
+
+**Se puede levantar una incidencia sobre una máquina dada de baja**, al revés que
+asignarla. Muchas veces la incidencia es justo el motivo de la baja y se captura
+después de darla; prohibirlo sólo lograría que no se capturara.
+
+**Los contadores no se filtran.** `GET /maquinas/:id/incidencias?estado=` filtra
+la lista, pero `abiertas` y `resueltas` van siempre del total: la pantalla tiene
+que poder decir «2 abiertas» mientras el usuario mira las resueltas.
+
+**Siete tipos base, sembrados al arrancar** (`services/seedIncidentTypes.js`, y a
+mano con `npm run seed:tipos-incidencia`). Sin tipos no se puede levantar ninguna
+incidencia, así que una base recién creada tiene que traer con qué empezar. Es
+idempotente y **no deshace un renombre**, igual que la semilla de áreas.
+
+**Sin migración.** Las dos colecciones nacen vacías y ningún dato existente cambia
+de forma.
+
+**Qué NO se hizo.** No se guarda **quién** levantó ni quién resolvió la incidencia
+—no se pidió, y agregarlo después no rompe nada—. No se puede editar ni reabrir
+una incidencia ya levantada. No hay listado global de incidencias ni filtro por
+tipo o por rango de fechas: se piden por máquina. `GET /maquinas/:id` **no** trae
+un contador de incidencias abiertas: la ficha las pide aparte, y si la pantalla lo
+quiere en el listado del catálogo, se agrega. Y las incidencias no entran a
+`GET /alertas`: la bandeja es de documentación y cumpleaños (D-47).

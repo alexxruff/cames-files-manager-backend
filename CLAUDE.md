@@ -13,7 +13,7 @@ vigencias, alertas y reportes de auditoría.
   la capa simulada la conserva para desarrollar. Donde su lógica y la nuestra
   difieran, **manda ésta**.
 - Documentos autoritativos, los tres en `docs/`:
-  - **`ARQUITECTURA-DATOS.md`** — el mapa de lo que HAY: las 17 colecciones, cómo
+  - **`ARQUITECTURA-DATOS.md`** — el mapa de lo que HAY: las 19 colecciones, cómo
     se relacionan y qué se rompe al tocar cada una. **Léelo antes de cambiar
     cualquier esquema, y actualízalo en el mismo cambio.**
   - **`modelo-datos.md`** — el diseño y su porqué. Ha derivado; donde discrepe
@@ -155,6 +155,9 @@ src/
     machines/           catálogo de maquinaria por empresa, con su imagen (D-86)
     machineAssignments/ la máquina en la obra: se asigna a un trabajador y toma
                         SU obra; si él se va, se queda en la obra sin él (D-87)
+    machineIncidents/   las incidencias de la máquina: quién la tenía ese día y
+                        en qué obra sale de la historia, no se teclea (D-88)
+    incidentTypes/      catálogo compartido de tipos de incidencia (D-88)
     assignments/        proyecto ↔ empleado; avisa si el registro patronal no
                         coincide y resuelve la trazabilidad (D-71)
     alerts/             bandeja derivada: documentos y cumpleaños (D-47)
@@ -176,8 +179,10 @@ src/
                         permissions · logger · routeInventory · spreadsheet ·
                         schemaSkeleton (el esqueleto real, derivado del código)
   utils/domain/         reglas PURAS: documentStatus · progress · alerts ·
-                        checklist · expiry · employeeImport · registries
-  services/             bootstrapAdmin · seedChecklistTemplates · storageService ·
+                        checklist · expiry · employeeImport · registries ·
+                        machineTime · machineIncidents
+  services/             bootstrapAdmin · seedChecklistTemplates · seedAreas ·
+                        seedIncidentTypes · storageService ·
                         attachmentIntake (de dónde viene un adjunto, D-83)
 scripts/                semillas, índices, migración y el esqueleto
 tests/                  unitarias/ · integracion/ · helpers/
@@ -282,6 +287,13 @@ siempre registra el adjunto con `subidaId` en el cuerpo. Es para los cinco
 adjuntos —expediente, contrato, aviso del SIROC, acuse del refrendo y registro de
 obra—, **el `multipart` de siempre sigue funcionando**, y salió de que subir 12 MB
 a producción no terminaba nunca: el borde público de Fly va a 7 KB/s de subida.
+
+Y las **incidencias de la máquina** (D-88): un tipo de un catálogo **compartido
+del grupo** que ellos alimentan, una descripción y la fecha en que sucedió —que
+puede ser de días atrás—; se resuelven con su fecha y una nota. Cada una dice
+**quién tenía la máquina ese día y en qué obra**, y eso no se teclea: sale de
+cruzar la fecha con la historia de asignaciones, así que una incidencia de hace un
+mes señala a quien la traía entonces.
 
 Y la **maquinaria en la obra** (D-87): la máquina se le asigna a un trabajador y
 toma **la obra de la asignación de él** —no se captura aparte—; está con una sola

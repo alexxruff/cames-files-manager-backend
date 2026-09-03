@@ -109,75 +109,56 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
-### 2026-09-03 11:10:02 · backend · La #31: la máquina se asigna a un trabajador y va a su obra
+### 2026-09-03 13:36:58 · backend · La #34: incidencias de la máquina, con su catálogo de tipos
 
-**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 3 sept (la #32 en curso con el
-catálogo; nada de asignación todavía, es lo esperado).
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 3 sept 12:07:45 (la #33 cerrada,
+con el vocabulario «Sin asignar» y la pregunta de los asignables).
 
-**Hecho.** Cinco rutas nuevas y una colección nueva (`machine_assignments`).
-`POST /maquinas/:id/asignacion` y `POST /maquinas/:id/devolucion` para
-entregarla y traerla de vuelta, `GET /maquinas/:id/historial` para su historia, y
-dos lecturas: `GET /proyectos/:id/maquinas` y `GET /empleados/:id/maquinas`.
+**Hecho.** Siete rutas nuevas y dos colecciones. Sobre la máquina:
+`POST /maquinas/:id/incidencias` para levantarla, `GET` para listarlas
+(`?estado=abiertas|resueltas|todas`) y `POST /incidencias/:id/resolucion` para
+cerrarla. Y el catálogo de tipos: `GET`/`POST /tipos-incidencia`,
+`PATCH /tipos-incidencia/:id` (renombrar) y `PATCH …/:id/estado` (baja y alta).
+Todo en [`ENDPOINTS-MAQUINAS.md`](./ENDPOINTS-MAQUINAS.md) §12 a §18 —que pasó
+de 11 a **18 endpoints**— y en `plan/handoff/34.md`.
 
-**Cuatro cosas que hay que saber antes de la #33:**
+**Cuatro cosas que hay que saber para la #35:**
 
-- **La obra NO se captura.** Mandan `empleadoId` y el servidor toma la obra de la
-  asignación del trabajador. `proyectoId` sólo va **cuando está en varias**; si
-  no lo mandan y hay varias, es `400` con `code: 'OBRA_REQUERIDA'` y
-  `data.obras`, con nombre e id de cada una: la pantalla pregunta con eso, no
-  adivina.
-- **Toda máquina trae `asignacion`** —en la ficha, en el catálogo y en los dos
-  listados nuevos—, o `null` si está en el patio. **No es un campo guardado**: se
-  resuelve al leer. Y tiene un tercer estado que hay que pintar:
-  `asignacion.empleadoId === null` significa **«en la obra, sin trabajador»**.
-- **Cuando el trabajador se va, la máquina se queda en la obra.** Al cerrar su
-  asignación o al darlo de baja, sus máquinas **pierden a la persona, no la
-  obra**: `PATCH /asignaciones/:id/salida` y `PATCH /empleados/:id/estado` ahora
-  devuelven `maquinasLiberadas` y lo dicen en su `message`. Es la corrección de
-  Urbacames a lo que decía la propuesta; sacarlas de ahí es a mano.
-- **Los días vienen calculados.** Cada tramo trae `dias` —naturales, inclusivos,
-  y el vigente contando hasta hoy— y el historial trae `porTrabajador` con el
-  acumulado de más a menos. **No cuenten días de su lado.**
+- **El trabajador y la obra NO se mandan.** El cuerpo es
+  `{ tipoId, descripcion, fechaIncidencia? }` y nada más. Quién tenía la máquina
+  ese día sale de cruzar la fecha con su historia, así que una incidencia
+  capturada hoy sobre algo de hace un mes señala a quien la traía **entonces**.
+  Viaja en `contexto`, con un `texto` ya armado para mostrar.
+- **`contexto` tiene tres formas, no dos:** con trabajador y obra; con obra pero
+  `empleadoId: null` (su tercer estado, el ámbar); y `sinAsignar: true`, que es
+  el «Sin asignar» de ustedes. El `texto` dice «Sin asignar: la máquina estaba en
+  el patio» — **si prefieren su vocabulario en pantalla, usen los campos y armen
+  el suyo**; el `texto` es una comodidad, no el contrato.
+- **El catálogo de tipos es del grupo, no de cada empresa**, y lo escribe quien
+  gestiona proyectos (`manageProjects`), no sólo el administrador de plataforma:
+  quien captura una incidencia que no encaja puede agregar el tipo ahí mismo. El
+  `POST` es **idempotente** —200 si ya existía, 201 si se creó—, como las áreas.
+- **Un tipo dado de baja no se ofrece, pero las incidencias viejas lo conservan**
+  y salen con `tipo.activo: false`, para que lo puedan señalar. Renombrarlo
+  corrige el nombre en todas. Y en el listado, `abiertas` y `resueltas` **no
+  cambian con el filtro**: son del total, para que puedan decir «2 abiertas»
+  mientras se ven las resueltas.
 
-Reasignar libera a quien la tenía y lo dice en `liberada` y `avisos[0]`, con el
-texto listo para mostrar. Una máquina de baja no se asigna, y darla de baja
-teniéndola alguien cierra su tramo. Escribe `manageProjects`.
+**Qué necesitamos de ustedes:** nada. Dos avisos: **no hay reapertura** —una
+incidencia resuelta responde `409 INCIDENCIA_YA_RESUELTA`, y si se cerró mal se
+levanta otra— y **no guardamos quién la levantó ni quién la resolvió**; si lo
+quieren en pantalla, dígannoslo y se agrega, que ahora es barato.
 
-Detalle en `plan/handoff/31.md` y `ENDPOINTS-MAQUINAS.md` (ahora 11 endpoints);
-el porqué, en D-87. **Ahora son 98 rutas.**
+**Recortamos, y se avisa:** las entradas de la #30 (3 sept 09:46:59) y la #31
+(3 sept 11:10:02) bajaron a un renglón en «Cerrado». Su detalle vive donde tiene
+que vivir: `ENDPOINTS-MAQUINAS.md` §1 a §11 y D-86/D-87. Nada de lo que decían se
+perdió; esta bitácora ya iba por 750 renglones.
 
-**Qué necesita el front**: nada para consumirla.
-
-### 2026-09-03 09:46:59 · backend · La #30: el catálogo de maquinaria por empresa
-
-**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 3 sept (la #27 consumiendo la
-#28 y los pendientes de arriba; nada de maquinaria todavía, es lo esperado).
-
-**Hecho.** Seis rutas nuevas y una colección nueva. `GET`/`POST
-/empresas/:id/maquinas` para el catálogo y el alta; `GET`/`PATCH /maquinas/:id`,
-`PATCH /maquinas/:id/estado` y `GET /maquinas/:id/imagen` para operar sobre una.
-La máquina son tres datos —`identificador`, `modelo`, `imagen`— y la foto es el
-`Adjunto` de siempre, por `multipart` en `archivo` o por subida directa con el
-destino nuevo `maquina` (`referencia.empresaId` en el alta, `maquinaId` después).
-
-**Tres cosas que conviene saber antes de la #32:**
-
-- **El catálogo es de la empresa**: fuera de alcance es `404`, también en el
-  listado. No hay `GET /maquinas` global.
-- **El identificador choca sin acentos ni mayúsculas** y responde `409
-MAQUINA_DUPLICADA` con `data.maquina`, la que ya está — como el proyecto
-  duplicado, por si quieren ofrecer abrirla.
-- **La foto sólo admite JPG, PNG o WEBP**: un PDF es `415` y el mensaje dice
-  qué llegó. Es el único adjunto con esa regla.
-
-Escribe `manageProjects` (`rh_admin`, `jefe_area`); `rh_consulta` consulta.
-**Sin paginar** y ordenado con orden natural (`ECO-2` antes que `ECO-10`).
-
-Detalle en `plan/handoff/30.md` y `ENDPOINTS-MAQUINAS.md`; el porqué, en D-86.
-**Ahora son 93 rutas.**
-
-**Qué necesita el front**: nada para consumirla. Si la pestaña de maquinaria
-quiere un número en la tarjeta de la empresa (`conteos`), díganlo: hoy no va.
+**Sobre los asignables que preguntaron:** nos parece bien y es el `400` el que
+está haciendo de filtro, que es justo lo que describen. Propónganlo por el canal
+de siempre y lo tomamos; nos inclinamos por `GET /maquinas/:id/asignables`
+—acotado a la empresa de la máquina y a quien tenga obra abierta ahí— antes que
+por un filtro en `/empleados`, que sería global y no sabría de qué máquina hablan.
 
 ### 2026-09-03 01:29:58 · backend · Los tres rangos de fechas de Urbacames, con la #28
 
@@ -693,6 +674,8 @@ Si quedaba algo más vivo de ese documento, dígannoslo: lo damos por cerrado.
 
 | Fecha       | Tarea                                                                                                                                                          | Dónde quedó el detalle                                                                                                                         |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3 sept 2026 | Tarea #31: la máquina se asigna a un trabajador y toma SU obra; cuando él se va pierde a la persona, no la obra (D-87)                                         | `plan/handoff/31.md`, [`ENDPOINTS-MAQUINAS.md`](./ENDPOINTS-MAQUINAS.md) §7-11, [`DECISIONES.md`](./DECISIONES.md) D-87                        |
+| 3 sept 2026 | Tarea #30: el catálogo de maquinaria por empresa, con su imagen (D-86)                                                                                         | `plan/handoff/30.md`, [`ENDPOINTS-MAQUINAS.md`](./ENDPOINTS-MAQUINAS.md) §1-6, [`DECISIONES.md`](./DECISIONES.md) D-86                         |
 | 1 sept 2026 | Tarea #11: el expediente dice bajo qué SIROC trabaja la persona (`obras`, derivado al leer, D-77)                                                              | `plan/handoff/11.md`, [`ENDPOINTS-EXPEDIENTES.md`](./ENDPOINTS-EXPEDIENTES.md) §1-2, [`DECISIONES.md`](./DECISIONES.md) D-77                   |
 | 1 sept 2026 | Tarea #9: el SIROC se actualiza cada 2 meses, sin fecha final, y la migración corrió en local y en Fly                                                         | `plan/handoff/9.md`, [`ENDPOINTS-PROYECTOS.md`](./ENDPOINTS-PROYECTOS.md) §4.1, [`DECISIONES.md`](./DECISIONES.md) D-76                        |
 | 29 ago 2026 | Barrida de documentación desfasada, y guardia automática de las cifras                                                                                         | `tests/unitarias/docs.test.js`; el aviso de `/organizacion` sigue en «Pendientes»                                                              |

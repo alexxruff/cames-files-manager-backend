@@ -5,6 +5,7 @@ const { connect, disconnect } = require('./config/database')
 const { ensureBootstrapAdmin } = require('./services/bootstrapAdmin')
 const { ensureBaseChecklistTemplates } = require('./services/seedChecklistTemplates')
 const { ensureBaseAreas } = require('./services/seedAreas')
+const { ensureBaseIncidentTypes } = require('./services/seedIncidentTypes')
 const { advertirSiNoHayBucket } = require('./services/storageService')
 
 /**
@@ -49,6 +50,16 @@ async function iniciar() {
     await ensureBaseChecklistTemplates()
   } catch (error) {
     logger.error('No se pudieron sembrar las plantillas base', {
+      error: error.message
+    })
+  }
+
+  // Tipos de incidencia: sin ellos no se puede levantar ninguna incidencia de
+  // maquinaria, porque el tipo es obligatorio y sale de la lista (D-88).
+  try {
+    await ensureBaseIncidentTypes()
+  } catch (error) {
+    logger.error('No se pudieron sembrar los tipos de incidencia', {
       error: error.message
     })
   }
