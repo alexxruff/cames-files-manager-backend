@@ -69,7 +69,11 @@ async function pedirPermiso(token, cuerpo) {
 
 async function escenario(datos = {}) {
   const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin', ...datos })
-  const { proyecto, cliente } = await crearProyecto(sesion.empresa)
+  const { proyecto, cliente } = await crearProyecto(sesion.empresa, {
+    // Ancho: los contratos de estas pruebas caben dentro (D-85).
+    fechaInicio: '2026-01-01',
+    fechaFinEstimada: '2027-12-31'
+  })
   return { ...sesion, proyecto, cliente }
 }
 
@@ -430,7 +434,7 @@ describe('Los cinco destinos llegan a su sitio', () => {
       .set(auth(e.token))
       .send({
         numero: 'SIR-2026-1',
-        fechaRegistro: '2026-02-01',
+        fechaRegistro: '2026-01-05',
         subidaId: permisoAviso.body.data.subida._id
       })
 
@@ -451,7 +455,7 @@ describe('Los cinco destinos llegan a su sitio', () => {
     const refrendo = await request(app)
       .post(`${CONTRATOS}/${contrato._id}/siroc/actualizaciones`)
       .set(auth(e.token))
-      .send({ fecha: '2026-04-01', subidaId: permisoAcuse.body.data.subida._id })
+      .send({ fecha: '2026-03-05', subidaId: permisoAcuse.body.data.subida._id })
 
     expect(refrendo.status).toBe(201)
     expect(refrendo.body.data.contrato.siroc.actualizaciones[0].archivo.nombre).toBe(
@@ -466,11 +470,11 @@ describe('Los cinco destinos llegan a su sitio', () => {
     await request(app)
       .put(`${CONTRATOS}/${contrato._id}/siroc`)
       .set(auth(e.token))
-      .send({ numero: 'SIR-2026-2', fechaRegistro: '2026-02-01' })
+      .send({ numero: 'SIR-2026-2', fechaRegistro: '2026-01-05' })
     await request(app)
       .post(`${CONTRATOS}/${contrato._id}/siroc/actualizaciones`)
       .set(auth(e.token))
-      .send({ fecha: '2026-04-01' })
+      .send({ fecha: '2026-03-05' })
 
     const permiso = await pedirPermiso(e.token, {
       destino: 'siroc-actualizacion',

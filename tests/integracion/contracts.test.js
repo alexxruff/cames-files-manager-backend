@@ -1,6 +1,7 @@
 const request = require('supertest')
 const app = require('../../src/app')
 const Contract = require('../../src/api/v1/contracts/contractModel')
+const Project = require('../../src/api/v1/projects/projectModel')
 const {
   crearEmpresa,
   crearEmpleadoConSesion,
@@ -43,7 +44,7 @@ const crear = (e, extra = {}) =>
     .set(auth(e.token))
     .send(cuerpo(extra))
 
-const SIROC = { numero: 'SIR-2026-0001', fechaRegistro: '2026-09-10' }
+const SIROC = { numero: 'SIR-2026-0001', fechaRegistro: '2026-09-05' }
 
 describe('Contratos de un proyecto', () => {
   describe('alta y listado', () => {
@@ -118,6 +119,72 @@ describe('Contratos de un proyecto', () => {
 
       expect(res.status).toBe(400)
       expect(res.body.errors[0].msg).toMatch(/anterior a la de inicio/i)
+    })
+
+    /*
+     * D-85: las fechas del contrato caen dentro de las del proyecto —del inicio
+     * al fin real o, si no lo tiene, al estimado—. El de las fábricas va del 1
+     * sep 2026 al 1 mar 2027.
+     */
+    describe('las fechas caen dentro de las del proyecto (D-85)', () => {
+      it('400 si empieza antes que el proyecto, y dice desde cuándo sí', async () => {
+        const e = await escenario()
+
+        const res = await crear(e, { fechaInicio: '2026-08-31', fechaFin: '2026-12-31' })
+
+        expect(res.status).toBe(400)
+        expect(res.body.message).toBe(
+          'La fecha de inicio del contrato no puede ser anterior al inicio del proyecto (2026-09-01)'
+        )
+      })
+
+      it('400 si termina después que el proyecto, y dice hasta cuándo sí', async () => {
+        const e = await escenario()
+
+        const res = await crear(e, { fechaFin: '2027-03-02' })
+
+        expect(res.status).toBe(400)
+        expect(res.body.message).toBe(
+          'La fecha de fin del contrato no puede ser posterior al fin del proyecto (2027-03-01)'
+        )
+      })
+
+      it('los bordes cuentan como dentro', async () => {
+        const e = await escenario()
+
+        const res = await crear(e, { fechaInicio: '2026-09-01', fechaFin: '2027-03-01' })
+
+        expect(res.status).toBe(201)
+      })
+
+      it('con fecha de fin real, manda ésa y no la estimada', async () => {
+        const e = await escenario()
+        await Project.updateOne({ _id: e.proyecto._id }, { fechaFinReal: '2026-11-30' })
+
+        const res = await crear(e, { fechaFin: '2026-12-01' })
+
+        expect(res.status).toBe(400)
+        expect(res.body.message).toMatch(/fin del proyecto \(2026-11-30\)/)
+      })
+
+      it('al editar se revisa sólo la fecha que viene: lo ya capturado no se toca', async () => {
+        const e = await escenario()
+        const contrato = (await crear(e)).body.data.contrato
+        // Un contrato viejo que quedó fuera de rango por la base.
+        await Contract.updateOne({ _id: contrato._id }, { fechaInicio: '2026-01-01' })
+
+        const soloFin = await request(app)
+          .patch(`${CONTRATOS}/${contrato._id}`)
+          .set(auth(e.token))
+          .send({ fechaFin: '2027-01-31' })
+        expect(soloFin.status).toBe(200)
+
+        const finFuera = await request(app)
+          .patch(`${CONTRATOS}/${contrato._id}`)
+          .set(auth(e.token))
+          .send({ fechaFin: '2027-04-01' })
+        expect(finFuera.status).toBe(400)
+      })
     })
 
     it('400 en un proyecto finalizado', async () => {
@@ -316,7 +383,7 @@ describe('Contratos de un proyecto', () => {
       expect(alta.status).toBe(200)
       expect(alta.body.data.contrato.siroc).toEqual({
         numero: 'SIR-2026-0001',
-        fechaRegistro: '2026-09-10',
+        fechaRegistro: '2026-09-05',
         // Nace sin renovaciones: se agregan cada dos meses (D-76).
         actualizaciones: [],
         // Y sin papel: el aviso escaneado es opcional (D-80).
@@ -327,9 +394,9 @@ describe('Contratos de un proyecto', () => {
       const correccion = await request(app)
         .put(`${CONTRATOS}/${contrato._id}/siroc`)
         .set(auth(e.token))
-        .send({ ...SIROC, fechaRegistro: '2026-09-15' })
+        .send({ ...SIROC, fechaRegistro: '2026-09-08' })
       expect(correccion.status).toBe(200)
-      expect(correccion.body.data.contrato.siroc.fechaRegistro).toBe('2026-09-15')
+      expect(correccion.body.data.contrato.siroc.fechaRegistro).toBe('2026-09-08')
     })
 
     /*
@@ -350,7 +417,7 @@ describe('Contratos de un proyecto', () => {
       expect(res.body.data.contrato.siroc).not.toHaveProperty('vigenciaHasta')
       // Lo que sí sale es la vigencia derivada, a los dos meses del registro.
       expect(res.body.data.contrato.seguimientoSiroc.vigenciaPeriodoHasta).toBe(
-        '2026-11-10'
+        '2026-11-05'
       )
     })
 
@@ -414,6 +481,63 @@ describe('Contratos de un proyecto', () => {
         .set(auth(e.token))
         .send(SIROC)
       expect(reuso.status).toBe(200)
+    })
+
+    /*
+     * D-85: el aviso se presenta al arrancar, así que `fechaRegistro` cae entre
+     * el inicio del contrato y siete días después.
+     */
+    describe('la fecha de registro va pegada al inicio del contrato (D-85)', () => {
+      const registrar = (e, contratoId, fechaRegistro) =>
+        request(app)
+          .put(`${CONTRATOS}/${contratoId}/siroc`)
+          .set(auth(e.token))
+          .send({ ...SIROC, fechaRegistro })
+
+      it('acepta el día del inicio y el séptimo después', async () => {
+        const e = await escenario()
+        const contrato = (await crear(e)).body.data.contrato
+
+        expect((await registrar(e, contrato._id, '2026-09-01')).status).toBe(200)
+        expect((await registrar(e, contrato._id, '2026-09-08')).status).toBe(200)
+      })
+
+      it('400 antes del inicio o pasados los siete días, y dice el rango', async () => {
+        const e = await escenario()
+        const contrato = (await crear(e)).body.data.contrato
+
+        const antes = await registrar(e, contrato._id, '2026-08-31')
+        const despues = await registrar(e, contrato._id, '2026-09-09')
+
+        expect(antes.status).toBe(400)
+        expect(despues.status).toBe(400)
+        expect(despues.body.message).toBe(
+          'La fecha de registro del SIROC debe estar entre el 2026-09-01 y el 2026-09-08: el aviso se presenta al arrancar el contrato'
+        )
+      })
+
+      it('corregir sólo el número de un SIROC viejo reenvía su fecha y pasa', async () => {
+        const e = await escenario()
+        const contrato = (await crear(e)).body.data.contrato
+        await Contract.updateOne(
+          { _id: contrato._id },
+          {
+            siroc: {
+              numero: 'SIR-VIEJO',
+              fechaRegistro: '2026-10-20',
+              actualizaciones: []
+            }
+          }
+        )
+
+        const res = await request(app)
+          .put(`${CONTRATOS}/${contrato._id}/siroc`)
+          .set(auth(e.token))
+          .send({ numero: 'SIR-VIEJO-B', fechaRegistro: '2026-10-20' })
+
+        expect(res.status).toBe(200)
+        expect(res.body.data.contrato.siroc.numero).toBe('SIR-VIEJO-B')
+      })
     })
 
     it('400 si la fecha de registro no es una fecha de calendario', async () => {

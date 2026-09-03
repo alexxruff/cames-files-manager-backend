@@ -4,9 +4,19 @@ const Project = require('../projects/projectModel')
 const storage = require('../../../services/storageService')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { empresaEsVisible } = require('../../../middlewares/scopeMiddleware')
-const { deriveSirocTracking } = require('../../../utils/domain')
+const { deriveSirocTracking, deriveContractTracking } = require('../../../utils/domain')
 const intake = require('../../../services/attachmentIntake')
-const { today, isAfter, isBefore } = require('../../../utils/dates')
+const { today, isAfter, isBefore, addMonths, addDays } = require('../../../utils/dates')
+
+/** Días después del inicio del contrato en que aún se puede fechar el SIROC (D-85). */
+const DIAS_PARA_REGISTRAR_SIROC = 7
+
+/**
+ * Desde qué día se puede fechar el siguiente refrendo (D-85): un mes y 25 días
+ * después del movimiento anterior, con la misma aritmética de fin de mes que la
+ * vigencia (1 ene → 26 feb; 31 ene → 28 feb → 25 mar).
+ */
+const fechaMinimaDeActualizacion = (anterior) => addDays(addMonths(anterior, 1), 25)
 
 /**
  * Contratos de un proyecto y su SIROC (backend-spec §6.7, plan §C4, D-70).
@@ -19,6 +29,12 @@ const { today, isAfter, isBefore } = require('../../../utils/dates')
  * actualizaciones pide, cuántas lleva y si la siguiente urge. **Se deriva en cada
  * lectura** —regla #6— y por eso no hay nada que marcar ni que apagar: el día que
  * se captura la renovación, el aviso desaparece solo.
+ *
+ * Y con su `seguimientoContrato` (D-84), que es dónde está el contrato en su
+ * propia vida y si dejó un cabo suelto. Va aparte del SIROC a propósito: un
+ * contrato que pasó su fecha de fin y nadie cerró no debe un trámite ante el
+ * IMSS, debe que alguien lo cierre, y decirlo con el aviso del SIROC hacía que se
+ * capturaran refrendos que nadie pidió sólo para apagar el rojo.
  */
 class ContractService {
   /** GET /proyectos/:id/contratos */
@@ -39,6 +55,8 @@ class ContractService {
     if (proyecto.estado === 'finalizado') {
       throw new AppError(400, 'No se pueden agregar contratos a un proyecto finalizado')
     }
+
+    this.#validarFechasEnProyecto(proyecto, datos)
 
     /*
      * El id se genera aquí y no lo pone Mongoose al escribir, porque la clave del
@@ -93,11 +111,14 @@ class ContractService {
    * aparte para lo mismo (D-81).
    */
   async update(id, datos, contexto = {}) {
-    const { contrato } = await this.#buscarVisible(id, contexto)
+    const { contrato, proyecto } = await this.#buscarVisible(id, contexto)
 
     // `|| null`: mandar cadena vacía es cómo se borra la etiqueta (regla 5).
     if (datos.nombre !== undefined) contrato.nombre = datos.nombre || null
     if (datos.fase !== undefined) contrato.fase = datos.fase || null
+
+    // Sólo las fechas que vienen: lo ya capturado no se revisa (D-85).
+    this.#validarFechasEnProyecto(proyecto, datos)
     if (datos.fechaInicio !== undefined) contrato.fechaInicio = datos.fechaInicio
     if (datos.fechaFin !== undefined) contrato.fechaFin = datos.fechaFin
 
@@ -166,6 +187,25 @@ class ContractService {
       nota: a.nota ?? null,
       archivo: this.#planoAdjunto(a.archivo)
     }))
+
+    /*
+     * El aviso se presenta al arrancar la obra: `fechaRegistro` cae entre el
+     * inicio del contrato y siete días después (D-85). Se comprueba **sólo si
+     * cambia**: corregir el número de un SIROC viejo reenvía la misma fecha, y lo
+     * ya capturado no se toca.
+     */
+    if (datos.fechaRegistro !== contrato.siroc?.fechaRegistro) {
+      const limite = addDays(contrato.fechaInicio, DIAS_PARA_REGISTRAR_SIROC)
+      if (
+        isBefore(datos.fechaRegistro, contrato.fechaInicio) ||
+        isAfter(datos.fechaRegistro, limite)
+      ) {
+        throw new AppError(
+          400,
+          `La fecha de registro del SIROC debe estar entre el ${contrato.fechaInicio} y el ${limite}: el aviso se presenta al arrancar el contrato`
+        )
+      }
+    }
 
     const primera = actualizaciones[0]?.fecha
     if (primera && isBefore(primera, datos.fechaRegistro)) {
@@ -270,6 +310,22 @@ class ContractService {
       throw new AppError(400, 'La actualización del SIROC no puede tener fecha futura')
     }
 
+    /*
+     * La fecha de fin es el techo (D-84): pasada ella el contrato ya no acumula
+     * refrendos, y sin este corte se le podía colgar uno cada dos meses para
+     * siempre por API, aunque la pantalla dejara de ofrecerlo.
+     *
+     * Se mira la fecha DE LA ACTUALIZACIÓN y no el día de hoy a propósito:
+     * capturar tarde un refrendo que sí se tramitó dentro del contrato es lo
+     * normal —el papel llega después— y eso tiene que seguir entrando.
+     */
+    if (contrato.fechaFin && isAfter(fecha, contrato.fechaFin)) {
+      throw new AppError(
+        400,
+        `El contrato terminó el ${contrato.fechaFin} y su SIROC ya no requiere actualizaciones: finaliza el contrato, o corrige su fecha de fin si la obra sigue`
+      )
+    }
+
     const previas = contrato.siroc.actualizaciones ?? []
     const anterior = previas[previas.length - 1]?.fecha ?? contrato.siroc.fechaRegistro
     if (isBefore(fecha, anterior)) {
@@ -278,6 +334,22 @@ class ContractService {
         previas.length === 0
           ? `La actualización no puede ser anterior al registro del SIROC (${anterior})`
           : `Ya hay una actualización del ${anterior}: la nueva no puede ser anterior`
+      )
+    }
+
+    /*
+     * Un refrendo no se fecha antes de un mes y 25 días del movimiento anterior
+     * (D-85): registrar el aviso y su actualización el mismo día corría la
+     * ventana sin que el IMSS hubiera pedido nada. Es la aritmética de la
+     * vigencia —mismo día del mes siguiente, recortado a fin de mes— más 25
+     * días, cinco antes de que venza. Sólo se mira la que entra: las ya
+     * capturadas no se tocan.
+     */
+    const minima = fechaMinimaDeActualizacion(anterior)
+    if (isBefore(fecha, minima)) {
+      throw new AppError(
+        400,
+        `El SIROC se ${previas.length === 0 ? 'registró' : 'actualizó'} el ${anterior}: la siguiente actualización no puede fecharse antes del ${minima}`
       )
     }
 
@@ -532,8 +604,8 @@ class ContractService {
   // ─── Interno ───────────────────────────────────────────────────────────────
 
   /**
-   * El contrato con su `seguimientoSiroc` al lado. Derivado en cada lectura, no
-   * guardado (regla #6): el mismo contrato responde distinto mañana.
+   * El contrato con sus dos seguimientos al lado. Derivados en cada lectura, no
+   * guardados (regla #6): el mismo contrato responde distinto mañana.
    */
   async #serializar(contrato) {
     const json = contrato.toJSON()
@@ -546,7 +618,8 @@ class ContractService {
         contrato.archivo,
         storage.nombreDeContrato(json)
       ),
-      seguimientoSiroc: deriveSirocTracking(json)
+      seguimientoSiroc: deriveSirocTracking(json),
+      seguimientoContrato: deriveContractTracking(json)
     }
   }
 
@@ -649,6 +722,31 @@ class ContractService {
         }
       }
     )
+  }
+
+  /**
+   * Las fechas del contrato caen dentro de las del proyecto (D-85): del inicio
+   * del proyecto a su fin real o, si no lo tiene, al estimado. Sólo se revisan
+   * las que vienen en `datos`, así el `PATCH` de una sola fecha no reprueba la
+   * otra si es anterior a la regla.
+   */
+  #validarFechasEnProyecto(proyecto, datos) {
+    const fin = proyecto.fechaFinReal ?? proyecto.fechaFinEstimada
+    if (
+      datos.fechaInicio !== undefined &&
+      isBefore(datos.fechaInicio, proyecto.fechaInicio)
+    ) {
+      throw new AppError(
+        400,
+        `La fecha de inicio del contrato no puede ser anterior al inicio del proyecto (${proyecto.fechaInicio})`
+      )
+    }
+    if (datos.fechaFin !== undefined && fin && isAfter(datos.fechaFin, fin)) {
+      throw new AppError(
+        400,
+        `La fecha de fin del contrato no puede ser posterior al fin del proyecto (${fin})`
+      )
+    }
   }
 
   async #buscarVisible(id, contexto) {

@@ -3300,18 +3300,18 @@ semáforos que se comportan distinto en la misma pantalla.
 
 **Un contrato finalizado o dado de baja deja de pedir**, igual que uno cuya
 ventana vigente ya cubre su `fechaFin`: el aviso acompaña a la obra, y pedir el
-refrendo de una obra terminada sería ruido permanente en la bandeja.
+refrendo de una obra terminada sería ruido permanente en la bandeja. Desde D-84
+también deja de pedir **el que pasó su `fechaFin`**, lo cierre alguien o no.
 
-**Pero «la ventana cubre su `fechaFin`» sólo vale mientras el contrato siga
-dentro de sus fechas.** Un contrato que ya pasó su `fechaFin` y que nadie
-finalizó **sigue en curso**: para el IMSS la obra sigue abierta, y su aviso vence
-igual. La primera versión miraba `fechaFin` sin mirar el calendario y ese
-contrato —el más común de todos, porque las obras se alargan y nadie corre a
-finalizarlas— no pedía nada. Ahora el atajo pide las dos cosas: que la ventana
-cubra el fin **y** que ese fin no haya quedado atrás. En ese caso
-`actualizacionesRequeridas` puede valer `0` mientras `actualizacionesPendientes`
-vale `1`: la predicción sale de las fechas del contrato, la deuda del calendario,
-y decir «vencida» con «0 pendientes» habría sido una contradicción en pantalla.
+**~~Pero «la ventana cubre su `fechaFin`» sólo vale mientras el contrato siga
+dentro de sus fechas.~~ REVERTIDO POR D-84.** Aquí se decidió que un contrato
+pasado de su `fechaFin` y no finalizado **sigue pidiendo refrendos**, porque para
+el IMSS la obra sigue abierta. Era una deducción nuestra, y el cliente contestó lo
+contrario: **la fecha de fin es el techo del cálculo**, y lo que le falta a ese
+contrato es que alguien lo cierre. Con la regla de aquí, toda obra terminada que
+nadie cerró se quedaba en rojo para siempre. Ver **D-84** para lo que vale hoy,
+incluida la desaparición del `actualizacionesRequeridas: 0` con
+`actualizacionesPendientes: 1` que este párrafo justificaba.
 
 **El aviso no tiene fecha final, y por eso no se captura.** `siroc.vigenciaHasta`
 existió como campo opcional y fue un error: su vigencia son siempre dos meses
@@ -3768,3 +3768,187 @@ servidor no guarda el archivo, lo **lee** —`exceljs` abre el libro entero—, 
 que sacarlo del camino no ahorra nada y complicaría la única ruta con un tope
 distinto (D-81). Tampoco se subieron los archivos por partes (_multipart upload_
 de S3): con 30 MB de tope, una sola petición basta.
+
+---
+
+## D-84 · La fecha de fin del contrato es el techo del SIROC, y el contrato sin cerrar se señala por lo que es
+
+**Contexto.** Un contrato de obra del 1 de enero al 2 de mayo pide su aviso y dos
+actualizaciones. Se capturan las dos, la obra se acaba y **nadie entra a marcarlo
+como finalizado** — que es lo normal: nadie corre a cerrar papeles. El 2 de julio
+se cumplen dos meses del último refrendo y el contrato aparece en rojo pidiendo
+una tercera, con «venció hace 62 días». Si alguien la registra para quitarse el
+rojo de encima, dos meses después pide una cuarta, y así indefinidamente. El
+contador quedaba además diciendo «3 actualizaciones, 2 previstas».
+
+Esto **revierte un párrafo de D-76**, el que decía que un contrato pasado de
+fecha «sigue en curso para el IMSS y su aviso vence igual». Era una deducción
+nuestra y no era la del cliente: Urbacames dice que la fecha de fin del contrato
+es el límite del cálculo. Es también la respuesta a la segunda pregunta que
+`propuestas/2026-09-01-backend-siroc-registro-tardio.md` dejó abierta. La
+primera —desde dónde se predice cuando el SIROC se tramita tarde— **sigue
+abierta**: aquí no se toca.
+
+**Decisión 1: pasada `fechaFin`, el SIROC no acumula refrendos nuevos — pero el
+techo corta la cuenta, no la borra.** La cuenta de pendientes termina en
+`fechaFin`; lo que quede por debajo de ese techo es deuda de cuando el contrato
+seguía en curso y **se sigue debiendo**. Dos salidas, según esa cuenta:
+
+- **Queda deuda** (`actualizacionesPendientes > 0`): `estado: 'vencida'`,
+  `requiereActualizacion: true`, los pendientes que faltaron hasta `fechaFin` y
+  el mensaje «El SIROC requiere actualización desde el AAAA-MM-DD: venció hace N
+  días, con el contrato todavía en curso. Regístrala con la fecha en que se
+  presentó, a más tardar el AAAA-MM-DD.». Al capturarla con fecha de entonces la
+  ventana rebasa el fin, la cuenta da cero y el contrato queda en paz solo.
+- **No queda deuda**: `estado: 'no_requiere'`, `actualizacionesPendientes: 0`,
+  `requiereActualizacion: false` y `diasParaActualizacion: null`, con el mensaje
+  «El contrato terminó el AAAA-MM-DD: su SIROC ya no requiere actualizaciones.».
+
+`vigenciaPeriodoHasta` **sí se sigue diciendo** en los dos casos: hasta dónde
+llegó el aviso es un hecho del expediente. El día justo de `fechaFin` todavía
+cuenta como dentro, como todos los bordes del proyecto (D-04).
+
+La primera versión de esta decisión respondía `no_requiere` pasada la fecha
+**sin mirar la cuenta**, y el front lo cazó al consumirla (revisión del 3 sept):
+deshacer el último refrendo de un contrato ya terminado lo hacía desaparecer —«Sin
+refrendos pendientes · 1/2»— cuando ese refrendo se debía antes de que el
+contrato acabara. «No acumula _más_» no es «no debe nada».
+
+**Por qué no basta con taparlo en la pantalla.** El front puede dejar de ofrecer
+el botón, pero el servidor seguía diciendo «vencido» y seguía aceptando el
+registro por API, así que las **obras del expediente** (D-77) daban la misma
+alarma equivocada en la ficha de una persona. Y sin tope en el servidor nada
+limitaba cuántos refrendos se le podían colgar a un contrato. La serie de acuses
+del SIROC es lo que se enseña en una revisión del IMSS: si el sistema pide
+refrendos que la obra no necesitaba, alguien los captura para apagar el rojo y
+esa historia deja de corresponder con lo que de verdad se tramitó.
+
+**Decisión 2: registrar una actualización de más se rechaza**, con
+`400` y un mensaje que dice qué hacer: «El contrato terminó el AAAA-MM-DD y su
+SIROC ya no requiere actualizaciones: finaliza el contrato, o corrige su fecha de
+fin si la obra sigue». Se mira la fecha **de la actualización** y no el día de
+hoy: capturar tarde un refrendo que sí se tramitó dentro del contrato es lo
+normal —el papel llega después— y eso tiene que seguir entrando. Es también
+**la única forma de pagar la deuda** de la decisión 1: con fecha de entonces, a
+más tardar `fechaFin`; sin fecha se asume hoy y el `400` la rechaza.
+
+**Decisión 3: `actualizacionesPendientes` se cuenta desde el aviso, no desde la
+predicción.** Era `requeridas − registradas`, con un `Math.max(…, 1)` encima para
+que «vencida» no saliera junto a «0 pendientes». Ahora son las ventanas de dos
+meses que faltan **de `vigenciaPeriodoHasta` a `fechaFin`**, y como
+`vigenciaPeriodoHasta` ya incorpora cada refrendo presentado, la contradicción
+desaparece sola en vez de parchearse: se llega al estado `vencida` sólo si la
+ventana no alcanza el fin, y entonces hay 1 o más pendientes por construcción.
+
+De paso, **`no_requiere` ya nunca viene con pendientes**. Un contrato finalizado
+o dado de baja decía «no requiere» y «2 pendientes» a la vez, porque la cuenta
+vieja se colaba desde la predicción; ahora las tres razones de `no_requiere`
+—cerrado, pasado de fecha sin deuda, o la ventana cubre el fin— responden `0`.
+Y **sin SIROC**, un contrato sigue debiendo lo que sus fechas preveían aunque ya
+haya pasado la fecha —la predicción ya terminaba en `fechaFin`—; sólo cerrarlo
+lo apaga.
+
+Es también lo que hace que **mover las fechas recalcule solo**, que es lo que más
+va a pasar porque las obras se alargan y se recortan:
+
+| Se edita `fechaFin`   | Qué pasa                                                   |
+| --------------------- | ---------------------------------------------------------- |
+| Se aplaza             | Vuelve a pedir, **desde donde va el aviso**, no desde cero |
+| Se recorta            | Deja de pedir lo que los refrendos ya alcanzan a cubrir    |
+| Se recorta por debajo | 0 pendientes, sin números negativos y sin borrar nada      |
+
+**`actualizacionesRequeridas` se queda como está**: la predicción que sale de las
+fechas del contrato, respondida desde el alta y antes de que exista el SIROC. Al
+recortar la fecha puede quedar **por debajo de `actualizacionesRegistradas`**, y
+eso **no es un error ni una cuenta rota**: esos avisos se presentaron de verdad
+ante el IMSS y no se borran. Se dicen los dos números como lo que son —lo que hay
+y lo que las fechas preveían— sin pintarlo como una falta.
+
+**Decisión 4: el cabo suelto se señala por su nombre, en `seguimientoContrato`.**
+Un contrato que pasó su fecha y sigue abierto **sí es un pendiente**, sólo que no
+del SIROC. Callarlo del todo dejaría en verde una ficha que nadie revisó;
+señalarlo con el aviso del SIROC es lo que se hacía y es lo que estaba mal. Así
+que va aparte, derivado al leer como todo (regla #6), en toda respuesta de
+contrato:
+
+```json
+{
+  "estado": "terminado_sin_cerrar",
+  "diasDesdeFin": 61,
+  "requiereCierre": true,
+  "mensaje": "Este contrato terminó el 2026-05-02 hace 61 días y sigue abierto: finalízalo, o corrige su fecha de fin si la obra sigue."
+}
+```
+
+`estado` es uno de `por_iniciar`, `en_curso`, `terminado_sin_cerrar`,
+`finalizado` y `baja`. La **baja manda sobre las fechas** (D-70): un contrato
+capturado por error no es uno que haya que cerrar. `diasDesdeFin` es un hecho y
+se dice esté cerrado o no; `requiereCierre` sólo es `true` en
+`terminado_sin_cerrar`, que es la única fila que pide acción.
+
+**Por qué `no_requiere` y no un estado nuevo del SIROC.** `ESTADOS_SIROC` es un
+enum del contrato que el front compara con igualdad estricta: agregarle un valor
+obliga a manejarlo en todos lados para no romperse, y el significado ya existía
+—no hay nada que actualizar—. El rojo, cuando toca, lo pone `seguimientoContrato`.
+
+**Sin migración.** Todo esto se deriva al leer: no hay un solo dato guardado que
+cambie de forma, y el mismo contrato responde distinto mañana sin que nadie corra
+nada.
+
+**Qué NO se hizo.** `seguimientoContrato` **no se agrega a las obras del
+expediente** (`GET /expedientes/:id/obras`, D-77): ahí se consulta bajo qué aviso
+trabajó alguien, y un «cierra este contrato» es ruido en la ficha de una persona
+—además, `vigente: false` ya dice que la obra pasó—. Tampoco se tocó `GET
+/alertas`: el SIROC nunca entró en esa bandeja (D-76), así que no había nada que
+apagar ahí.
+
+---
+
+## D-85 · Tres rangos de fechas que fija Urbacames: el refrendo espera, el SIROC va pegado al inicio y el contrato cabe en el proyecto
+
+**Contexto.** Al probar la tarea #27 el front registró el SIROC y su
+actualización **el mismo día** y el servidor lo aceptó: la ventana de dos meses
+se corrió sin que el IMSS hubiera pedido nada. De la misma revisión salieron
+otros dos huecos: el aviso se podía fechar en cualquier día y el contrato en
+cualquier fecha, dentro o fuera de su proyecto. Urbacames fijó los tres rangos.
+Entró con la #28 a pedido del usuario, no como tarea aparte.
+
+**Regla 1: un refrendo no se fecha antes de un mes y 25 días del movimiento
+anterior** —el registro del aviso, o la última actualización—. La cuenta es
+`addMonths(base, 1)` más 25 días: mismo día del mes siguiente, recortado a fin
+de mes, con **la misma aritmética que la vigencia**, para que las dos puntas den
+el mismo día (1 ene → 26 feb; 31 ene → 28 feb → 25 mar). Son cinco días antes de
+que venza, que es cuando el seguimiento ya marca `por_vencer`. El `400` dice
+desde qué día sí: «El SIROC se registró el AAAA-MM-DD: la siguiente actualización
+no puede fecharse antes del AAAA-MM-DD».
+
+**Regla 2: `fechaRegistro` del SIROC cae entre `contrato.fechaInicio` y siete
+días después**, los dos incluidos: el aviso se presenta al arrancar la obra. El
+`400` dice el rango. De paso **deja casi sin objeto la decisión abierta #19 de
+`ESTADO.md`** —desde dónde se predice cuando el SIROC se tramita tarde—: con
+siete días de holgura, la predicción desde `fechaInicio` y el vencimiento desde
+`fechaRegistro` ya no pueden describir calendarios distintos.
+
+**Regla 3: las fechas del contrato caben en las del proyecto**, de
+`proyecto.fechaInicio` a `fechaFinReal ?? fechaFinEstimada`, bordes incluidos.
+Dos `400` distintos, uno por punta, cada uno con la fecha del proyecto que lo
+acota.
+
+**Se comprueban en el servicio, no en el esquema, y sólo sobre lo que entra.**
+Es la parte que importa: **lo ya capturado no se toca**. Una invariante en
+`contractModel` habría reprobado al guardar cualquier contrato viejo con fechas
+fuera de rango —al cambiarle el nombre, al adjuntarle el papel—, y una migración
+para «arreglarlos» reescribiría fechas que alguien capturó a conciencia. Así que:
+
+- El refrendo mínimo se mira **sólo sobre el que se registra**; los que ya están
+  se quedan como están, aunque vayan pegados.
+- `fechaRegistro` se revisa **sólo si cambia**: corregir el número de un SIROC
+  viejo reenvía la misma fecha, y eso pasa.
+- En el `PATCH` del contrato se revisan **sólo las fechas que vienen**: mover la
+  de fin no reprueba la de inicio si es anterior a la regla.
+
+**Sin migración**, por lo mismo.
+
+**Qué NO se hizo.** No se movieron las fechas de los proyectos: si un proyecto
+se acorta después, sus contratos no se reprueban solos —lo ya capturado— y nada
+avisa. Si hace falta, es una alerta aparte.

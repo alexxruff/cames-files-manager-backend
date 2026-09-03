@@ -22,6 +22,12 @@ const { addMonths, daysBetween, isAfter, isBefore, today } = require('../dates')
  * - **Desde cuándo corre la ventana vigente**: desde la última actualización
  *   registrada, o desde `fechaRegistro` si no hay ninguna. No desde el inicio del
  *   contrato: un SIROC que se registró tarde vence tarde.
+ * - **Hasta dónde se pide**: hasta `fechaFin`, y ni un día más (D-84). Pasada esa
+ *   fecha el contrato ya no acumula refrendos nuevos, pero **los que debía antes
+ *   de terminar los sigue debiendo**: el techo corta la cuenta, no la borra. Y
+ *   cuando ya no debe nada, lo que le falta no es un trámite ante el IMSS, es
+ *   que alguien lo cierre o corrija sus fechas — eso lo dice
+ *   `deriveContractTracking`, aparte, porque no es del SIROC.
  *
  * El aviso **no tiene fecha final capturada**: su vigencia es siempre el registro
  * (o la última actualización) más dos meses, y por eso `vigenciaPeriodoHasta` se
@@ -42,22 +48,63 @@ const ESTADOS_SIROC = Object.freeze([
   'vencida'
 ])
 
+/** Estados del contrato como cabo suelto, del más tranquilo al que pide acción. */
+const ESTADOS_CONTRATO = Object.freeze([
+  'por_iniciar',
+  'en_curso',
+  'terminado_sin_cerrar',
+  'finalizado',
+  'baja'
+])
+
 /**
- * Ventanas de `PERIODO_SIROC_MESES` que hacen falta para cubrir el contrato.
- * La primera la cubre el SIROC original; el resto son actualizaciones.
+ * Ventanas de `PERIODO_SIROC_MESES` que hacen falta para llegar de `desde` a
+ * `hasta`. La cuenta base de todo lo demás, y la única que recorre el calendario.
+ *
+ * @returns {number} 0 si las fechas no sirven o `hasta` no queda por delante
+ */
+function ventanasHasta(desde, hasta) {
+  if (!desde || !hasta || !isAfter(hasta, desde)) return 0
+
+  let ventanas = 1
+  // Tope de seguridad: 100 ventanas son ~16 años, más que cualquier obra real.
+  while (isBefore(addMonths(desde, ventanas * PERIODO_SIROC_MESES), hasta)) {
+    ventanas += 1
+    if (ventanas > 100) break
+  }
+  return ventanas
+}
+
+/**
+ * Cuántas actualizaciones **predicen las fechas del contrato**: las ventanas que
+ * hacen falta para cubrirlo, MENOS la primera, que ya la cubre el SIROC original.
+ *
+ * Es una predicción, no una deuda: sale del plan de la obra y se responde desde
+ * el alta, antes de que exista el SIROC. Puede quedar por debajo de las que de
+ * verdad se registraron —al recortar la fecha de fin— y eso **no es un error**
+ * (D-84): los refrendos se presentaron ante el IMSS y no se borran. Lo que se
+ * debe hoy es `actualizacionesPendientes`, que es otra cosa.
  *
  * @returns {number} 0 si las fechas no sirven o el contrato cabe en una ventana
  */
 function requiredSirocRenewals(fechaInicio, fechaFin) {
-  if (!fechaInicio || !fechaFin || isBefore(fechaFin, fechaInicio)) return 0
+  return Math.max(ventanasHasta(fechaInicio, fechaFin) - 1, 0)
+}
 
-  let ventanas = 1
-  // Tope de seguridad: 100 ventanas son ~16 años, más que cualquier obra real.
-  while (isBefore(addMonths(fechaInicio, ventanas * PERIODO_SIROC_MESES), fechaFin)) {
-    ventanas += 1
-    if (ventanas > 100) break
-  }
-  return ventanas - 1
+/**
+ * Cuántas actualizaciones **faltan de verdad**: las ventanas que hacen falta para
+ * ir de donde llega el aviso vigente hasta el final del contrato (D-84).
+ *
+ * No es `requeridas − registradas`. Se cuenta desde `vigenciaPeriodoHasta`, que
+ * ya incorpora cada refrendo presentado, así que mover las fechas del contrato
+ * recalcula solo y **contando lo que ya hay**: aplazarlas vuelve a pedir desde
+ * donde va el aviso y no desde cero, recortarlas deja de pedir lo que los
+ * refrendos alcanzan a cubrir, y por debajo de lo registrado da 0 en vez de un
+ * número negativo. Y como la cuenta termina en `fechaFin`, un contrato pasado de
+ * fecha no acumula refrendos para siempre.
+ */
+function pendingSirocRenewals(vigenciaPeriodoHasta, fechaFin) {
+  return ventanasHasta(vigenciaPeriodoHasta, fechaFin)
 }
 
 /**
@@ -73,15 +120,24 @@ function deriveSirocTracking(contrato, opciones = {}) {
   const hoy = opciones.hoy ?? today()
   const diasAlerta = opciones.diasAlerta ?? env.DIAS_ALERTA_SIROC
 
-  const requeridas = requiredSirocRenewals(contrato?.fechaInicio, contrato?.fechaFin)
+  const fechaFin = contrato?.fechaFin ?? null
+  const requeridas = requiredSirocRenewals(contrato?.fechaInicio, fechaFin)
   const actualizaciones = fechasDeActualizacion(contrato?.siroc)
   const registradas = actualizaciones.length
+
+  /*
+   * Las dos razones por las que un contrato deja de pedir refrendos. `cerrado`
+   * es una decisión de alguien; `fueraDePlazo` es el calendario pasando por
+   * encima de la fecha de fin, que es el techo del cálculo (D-84).
+   */
+  const cerrado = contrato?.estado === 'finalizado' || contrato?.activo === false
+  const fueraDePlazo = Boolean(fechaFin) && isBefore(fechaFin, hoy)
 
   const base = {
     periodoMeses: PERIODO_SIROC_MESES,
     actualizacionesRequeridas: requeridas,
     actualizacionesRegistradas: registradas,
-    actualizacionesPendientes: Math.max(requeridas - registradas, 0),
+    actualizacionesPendientes: 0,
     ultimaActualizacion: actualizaciones[registradas - 1] ?? null,
     vigenciaPeriodoHasta: null,
     diasParaActualizacion: null,
@@ -90,19 +146,26 @@ function deriveSirocTracking(contrato, opciones = {}) {
     mensaje: 'Este contrato todavía no tiene SIROC registrado.'
   }
 
-  if (!contrato?.siroc?.fechaRegistro) return base
+  /*
+   * Sin SIROC no hay ventana desde la que contar, así que lo pendiente es lo que
+   * predicen las fechas — que ya terminan en `fechaFin`, así que un contrato
+   * pasado de fecha sigue debiendo lo que debía. Sólo cerrarlo lo apaga.
+   */
+  if (!contrato?.siroc?.fechaRegistro) {
+    return { ...base, actualizacionesPendientes: cerrado ? 0 : requeridas }
+  }
+
+  const vigenciaPeriodoHasta = addMonths(
+    actualizaciones[registradas - 1] ?? contrato.siroc.fechaRegistro,
+    PERIODO_SIROC_MESES
+  )
 
   /*
    * Un contrato finalizado o dado de baja no renueva nada: el aviso de obra
    * acompaña a la obra. Se dice explícito para que el front no tenga que
    * deducirlo del estado del contrato.
    */
-  const vigenciaPeriodoHasta = addMonths(
-    actualizaciones[registradas - 1] ?? contrato.siroc.fechaRegistro,
-    PERIODO_SIROC_MESES
-  )
-
-  if (contrato.estado === 'finalizado' || contrato.activo === false) {
+  if (cerrado) {
     return {
       ...base,
       vigenciaPeriodoHasta,
@@ -112,22 +175,53 @@ function deriveSirocTracking(contrato, opciones = {}) {
   }
 
   const dias = daysBetween(hoy, vigenciaPeriodoHasta)
+  const pendientes = pendingSirocRenewals(vigenciaPeriodoHasta, fechaFin)
 
   /*
-   * La ventana vigente ya cubre el final del contrato: no hay una renovación más
-   * que pedir aunque el aviso siga venciendo más adelante.
+   * Pasada la fecha de fin **el SIROC no acumula más refrendos** (D-84): la obra
+   * que el aviso ampara ya terminó según el propio contrato, y seguir contando
+   * ventanas cada dos meses dejaba en rojo para siempre a toda obra que nadie
+   * cerró —que son casi todas—, hasta que alguien capturaba refrendos que el
+   * IMSS no exigió sólo para apagarlo.
    *
-   * Pero el atajo vale **sólo mientras el contrato siga dentro de sus fechas**.
-   * Uno que ya pasó su `fechaFin` sin que nadie lo finalizara sigue en curso —para
-   * el IMSS la obra sigue abierta— y su aviso vence igual: mirar `fechaFin` sin
-   * mirar el calendario callaba el aviso justo cuando más falta hace, que es lo
-   * que hacía el contrato vencido y no finalizado no pedir nada.
+   * Pero el techo **corta la cuenta, no la borra**. `pendientes` ya termina en
+   * `fechaFin`; si aun así es mayor que cero, es deuda de cuando el contrato
+   * seguía en curso —un refrendo que se debía antes de que terminara— y sigue
+   * debiéndose: la primera versión respondía `no_requiere` aquí sin mirarlo, y
+   * deshacer un refrendo en un contrato pasado de fecha lo hacía desaparecer.
+   * Se captura con la fecha en que se presentó, que es lo que dice el mensaje.
+   *
+   * Sólo cuando no queda nada por cubrir, lo que le falta al contrato es que
+   * alguien lo cierre o corrija sus fechas. Eso lo dice `deriveContractTracking`,
+   * por lo que es, y por eso aquí no queda ni un número que invite a pintar
+   * rojo: sin días para la actualización, sin pendientes y sin exigirla.
    */
-  if (
-    contrato.fechaFin &&
-    !isAfter(contrato.fechaFin, vigenciaPeriodoHasta) &&
-    !isBefore(contrato.fechaFin, hoy)
-  ) {
+  if (fueraDePlazo) {
+    if (pendientes > 0) {
+      return {
+        ...base,
+        vigenciaPeriodoHasta,
+        diasParaActualizacion: dias,
+        actualizacionesPendientes: pendientes,
+        requiereActualizacion: true,
+        estado: 'vencida',
+        mensaje: `El SIROC requiere actualización desde el ${vigenciaPeriodoHasta}: venció hace ${enDias(Math.abs(dias))}, con el contrato todavía en curso. Regístrala con la fecha en que se presentó, a más tardar el ${fechaFin}.`
+      }
+    }
+
+    return {
+      ...base,
+      vigenciaPeriodoHasta,
+      estado: 'no_requiere',
+      mensaje: `El contrato terminó el ${fechaFin}: su SIROC ya no requiere actualizaciones.`
+    }
+  }
+
+  /*
+   * La ventana vigente ya cubre lo que le queda al contrato: no hay una
+   * renovación más que pedir aunque el aviso siga venciendo más adelante.
+   */
+  if (pendientes === 0) {
     return {
       ...base,
       vigenciaPeriodoHasta,
@@ -144,19 +238,83 @@ function deriveSirocTracking(contrato, opciones = {}) {
     vigenciaPeriodoHasta,
     diasParaActualizacion: dias,
     /*
-     * Un contrato que se pasó de sus fechas pide una actualización que su
-     * predicción no contemplaba: si el aviso venció, hay al menos una pendiente,
-     * porque decir «vencida» y «0 pendientes» a la vez no es dos veces el mismo
-     * dato, es una contradicción.
+     * Aquí `pendientes` ya es 1 o más por construcción —se llega sólo si la
+     * ventana no alcanza la fecha de fin—, así que «vencida» y «0 pendientes» no
+     * pueden salir juntas. Antes se forzaba con un `Math.max` porque la cuenta
+     * venía de la predicción; ahora sale sola de la misma ventana que fija el
+     * estado, que era el origen de la contradicción.
      */
-    actualizacionesPendientes:
-      estado === 'vencida'
-        ? Math.max(base.actualizacionesPendientes, 1)
-        : base.actualizacionesPendientes,
+    actualizacionesPendientes: pendientes,
     // `por_vencer` avisa, pero todavía no se debe nada: sólo `vencida` lo exige.
     requiereActualizacion: estado === 'vencida',
     estado,
     mensaje: mensajeDeSiroc(estado, dias, vigenciaPeriodoHasta)
+  }
+}
+
+/**
+ * El bloque `seguimientoContrato`: en qué punto de su vida está el contrato, y
+ * si tiene un cabo suelto (D-84).
+ *
+ * Existe porque un contrato que pasó su fecha de fin y nadie cerró **sí es un
+ * pendiente de verdad**, sólo que no del SIROC. Señalarlo con el aviso del SIROC
+ * —lo que se hacía— pedía un trámite ante el IMSS que nadie debe; callarlo del
+ * todo dejaba en verde una ficha que nadie revisó. Se dice aparte y por su
+ * nombre: `terminado_sin_cerrar`, con lo que hay que hacer en el mensaje.
+ *
+ * Derivado al leer como todo lo demás (regla #6): el día que alguien finalice el
+ * contrato o corrija su fecha, el aviso desaparece solo.
+ *
+ * @param {object} contrato ya serializado (`fechaInicio`, `fechaFin`, `estado`,
+ *   `activo`)
+ * @param {object} [opciones]
+ * @param {string} [opciones.hoy] fecha de calendario con la que se compara
+ */
+function deriveContractTracking(contrato, opciones = {}) {
+  const hoy = opciones.hoy ?? today()
+  const { fechaInicio = null, fechaFin = null } = contrato ?? {}
+
+  // Los días transcurridos desde el fin son un hecho, esté cerrado o no.
+  const diasDesdeFin =
+    fechaFin && isBefore(fechaFin, hoy) ? daysBetween(fechaFin, hoy) : null
+
+  const base = { diasDesdeFin, requiereCierre: false }
+
+  /*
+   * La baja va primero: `activo: false` es un contrato capturado por error o
+   * cancelado, y eso manda sobre en qué punto de sus fechas esté (D-70).
+   */
+  if (contrato?.activo === false) {
+    return { ...base, estado: 'baja', mensaje: 'Este contrato está dado de baja.' }
+  }
+
+  if (contrato?.estado === 'finalizado') {
+    return { ...base, estado: 'finalizado', mensaje: 'Este contrato está finalizado.' }
+  }
+
+  if (fechaInicio && isAfter(fechaInicio, hoy)) {
+    return {
+      ...base,
+      estado: 'por_iniciar',
+      mensaje: `Este contrato empieza el ${fechaInicio}.`
+    }
+  }
+
+  if (diasDesdeFin !== null) {
+    return {
+      ...base,
+      estado: 'terminado_sin_cerrar',
+      requiereCierre: true,
+      mensaje: `Este contrato terminó el ${fechaFin} hace ${enDias(diasDesdeFin)} y sigue abierto: finalízalo, o corrige su fecha de fin si la obra sigue.`
+    }
+  }
+
+  return {
+    ...base,
+    estado: 'en_curso',
+    mensaje: fechaFin
+      ? `Este contrato está en curso hasta el ${fechaFin}.`
+      : 'Este contrato está en curso.'
   }
 }
 
@@ -243,8 +401,11 @@ function masReciente(contratos, campo) {
 module.exports = {
   PERIODO_SIROC_MESES,
   ESTADOS_SIROC,
+  ESTADOS_CONTRATO,
   requiredSirocRenewals,
+  pendingSirocRenewals,
   deriveSirocTracking,
+  deriveContractTracking,
   mensajeDeSiroc,
   pickCurrentSirocContract
 }

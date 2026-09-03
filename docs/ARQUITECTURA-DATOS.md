@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-83)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-85)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -291,7 +291,10 @@ dos opcionales y ninguno derivado del otro (D-75).
   hay. Es lo ÚNICO que se guarda de todo esto: cuántas faltan, cuándo vence la
   ventana vigente y si urge son `seguimientoSiroc`, derivado al leer (regla #6).
   Van en orden y ninguna puede ser anterior a `fechaRegistro`; una fecha suelta
-  hacia atrás correría la ventana y el contrato callaría avisos que debe dar.
+  hacia atrás correría la ventana y el contrato callaría avisos que debe dar. Y
+  ninguna puede ser **posterior a `fechaFin`**, que es el techo del cálculo
+  (D-84): pasada esa fecha el contrato no acumula refrendos, y lo que le falta
+  —que alguien lo cierre— se dice en `seguimientoContrato`, también derivado.
 - **El aviso y cada refrendo llevan su propio archivo** (D-80): `siroc.archivo`
   es el aviso escaneado y `siroc.actualizaciones[].archivo` el acuse de esa
   renovación, los dos con el `attachmentSchema` de D-79 y los dos opcionales. Son
@@ -413,6 +416,7 @@ colección: `records.documentos[].tipo` apunta a `DOCUMENT_TYPES` en
 | **Registrar un SIROC**                           | Traba además el `registroObraId`. Quitarlo lo libera                                                            |
 | **Reemplazar el archivo de un registro de obra** | El anterior **se borra de R2** (D-79): no hay versiones a las que volver                                        |
 | **`siroc.actualizaciones`**                      | Mueve la ventana de dos meses y con ella todo `seguimientoSiroc`: quitar una hace reaparecer el aviso (D-76)    |
+| **`contracts.fechaFin`**                         | Es el techo del SIROC (D-84): moverla recalcula al leer cuántos refrendos pide, y decide `seguimientoContrato`  |
 | **Quitar el SIROC o su última renovación**       | Sus archivos **se borran de R2** (D-80): el del aviso y el acuse de cada refrendo. No hay versiones             |
 | **Reemplazar el archivo de un contrato**         | El anterior **se borra de R2** (D-81): uno solo, sin versiones. El tope de subida son 30 MB, salvo la nómina    |
 | **`affiliations.registroPatronalId`**            | El aviso de coherencia al asignar y en el listado (D-71). Manda sobre el texto; no bloquea nada                 |

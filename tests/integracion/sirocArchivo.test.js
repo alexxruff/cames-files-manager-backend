@@ -42,7 +42,11 @@ const HEIC = Buffer.concat([
 
 async function escenario(datos = {}) {
   const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin', ...datos })
-  const { proyecto, categoria } = await crearProyecto(sesion.empresa)
+  const { proyecto, categoria } = await crearProyecto(sesion.empresa, {
+    // Ancho: los contratos de estas pruebas caben dentro (D-85).
+    fechaInicio: '2026-01-01',
+    fechaFinEstimada: '2027-12-31'
+  })
   return { ...sesion, proyecto, categoria }
 }
 
@@ -154,10 +158,10 @@ describe('El archivo del SIROC', () => {
       const correccion = await request(app)
         .put(`${CONTRATOS}/${contrato._id}/siroc`)
         .set(auth(e.token))
-        .send({ numero, fechaRegistro: '2026-01-09' })
+        .send({ numero, fechaRegistro: '2026-01-08' })
 
       expect(correccion.status).toBe(200)
-      expect(correccion.body.data.contrato.siroc.fechaRegistro).toBe('2026-01-09')
+      expect(correccion.body.data.contrato.siroc.fechaRegistro).toBe('2026-01-08')
       expect(correccion.body.data.contrato.siroc.archivo).toMatchObject({
         nombre: 'aviso.pdf'
       })

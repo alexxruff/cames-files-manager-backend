@@ -109,6 +109,110 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
+### 2026-09-03 01:29:58 · backend · Los tres rangos de fechas de Urbacames, con la #28
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 3 sept 00:43:58.
+
+**Hecho, dentro de la #28 como pidió el usuario.** Tres `400` nuevos, todos con
+el rango en `message`, y la aritmética del refrendo es la que dijeron —
+`addMonths(base, 1)` recortado a fin de mes, más 25 días; comprobado que 1 ene →
+26 feb y 31 ene → 25 mar—. El SIROC va entre `fechaInicio` y siete días después,
+bordes incluidos; el contrato entre `proyecto.fechaInicio` y
+`fechaFinReal ?? fechaFinEstimada`, bordes incluidos.
+
+**Lo que decidí de mi lado, y conviene que sepan:** se comprueba **en el
+servicio y sólo sobre lo que entra**, nunca sobre lo ya capturado. Una
+invariante en el esquema habría reprobado cualquier contrato viejo al cambiarle
+el nombre. Por eso `fechaRegistro` sólo se revisa **si cambia** —corregir el
+número de un SIROC viejo pasa— y en el `PATCH` sólo se revisan **las fechas que
+vienen**. Sin migración.
+
+**De rebote, la #19 de `ESTADO.md` casi se cierra:** con siete días de holgura
+la predicción desde `fechaInicio` y el vencimiento desde `fechaRegistro` ya no
+pueden separarse.
+
+Detalle en `plan/handoff/28.md` § «Los tres rangos» y D-85. **Siguen 87 rutas.**
+
+**Qué necesita el front**: nada. Sus calendarios ya acotan lo mismo; el `400` es
+la red para lo que entre por API.
+
+### 2026-09-03 00:26:33 · backend · Corregido el bug de la #28: el techo corta la cuenta, no la borra
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 3 sept 00:16:27 (el bug) y
+00:01:11 (la #27 consumiendo la #28).
+
+**Tenían razón, y la corrección es la que propusieron.** La rama de «pasado de
+fecha» respondía `no_requiere` sin mirar cuántas ventanas faltaban hasta
+`fechaFin`, así que deshacer un refrendo en un contrato terminado lo hacía
+desaparecer. Ahora esa rama mira la cuenta primero: si queda deuda de cuando el
+contrato seguía en curso, responde **`vencida` con esos pendientes** —cortados en
+`fechaFin`, ni uno más aunque pasen años—, `requiereActualizacion: true` y un
+mensaje propio que dice que se capture con la fecha de entonces. Sólo con la
+cuenta en cero queda el `no_requiere` de antes. Su caso (01 ene–30 may, refrendo
+del 02 ene, hoy 3 sep) responde `vencida` con 2 pendientes.
+
+**Lo que no cambió:** el `400` del `POST` sigue igual —el refrendo que se debe es
+de dentro del contrato y va con fecha de entonces, que su diálogo ya acota—, y
+`seguimientoContrato` sigue diciendo `terminado_sin_cerrar` al lado. Los dos se
+pintan a la vez, como ya lo tienen.
+
+**Un detalle más que salió de lo mismo:** un contrato **sin SIROC** pasado de
+fecha vuelve a decir los pendientes que sus fechas preveían, no `0` — la
+predicción ya terminaba en `fechaFin`, así que ahí el techo no borra nada.
+
+Detalle en `plan/handoff/28.md` (aviso al inicio y la sección «Lo que cambió»),
+`ENDPOINTS-PROYECTOS.md` §4.1 con el `jsonc` del caso, y D-84 corregida.
+
+**Qué necesita el front**: nada nuevo. Vuelvan a probar el caso del bug; la #27
+puede validarse con esto.
+
+### 2026-09-02 23:35:32 · backend · El SIROC deja de pedir refrendos pasada la fecha de fin
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 2 sept 14:40:00.
+
+**Tarea #28, y es un cambio de comportamiento en algo que ya pintan.** Un
+contrato que pasó su `fechaFin` y que nadie finalizó pedía una actualización del
+SIROC **cada dos meses, para siempre**. Como nadie corre a cerrar papeles, toda
+obra terminada se quedaba en rojo, y quien quería apagarlo capturaba refrendos
+que el IMSS nunca pidió — justo la serie de acuses que se enseña en una revisión.
+Urbacames contestó: **la fecha de fin del contrato es el techo del cálculo**.
+
+**Qué cambia en la respuesta.** `seguimientoSiroc` no estrena campos ni valores
+de enum: ese contrato pasa de `vencida` a `no_requiere`, con
+`actualizacionesPendientes: 0`, `requiereActualizacion: false` y
+`diasParaActualizacion: null`. **Un contrato dentro de sus fechas no cambia en
+nada.**
+
+**Y estrena bloque: `seguimientoContrato`**, en todo contrato. Ahí va el aviso que
+antes daba el SIROC, pero por lo que es: `estado: 'terminado_sin_cerrar'`,
+`requiereCierre: true` y un mensaje que dice qué hacer. Ese contrato **no queda
+en verde**, sólo deja de pedir un trámite que nadie debe. Para pintar el aviso
+basta `requiereCierre`.
+
+**Dos trampas.** `actualizacionesPendientes` **ya no es `requeridas −
+registradas`**: se cuenta desde donde llega el aviso vigente, así que editar las
+fechas recalcula solo y contando los refrendos que ya hay — el `PATCH` devuelve
+los dos bloques listos. Y al recortar la fecha puede quedar `registradas: 2` con
+`requeridas: 0`: **no es un error de captura**, esos avisos se presentaron de
+verdad, y así conviene decirlo.
+
+**Un `400` nuevo** en `POST /contratos/:id/siroc/actualizaciones` cuando la
+fecha es posterior a `fechaFin`. Se mira contra la fecha que mandan, no contra
+hoy: capturar tarde un refrendo que sí cayó dentro del contrato sigue entrando.
+Ante ese error, ofrezcan finalizar o editar `fechaFin`, no reintentar.
+
+En el expediente, `obras[].seguimientoSiroc` se apaga con la misma regla — era
+una alarma equivocada en la ficha de una persona. **`GET /alertas` no se tocó**:
+el SIROC nunca estuvo ahí.
+
+Detalle completo en `plan/handoff/28.md` y en `ENDPOINTS-PROYECTOS.md` §4.1; el
+porqué, en D-84. Sin migración: todo se deriva al leer, así que los contratos que
+hoy están en rojo se apagan solos al desplegar. **Siguen 87 rutas en pie.**
+
+**Qué necesita el front**: pintar `seguimientoContrato.requiereCierre` donde hoy
+pintan el rojo del SIROC, y dejar de leer «faltan N» como la resta. Nada bloquea:
+si no tocan nada, el rojo falso desaparece igual y el bloque nuevo se ignora.
+
 ### 2026-09-02 20:51:33 · backend · Los archivos ya no pasan por el servidor
 
 **Leído de ustedes**: `HANDOFF-FRONTEND.md` del 2 sept 14:40:00.

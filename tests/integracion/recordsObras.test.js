@@ -204,6 +204,60 @@ describe('El SIROC de su obra, en el expediente', () => {
     })
   })
 
+  /*
+   * D-84: el expediente es el otro sitio que avisaba de «SIROC vencido» por una
+   * obra que ya terminó y nadie cerró. Como el bloque se deriva al leer, se
+   * apagó con la misma regla, pero se fija aquí: era una alarma equivocada en la
+   * ficha de una persona.
+   */
+  describe('una obra terminada y sin cerrar (D-84)', () => {
+    it('con el aviso cubriéndola hasta el fin, ya no dice que su SIROC venció', async () => {
+      const e = await escenario()
+      await crearContrato(e.proyecto, {
+        fechaInicio: '2020-01-01',
+        fechaFin: '2020-02-15',
+        // Nadie la finalizó: la obra se acabó y los papeles se quedaron abiertos.
+        estado: 'en_curso',
+        siroc: { numero: 'SIR-ABIERTO', fechaRegistro: '2020-01-01' }
+      })
+      await asignar(e.proyecto, e.persona, e.categoria._id)
+
+      const res = await e.expediente()
+
+      const obra = res.body.data.obras[0]
+      expect(obra.vigente).toBe(false)
+      expect(obra.seguimientoSiroc).toMatchObject({
+        estado: 'no_requiere',
+        requiereActualizacion: false,
+        actualizacionesPendientes: 0
+      })
+      expect(obra.seguimientoSiroc.mensaje).toBe(
+        'El contrato terminó el 2020-02-15: su SIROC ya no requiere actualizaciones.'
+      )
+    })
+
+    it('lo que debía antes de terminar lo sigue debiendo, y la cuenta se corta en su fecha de fin', async () => {
+      const e = await escenario()
+      await crearContrato(e.proyecto, {
+        fechaInicio: '2020-01-01',
+        fechaFin: '2021-01-01',
+        estado: 'en_curso',
+        siroc: { numero: 'SIR-CON-DEUDA', fechaRegistro: '2020-01-01' }
+      })
+      await asignar(e.proyecto, e.persona, e.categoria._id)
+
+      const res = await e.expediente()
+
+      // Un año con el aviso del día 1 y ningún refrendo: cinco, y ni uno más
+      // aunque hayan pasado años desde entonces.
+      expect(res.body.data.obras[0].seguimientoSiroc).toMatchObject({
+        estado: 'vencida',
+        actualizacionesRequeridas: 5,
+        actualizacionesPendientes: 5
+      })
+    })
+  })
+
   it('la obra de una empresa que no ve NO aparece, y el expediente sigue respondiendo', async () => {
     const e = await escenario()
     await crearContrato(e.proyecto)

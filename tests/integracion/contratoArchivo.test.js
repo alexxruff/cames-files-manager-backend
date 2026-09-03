@@ -44,7 +44,11 @@ const HEIC = Buffer.concat([
 
 async function escenario(datos = {}) {
   const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin', ...datos })
-  const { proyecto, categoria } = await crearProyecto(sesion.empresa)
+  const { proyecto, categoria } = await crearProyecto(sesion.empresa, {
+    // Ancho: los contratos de estas pruebas caben dentro (D-85).
+    fechaInicio: '2026-01-01',
+    fechaFinEstimada: '2027-12-31'
+  })
   return { ...sesion, proyecto, categoria }
 }
 

@@ -600,6 +600,7 @@ interface Contrato {
   estado: 'en_curso' | 'finalizado'
   activo: boolean // la BAJA, que no es lo mismo que `estado`
   seguimientoSiroc: SeguimientoSiroc // derivado al leer; SIEMPRE viene, ver §4.1
+  seguimientoContrato: SeguimientoContrato // derivado al leer; SIEMPRE viene, ver §4.1
   createdAt: string
   updatedAt: string
 }
@@ -670,13 +671,21 @@ Ojo con la asimetría: **el alta IGNORA los campos de más en silencio** —mand
 `monto` o `clienteId` devuelve `201` y un contrato sin ellos—, mientras que
 `PATCH /contratos/:id` sí los rechaza con `400`. Verificado contra el servidor.
 
-| Código | Cuándo                                                  |
-| ------ | ------------------------------------------------------- |
-| `400`  | El proyecto está **finalizado**                         |
-| `400`  | Falta `fechaInicio` o `fechaFin`, o no son `AAAA-MM-DD` |
-| `400`  | `fechaFin` anterior a `fechaInicio` (`path: fechaFin`)  |
-| `400`  | `nombre` o `fase` de más de 120 caracteres              |
-| `404`  | Proyecto inexistente o ajeno                            |
+| Código | Cuándo                                                                                           |
+| ------ | ------------------------------------------------------------------------------------------------ |
+| `400`  | El proyecto está **finalizado**                                                                  |
+| `400`  | Falta `fechaInicio` o `fechaFin`, o no son `AAAA-MM-DD`                                          |
+| `400`  | `fechaFin` anterior a `fechaInicio` (`path: fechaFin`)                                           |
+| `400`  | `fechaInicio` antes del inicio del proyecto, o `fechaFin` después de su fin (D-85, en `message`) |
+| `400`  | `nombre` o `fase` de más de 120 caracteres                                                       |
+| `404`  | Proyecto inexistente o ajeno                                                                     |
+
+**Las fechas del contrato caben en las del proyecto** (D-85): de
+`proyecto.fechaInicio` a `fechaFinReal ?? fechaFinEstimada`, bordes incluidos.
+Los dos `400` traen la fecha del proyecto que acota, en `message`:
+
+- `La fecha de inicio del contrato no puede ser anterior al inicio del proyecto (2026-09-01)`
+- `La fecha de fin del contrato no puede ser posterior al fin del proyecto (2027-03-01)`
 
 ### `PATCH /contratos/:id`
 
@@ -698,6 +707,10 @@ capturado (§4.3).
 
 Para **borrar** el nombre o la fase, manda `""` o `null`: los dos vuelven el campo
 a `null`. Mandar sólo uno de ellos no toca el otro ni las fechas.
+
+Las fechas se revisan contra las del proyecto igual que en el alta (D-85), **pero
+sólo las que vienen**: mover `fechaFin` no reprueba una `fechaInicio` vieja que
+quedó fuera de rango antes de la regla. Lo ya capturado no se toca.
 
 ### `PUT /contratos/:id/siroc`
 
@@ -749,6 +762,13 @@ Muestra el nombre; no armes un enlace que vaya a dar `404`.
 `400` si `fechaRegistro` no viene o no es `AAAA-MM-DD`, y también si quedara
 **después** de una actualización ya registrada.
 
+**`fechaRegistro` va pegada al inicio del contrato** (D-85): entre
+`contrato.fechaInicio` y siete días después, los dos incluidos — el aviso se
+presenta al arrancar. Fuera de ahí, `400` con el rango en `message`:
+`La fecha de registro del SIROC debe estar entre el 2026-09-01 y el 2026-09-08:
+el aviso se presenta al arrancar el contrato`. Se revisa **sólo si la fecha
+cambia**: corregir el número de un SIROC viejo reenvía su misma fecha y pasa.
+
 ### `DELETE /contratos/:id/siroc`
 
 Lo quita y **libera el número** para poder registrarlo en el contrato correcto.
@@ -777,7 +797,7 @@ interface SeguimientoSiroc {
   periodoMeses: 2
   actualizacionesRequeridas: number // predichas desde fechaInicio/fechaFin
   actualizacionesRegistradas: number // el contador de SIROC actualizados
-  actualizacionesPendientes: number // requeridas − registradas, nunca negativo
+  actualizacionesPendientes: number // las que faltan DE VERDAD; ojo, no es la resta
   ultimaActualizacion: string | null // 'YYYY-MM-DD'
   vigenciaPeriodoHasta: string | null // cuándo cumple los 2 meses; null sin SIROC
   diasParaActualizacion: number | null // negativo si ya pasó; null sin SIROC
@@ -787,37 +807,130 @@ interface SeguimientoSiroc {
 }
 ```
 
-| `estado`      | Cuándo                                                               | Qué pintar                 |
-| ------------- | -------------------------------------------------------------------- | -------------------------- |
-| `sin_siroc`   | El contrato todavía no tiene SIROC                                   | Nada urgente               |
-| `no_requiere` | Contrato finalizado o dado de baja, o la ventana cubre su `fechaFin` | Nada                       |
-| `al_dia`      | Faltan más de 5 días (umbral del servidor, configurable)             | Verde, con la fecha        |
-| `por_vencer`  | Faltan 5 días o menos; el día justo entra aquí, no en `vencida`      | Aviso, sin bloquear        |
-| `vencida`     | Ya pasaron los dos meses y el contrato **sigue en curso**            | Alerta: hay que actualizar |
+| `estado`      | Cuándo                                                                                     | Qué pintar                 |
+| ------------- | ------------------------------------------------------------------------------------------ | -------------------------- |
+| `sin_siroc`   | El contrato todavía no tiene SIROC                                                         | Nada urgente               |
+| `no_requiere` | Finalizado, dado de baja, **pasado de su `fechaFin` sin deuda**, o la ventana cubre el fin | Nada del SIROC             |
+| `al_dia`      | Faltan más de 5 días (umbral del servidor, configurable)                                   | Verde, con la fecha        |
+| `por_vencer`  | Faltan 5 días o menos; el día justo entra aquí, no en `vencida`                            | Aviso, sin bloquear        |
+| `vencida`     | Pasaron los dos meses, dentro de sus fechas **o con deuda de entonces**                    | Alerta: hay que actualizar |
 
 **`requiereActualizacion` es `true` sólo con `vencida`.** `por_vencer` avisa con
 anticipación, pero todavía no se debe nada — si el semáforo usa el booleano y el
 texto usa `estado`, van a decir cosas distintas a propósito.
 
-Los dos cálculos que conviene no repetir en el front:
+### La `fechaFin` del contrato es el techo (D-84) — **cambió**
 
-- **Cuántas pide el contrato** son las ventanas de dos meses que hacen falta para
-  cubrir `fechaInicio → fechaFin`, **menos la primera**, que ya la cubre el SIROC
-  original. Un contrato de dos meses justos pide **cero**; uno de seis, **dos**.
-  Sale desde el alta, antes de que exista el SIROC.
+**Un contrato que pasó su `fechaFin` ya no acumula actualizaciones nuevas.** Antes
+pedía una cada dos meses, para siempre, y toda obra terminada que nadie cerró se
+quedaba en rojo. Ahora la cuenta **se corta en `fechaFin`** y, si no queda nada
+por cubrir, cae en `no_requiere` con:
+
+```jsonc
+{
+  "estado": "no_requiere",
+  "actualizacionesPendientes": 0,
+  "requiereActualizacion": false,
+  "diasParaActualizacion": null, // ya no hay una cuenta atrás que pintar
+  "vigenciaPeriodoHasta": "2026-07-01", // hasta dónde llegó el aviso: eso SÍ viene
+  "mensaje": "El contrato terminó el 2026-05-02: su SIROC ya no requiere actualizaciones."
+}
+```
+
+**Pero el techo corta la cuenta, no la borra.** Si el aviso dejó de cubrir antes
+de que el contrato terminara, lo que se debía entonces **se sigue debiendo**:
+responde `vencida` con los pendientes que faltaron hasta `fechaFin` —ni uno más,
+por mucho que pase el tiempo— y este mensaje:
+
+```jsonc
+{
+  "estado": "vencida",
+  "actualizacionesPendientes": 2, // del 2 de marzo al 30 de mayo, y ahí se corta
+  "requiereActualizacion": true,
+  "diasParaActualizacion": -185,
+  "mensaje": "El SIROC requiere actualización desde el 2026-03-02: venció hace 185 días, con el contrato todavía en curso. Regístrala con la fecha en que se presentó, a más tardar el 2026-05-30."
+}
+```
+
+Ese refrendo **se captura con la fecha de entonces**: el `POST` sin `fecha` asume
+hoy y lo rechaza con el `400` de abajo. Al presentarlo, si su fecha más dos meses
+rebasa `fechaFin`, la cuenta da `0` y el contrato queda en `no_requiere` solo.
+Deshacer el último refrendo de un contrato ya terminado **vuelve a pedirlo**, por
+la misma cuenta.
+
+**El día justo de `fechaFin` todavía cuenta como dentro.** Y **un contrato dentro
+de sus fechas no cambia en nada**: si su aviso cumplió los dos meses y la obra
+sigue, hay que refrendarlo aunque ya tenga capturados todos los que sus fechas
+preveían.
+
+Ese contrato **no queda en verde**: lo que le falta es que alguien lo cierre o
+corrija sus fechas, y eso viene aparte, en `seguimientoContrato` (abajo). Es de
+ahí de donde sale el aviso ahora, no del SIROC.
+
+Los cuatro cálculos que conviene no repetir en el front:
+
+- **`actualizacionesRequeridas`** son las ventanas de dos meses que hacen falta
+  para cubrir `fechaInicio → fechaFin`, **menos la primera**, que ya la cubre el
+  SIROC original. Un contrato de dos meses justos pide **cero**; uno de seis,
+  **dos**. Es la **predicción del plan**, y sale desde el alta, antes de que
+  exista el SIROC.
+- **`actualizacionesPendientes` NO es `requeridas − registradas`.** Son las
+  ventanas que faltan **de `vigenciaPeriodoHasta` a `fechaFin`**: se cuentan desde
+  donde llega el aviso vigente, que ya incorpora cada refrendo presentado. Si
+  pintas «faltan N», usa este campo y **nunca la resta**.
 - **La ventana vigente corre desde la última actualización**, o desde
   `fechaRegistro` si no hay ninguna. **No desde el inicio del contrato**: un SIROC
   tramitado tarde vence tarde.
+- **El techo es `fechaFin`**, lo cierre alguien o no.
 
-Y un tercero, que es el que hace falta pintar bien: **«la ventana cubre su
-`fechaFin`» sólo aplica mientras el contrato siga dentro de sus fechas.** Un
-contrato que ya pasó su `fechaFin` y que nadie finalizó **sigue en curso** —para
-el IMSS la obra sigue abierta—, así que su aviso vence igual y pasa a
-`por_vencer` y luego a `vencida` como cualquier otro. En ese caso
-`actualizacionesRequeridas` puede valer `0` —sus fechas no preveían ninguna—
-mientras `actualizacionesPendientes` vale `1`: la predicción es del contrato, la
-deuda es del calendario. Si pintas «faltan N», usa `actualizacionesPendientes`,
-no la resta.
+**`no_requiere` ya nunca viene con pendientes.** Un contrato finalizado o dado de
+baja decía «no requiere» y «2 pendientes» a la vez; ahora las tres razones de
+`no_requiere` responden `0`.
+
+**Al editar las fechas del contrato, el bloque se recalcula solo** —se deriva al
+leer— y **contando los refrendos que ya hay**. No hace falta pedir nada extra ni
+arreglar nada a mano; basta con repintar lo que devuelve el `PATCH`:
+
+| Se edita `fechaFin`   | Qué responde                                                   |
+| --------------------- | -------------------------------------------------------------- |
+| Se aplaza             | Vuelve a pedir **desde donde va el aviso**, no desde cero      |
+| Se recorta            | Deja de pedir lo que los refrendos ya alcanzan a cubrir        |
+| Se recorta por debajo | `0` pendientes, sin negativos y **sin borrar ningún refrendo** |
+
+En ese último caso van a ver `actualizacionesRegistradas: 2` con
+`actualizacionesRequeridas: 0`. **No lo pinten como una falta ni como un error de
+captura**: esos avisos se presentaron de verdad ante el IMSS. Son dos cosas
+distintas —lo que hay y lo que las fechas preveían— y así conviene decirlas.
+
+### `seguimientoContrato` — el cabo suelto, por su nombre (D-84) — **nuevo**
+
+Todo `Contrato` lo trae, siempre, derivado al leer igual que el otro:
+
+```ts
+interface SeguimientoContrato {
+  estado: 'por_iniciar' | 'en_curso' | 'terminado_sin_cerrar' | 'finalizado' | 'baja'
+  diasDesdeFin: number | null // días desde `fechaFin`; null si todavía no pasa
+  requiereCierre: boolean // true SÓLO en 'terminado_sin_cerrar'
+  mensaje: string // en español, listo para pintar tal cual
+}
+```
+
+| `estado`               | Cuándo                                                  | Qué pintar                        |
+| ---------------------- | ------------------------------------------------------- | --------------------------------- |
+| `por_iniciar`          | `fechaInicio` todavía no llega                          | Nada                              |
+| `en_curso`             | Hoy cae entre sus fechas, el día de `fechaFin` incluido | Nada                              |
+| `terminado_sin_cerrar` | Pasó su `fechaFin` y nadie lo finalizó                  | **Aviso**: hay que cerrarlo       |
+| `finalizado`           | `estado: 'finalizado'`                                  | Nada                              |
+| `baja`                 | `activo: false`                                         | Nada; ya se sabe que está de baja |
+
+**Para decidir si se pinta el aviso basta `requiereCierre`.** Es `true` exactamente
+en `terminado_sin_cerrar`, y su `mensaje` ya dice qué hacer: «Este contrato
+terminó el 2026-05-02 hace 61 días y sigue abierto: finalízalo, o corrige su
+fecha de fin si la obra sigue.». `diasDesdeFin` viene también en `finalizado` y en
+`baja` —es un hecho—, así que **no lo usen como señal**: úsenlo sólo para el texto.
+
+`baja` manda sobre las fechas: un contrato capturado por error no es uno que haya
+que cerrar.
 
 ### `POST /contratos/:id/siroc/actualizaciones` → `201`
 
@@ -831,18 +944,33 @@ Registra que el SIROC se refrendó. **Los dos campos son opcionales:**
 // data: { "contrato": { … } }   // con seguimientoSiroc ya recalculado
 ```
 
+**Un refrendo espera un mes y 25 días desde el movimiento anterior** (D-85): el
+registro del aviso o la última actualización, con la aritmética de la vigencia
+—mismo día del mes siguiente, recortado a fin de mes— más 25 días. 1 ene → 26
+feb; 31 ene → 28 feb → 25 mar. Es cinco días antes de que venza, cuando ya
+marcan `por_vencer`. Se mira sólo sobre el que entra: los ya capturados no se
+tocan.
+
+**El techo se mira contra la `fecha` que mandas, no contra hoy** (D-84): capturar
+tarde un refrendo que sí se tramitó dentro del contrato **sigue funcionando** —el
+papel llega después—, y lo que se rechaza es colgarle uno posterior a su fin. Si
+les sale ese `400`, lo que toca ofrecer es finalizar el contrato o editar su
+`fechaFin`, no reintentar.
+
 **No mandes `numero`**: actualizar el SIROC conserva el mismo, y el `400` lo dice.
 `fechaRegistro` tampoco: va por `PUT /contratos/:id/siroc`. Y `vigenciaHasta` no
 existe en ninguna de las dos: la vigencia se deriva.
 
-| Código | Cuándo                                                     | `message`                                                            |
-| ------ | ---------------------------------------------------------- | -------------------------------------------------------------------- |
-| `400`  | El contrato no tiene SIROC                                 | `Ese contrato no tiene SIROC registrado`                             |
-| `400`  | Contrato finalizado o dado de baja                         | `El contrato ya no está en curso: su SIROC no necesita actualizarse` |
-| `400`  | `fecha` futura                                             | `La actualización del SIROC no puede tener fecha futura`             |
-| `400`  | `fecha` anterior al registro o a la actualización anterior | `La actualización no puede ser anterior al registro del SIROC (…)`   |
-| `400`  | Campos que no van aquí (`numero`, `fechaRegistro`…)        | Lista los campos y dice por dónde va cada uno (en `errors[0].msg`)   |
-| `404`  | Contrato inexistente o de otra empresa                     | `El contrato no existe`                                              |
+| Código | Cuándo                                                           | `message`                                                                                                                                       |
+| ------ | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `400`  | El contrato no tiene SIROC                                       | `Ese contrato no tiene SIROC registrado`                                                                                                        |
+| `400`  | Contrato finalizado o dado de baja                               | `El contrato ya no está en curso: su SIROC no necesita actualizarse`                                                                            |
+| `400`  | `fecha` futura                                                   | `La actualización del SIROC no puede tener fecha futura`                                                                                        |
+| `400`  | `fecha` anterior al registro o a la actualización anterior       | `La actualización no puede ser anterior al registro del SIROC (…)`                                                                              |
+| `400`  | `fecha` antes de un mes y 25 días del movimiento anterior (D-85) | `El SIROC se registró el AAAA-MM-DD: la siguiente actualización no puede fecharse antes del AAAA-MM-DD` (o «se actualizó el»)                   |
+| `400`  | `fecha` posterior a `fechaFin` del contrato (D-84)               | `El contrato terminó el AAAA-MM-DD y su SIROC ya no requiere actualizaciones: finaliza el contrato, o corrige su fecha de fin si la obra sigue` |
+| `400`  | Campos que no van aquí (`numero`, `fechaRegistro`…)              | Lista los campos y dice por dónde va cada uno (en `errors[0].msg`)                                                                              |
+| `404`  | Contrato inexistente o de otra empresa                           | `El contrato no existe`                                                                                                                         |
 
 Ojo: los `400` de negocio traen el texto en **`message`**; sólo los de validación
 de campos traen `errors[0].msg`. Es la misma convención del resto del recurso.

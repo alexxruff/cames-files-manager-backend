@@ -138,6 +138,17 @@ trae**.
 pantalla del contrato: es el mismo objeto y el mismo semáforo, no hay nada que
 recalcular.
 
+**Ojo, cambió (D-84):** una obra que ya pasó su `fechaFin` y que nadie finalizó
+**deja de acumular refrendos aquí**. Si su aviso la cubrió hasta el fin, responde
+`no_requiere` con «El contrato terminó el AAAA-MM-DD: su SIROC ya no requiere
+actualizaciones.» — era una alarma equivocada en la ficha de una persona. Si el
+aviso dejó de cubrirla **antes** de terminar, sigue `vencida`, pero con los
+pendientes cortados en `fechaFin`: la deuda de entonces no se borra, y tampoco
+crece. Este renglón **no trae**
+`seguimientoContrato`: aquí se consulta bajo qué aviso trabajó alguien, no si hay
+que cerrar el contrato; para eso está la pantalla del proyecto. `vigente: false`
+ya dice que la obra pasó.
+
 **`vigente`** dice si ese aviso cubre hoy (`true`) o si es **el último que estuvo
 activo** en una obra que ya pasó (`false`). No lo deduzcan de las fechas: la
 regla de cuál de las fases manda vive en el servidor y puede afinarse.

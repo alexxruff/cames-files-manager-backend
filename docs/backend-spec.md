@@ -795,6 +795,13 @@ lleva, cuándo cumple los dos meses y si ya urge—, **derivado en cada lectura*
 como el resto de los estados de esta plataforma. La forma exacta está en
 [`CONTRATO-API.md`](./CONTRATO-API.md) § «El SIROC se actualiza cada dos meses».
 
+**La `fechaFin` del contrato es el techo de ese cálculo** (D-84): pasada esa
+fecha el SIROC no acumula refrendos nuevos —lo que debía antes de terminar lo
+sigue debiendo, cortado en esa fecha— y registrar uno posterior responde `400`. Lo que
+le falta a un contrato así no es un trámite ante el IMSS, es que alguien lo cierre
+—o corrija sus fechas—, y eso se dice aparte en `seguimientoContrato`, que viaja
+con todo contrato y trae `requiereCierre`.
+
 **Qué le traba cada contrato al proyecto:**
 
 | Campo del proyecto | Se bloquea cuando |
