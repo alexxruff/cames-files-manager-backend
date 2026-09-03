@@ -31,13 +31,33 @@ const { detectarTipo, mensajeTipoNoPermitido } = require('../utils/fileTypes')
 const BYTES_DE_FIRMA = 4096
 
 /**
+ * Qué tipos admite el destino, cuando no son todos.
+ *
+ * Los adjuntos administrativos aceptan todo lo de D-78 —PDF, imágenes y
+ * Office—, pero la foto de una máquina (D-86) es para verla: un PDF ahí no es
+ * un adjunto raro, es un error. `soloImagenes` lo rechaza con 415 **después** de
+ * reconocer el tipo, así que el mensaje distingue «no sé qué es esto» de «sé
+ * que es un PDF y aquí no va».
+ */
+function comprobarClase(tipoReal, { soloImagenes = false } = {}) {
+  if (soloImagenes && !tipoReal.mime.startsWith('image/')) {
+    throw new AppError(
+      415,
+      `La imagen debe ser JPG, PNG o WEBP; llegó un ${tipoReal.etiqueta}`
+    )
+  }
+}
+
+/**
  * El archivo que llegó por `multipart`, con el buffer en la mano.
  *
  * @param {{buffer: Buffer, nombreOriginal?: string}} archivo
+ * @param {object} [esperado] `{ soloImagenes }`
  */
-function desdeBuffer(archivo) {
+function desdeBuffer(archivo, esperado = {}) {
   const tipoReal = detectarTipo(archivo.buffer, archivo.nombreOriginal)
   if (!tipoReal) throw new AppError(415, mensajeTipoNoPermitido(archivo.buffer))
+  comprobarClase(tipoReal, esperado)
 
   return {
     origen: 'multipart',
@@ -64,9 +84,10 @@ function desdeBuffer(archivo) {
  * de un tipo permitido. Cualquiera de esas cosas falla y no se registra nada.
  *
  * @param {string} subidaId
- * @param {object} esperado `{ destino, referencia }` — de dónde se está llamando
+ * @param {object} esperado `{ destino, referencia, soloImagenes }` — de dónde se
+ *   está llamando y qué admite
  */
-async function desdeSubida(subidaId, { destino, referencia = {} } = {}) {
+async function desdeSubida(subidaId, { destino, referencia = {}, soloImagenes } = {}) {
   const subida = await Upload.findById(subidaId).catch(() => null)
   if (!subida || subida.destino !== destino || !coincide(subida.referencia, referencia)) {
     /*
@@ -92,9 +113,10 @@ async function desdeSubida(subidaId, { destino, referencia = {} } = {}) {
 
   const cabecera = await storage.cabecera(subida.claveTemporal)
   if (!cabecera) {
-    throw AppError.validation('El archivo no llegó al almacenamiento. Vuelve a subirlo.', [
-      { msg: 'No hay archivo que registrar', path: 'subidaId' }
-    ])
+    throw AppError.validation(
+      'El archivo no llegó al almacenamiento. Vuelve a subirlo.',
+      [{ msg: 'No hay archivo que registrar', path: 'subidaId' }]
+    )
   }
 
   if (cabecera.tamanoBytes > env.MAX_UPLOAD_BYTES) {
@@ -120,11 +142,14 @@ async function desdeSubida(subidaId, { destino, referencia = {} } = {}) {
 
   const firma = await storage.leerRango(subida.claveTemporal, BYTES_DE_FIRMA)
   const tipoReal = detectarTipo(firma, subida.nombre)
-  if (!tipoReal) {
+  try {
+    if (!tipoReal) throw new AppError(415, mensajeTipoNoPermitido(firma))
+    comprobarClase(tipoReal, { soloImagenes })
+  } catch (error) {
     // Lo que no es de un tipo permitido no se queda ahí ocupando sitio.
     await storage.borrar(subida.claveTemporal)
     await Upload.deleteOne({ _id: subida._id })
-    throw new AppError(415, mensajeTipoNoPermitido(firma))
+    throw error
   }
 
   return {
@@ -148,10 +173,10 @@ async function desdeSubida(subidaId, { destino, referencia = {} } = {}) {
  * obligatorio y en otras no.
  *
  * @param {object} datos el cuerpo de la petición ya validado
- * @param {object} esperado `{ destino, referencia }`
+ * @param {object} esperado `{ destino, referencia, soloImagenes }`
  */
 async function resolver(datos = {}, esperado = {}) {
-  if (datos.archivo?.buffer?.length) return desdeBuffer(datos.archivo)
+  if (datos.archivo?.buffer?.length) return desdeBuffer(datos.archivo, esperado)
   if (datos.subidaId) return desdeSubida(datos.subidaId, esperado)
   return null
 }

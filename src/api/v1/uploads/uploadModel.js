@@ -32,7 +32,13 @@ const referenceSchema = new mongoose.Schema(
     contratoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Contract', default: null },
     clienteId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', default: null },
     /** Un subdocumento de `clients.registrosObra`, cuando ya existe. */
-    registroObraId: { type: mongoose.Schema.Types.ObjectId, default: null }
+    registroObraId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    /*
+     * La foto de una máquina (D-86): la empresa cuando la máquina es nueva —el
+     * alta lleva la imagen y la máquina aún no existe—, la máquina al reemplazar.
+     */
+    empresaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null },
+    maquinaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Machine', default: null }
   },
   { _id: false }
 )

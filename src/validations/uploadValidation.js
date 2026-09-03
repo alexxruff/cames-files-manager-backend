@@ -50,6 +50,8 @@ exports.createUploadValidation = [
   idOpcional('referencia.contratoId'),
   idOpcional('referencia.clienteId'),
   idOpcional('referencia.registroObraId'),
+  idOpcional('referencia.empresaId'),
+  idOpcional('referencia.maquinaId'),
   body('referencia.tipoDocumento')
     .optional({ values: 'falsy' })
     .trim()

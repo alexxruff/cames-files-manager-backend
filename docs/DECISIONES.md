@@ -3952,3 +3952,65 @@ para «arreglarlos» reescribiría fechas que alguien capturó a conciencia. As�
 **Qué NO se hizo.** No se movieron las fechas de los proyectos: si un proyecto
 se acorta después, sus contratos no se reprueban solos —lo ya capturado— y nada
 avisa. Si hace falta, es una alerta aparte.
+
+---
+
+## D-86 · La maquinaria es un catálogo por empresa, su imagen es sólo imagen, y la escribe quien gestiona proyectos
+
+**Contexto.** Urbacames pidió (3 sept 2026) un catálogo de **maquinaria y
+equipo de trabajo** por empresa, con la idea de asignar cada máquina a un
+trabajador y que quede en la obra donde él está. La tarea #30 es el catálogo;
+la asignación (#31) y las incidencias (#34) vienen después. Detalle en
+`cames-ops/plan/propuestas/2026-09-03-maquinaria.md`.
+
+**Es por empresa, no del grupo.** Los cuatro catálogos que ya existen —clientes,
+categorías, áreas, empleados— son compartidos porque la persona es global y
+puede estar en dos empresas (D-32). La máquina no: está en el patio de una
+empresa, y el número con el que la conocen sólo tiene sentido dentro de ella. Por
+eso `machines.empresaId` es obligatorio, el listado y el alta cuelgan de
+`/empresas/:id/maquinas`, y el alcance es el de la empresa: fuera de él la
+máquina no existe (404). Ni siquiera hay un `GET /maquinas` global: no hay
+pantalla que lo necesite y sería un listado sin dueño.
+
+**Tres datos y nada más.** `identificador`, `modelo` e `imagen`. Es lo que
+pidieron y es lo que cabe en la primera pantalla; marca, tipo, serie y los
+papeles de la máquina entran después como campos nuevos. Lo que **no** va a
+entrar en esta colección es dónde está o quién la tiene: eso es la asignación
+(#31), que toma la obra de la asignación del trabajador y se resuelve al leer.
+Un `empleadoId` aquí sería un derivado guardado (regla #6).
+
+**El identificador es único dentro de la empresa** y se compara sobre su forma
+normalizada —sin acentos, sin mayúsculas, espacios colapsados— con el mismo
+`normalize` de los nombres. Se guarda además tal como lo tecleó quien la dio de
+alta. Chocar responde `409 MAQUINA_DUPLICADA` con `data.maquina`, la que ya está,
+para que el front pueda abrirla desde el aviso, igual que hace con el proyecto
+duplicado. Entre empresas sí se repite: cada una puede tener su `ECO-12`.
+
+**La imagen es el adjunto de siempre con una restricción nueva.** Reutiliza
+`attachmentSchema`, `attachmentIntake` y las dos formas de subir —`multipart` y
+subida directa, con el destino `maquina` (D-83)—, se reemplaza y no se versiona
+(D-79), y baja con el nombre del dato (`ECO-12.png`, D-78). La diferencia:
+**sólo admite JPG, PNG y WEBP.** Los demás adjuntos aceptan Office y PDF porque
+son papeles; ésta es una foto para reconocer la máquina, y un PDF ahí no es un
+formato raro, es un error. `attachmentIntake` ganó `soloImagenes`, que rechaza
+con 415 **después** de reconocer el tipo —el mensaje dice qué llegó— y, en la
+subida directa, borra el objeto y el permiso como con cualquier tipo no
+permitido.
+
+**Escribe quien gestiona proyectos.** No hay capacidad nueva: la maquinaria es
+de la obra, y quien decide qué obra existe y qué contratos tiene decide también
+qué máquinas hay. `MANAGE_PROJECTS` la tienen `rh_admin` y `jefe_area`;
+`rh_consulta` consulta. Lee cualquiera con sesión y alcance, sin capacidad:
+igual que los contratos.
+
+**Sin paginar.** El catálogo más grande del grupo cabe en una pantalla y la
+pantalla lo quiere entero para buscar en él; se ordena por identificador con
+orden natural (`ECO-2` antes que `ECO-10`). Si alguna empresa pasa de unos
+cientos, se pagina entonces con los mismos `pagina`/`porPagina` de los demás.
+
+**Sin migración.** La colección nace vacía.
+
+**Qué NO se hizo.** No se agregó el conteo de máquinas a los `conteos` de
+`GET /empresas`: nadie lo pidió y la tarjeta de empresa no lo pinta. Y no se
+decidió qué pasa con la máquina cuando el trabajador sale de la obra: es de la
+#31 y está planteado en la propuesta (se libera sola).

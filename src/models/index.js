@@ -27,6 +27,7 @@ const modelos = {
   Project: require('../api/v1/projects/projectModel'),
   Assignment: require('../api/v1/assignments/assignmentModel'),
   Contract: require('../api/v1/contracts/contractModel'),
+  Machine: require('../api/v1/machines/machineModel'),
   ChecklistTemplate: require('../api/v1/checklistTemplates/checklistTemplateModel'),
   Record: require('../api/v1/records/recordModel'),
   AccessLog: require('../api/v1/accessLogs/accessLogModel'),

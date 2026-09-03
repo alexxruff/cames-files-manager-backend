@@ -134,6 +134,12 @@ lista, no dentro.
 | DELETE | `/contratos/:id/siroc/actualizaciones/ultima`              | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Deshace la última actualización, capturada mal; 400 si no hay ninguna (D-76)                                                                                       |
 | POST   | `/contratos/:id/finalizar` · `/contratos/:id/reabrir`      | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Mueven `estado`; no se reabre si el proyecto está finalizado                                                                                                       |
 | PATCH  | `/contratos/:id/estado`                                    | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Mueve `activo` (la baja), que **no es lo mismo** que `estado` (D-70)                                                                                               |
+| GET    | `/empresas/:id/maquinas`                                   | sesión y alcance             | `maquinas[]` · `total`                                                                                                                           | El catálogo de maquinaria de la empresa, por identificador; `?incluirInactivas=true&busqueda=` (D-86)                                                              |
+| POST   | `/empresas/:id/maquinas`                                   | `rh_admin` o `jefe_area`     | `maquina`                                                                                                                                        | `{ identificador, modelo }` + imagen opcional (`multipart` en `archivo` o `subidaId`); **409 `MAQUINA_DUPLICADA`** si el identificador ya está en la empresa       |
+| GET    | `/maquinas/:id`                                            | sesión y alcance             | `maquina`                                                                                                                                        | La ficha, con la URL firmada de su imagen                                                                                                                          |
+| PATCH  | `/maquinas/:id`                                            | `rh_admin` o `jefe_area`     | `maquina`                                                                                                                                        | `identificador`, `modelo` y/o la imagen nueva; **sólo la imagen sin campos** es válido y reemplaza la anterior (D-86)                                              |
+| PATCH  | `/maquinas/:id/estado`                                     | `rh_admin` o `jefe_area`     | `maquina`                                                                                                                                        | `{ activo }` — la baja y la reactivación; 400 si ya estaba así                                                                                                     |
+| GET    | `/maquinas/:id/imagen`                                     | sesión y alcance             | `imagen`                                                                                                                                         | Enlace fresco a la foto; `?descargar=true` fuerza la descarga; 404 si no tiene                                                                                     |
 | GET    | `/expedientes`                                             | ver empleados                | `expedientes[]` + `total` · `pagina` · `porPagina`                                                                                               | Paginado; mismos filtros que `/empleados` **más `estatus`** (D-45)                                                                                                 |
 | GET    | `/empleados/:id/expediente`                                | ver empleados                | `expediente` · `empleado` · `avance` · `obras`                                                                                                   | Crea el expediente si no existía; `data: { expediente, empleado, avance, obras }` (D-77)                                                                           |
 | GET    | `/expedientes/:id`                                         | ver empleados                | `expediente` · `empleado` · `avance` · `obras`                                                                                                   | Lo mismo por id de expediente; 404 si el empleado no es visible                                                                                                    |
@@ -778,6 +784,73 @@ tiene archivo, y **404 —no 403—** si el cliente no está a su alcance.
 | `413`  | El archivo pasa de 30 MB (D-81)                                              |
 | `415`  | El contenido no es de un tipo permitido (se valida el archivo, no el nombre) |
 | `403`  | Adjuntar o reemplazar sin poder administrar clientes                         |
+
+### El catálogo de maquinaria (D-86)
+
+Cada empresa tiene el suyo y **sólo ve el suyo**: `GET /empresas/:id/maquinas`
+responde `404` —no `403`— cuando la empresa no está al alcance de la sesión, y
+lo mismo cualquier ruta de `/maquinas/:id` cuando la máquina es de otra.
+
+```jsonc
+{
+  "_id": "66f…",
+  "empresaId": "66a…",
+  "identificador": "ECO-12", // como lo tecleó quien la dio de alta
+  "modelo": "CAT 320D",
+  "imagen": {
+    // null si no tiene
+    "nombre": "foto patio (1).png", // el original, para mostrar
+    "nombreDescarga": "ECO-12.png", // con el que se guarda al bajarla
+    "mime": "image/png",
+    "tamanoBytes": 184320,
+    "previsualizable": true, // siempre: sólo entran imágenes
+    "subidoPor": "Ana Ruiz",
+    "subidoEn": "2026-09-03T18:22:04.113Z",
+    "url": "https://…" // FIRMADA, caduca a los 10 minutos
+  },
+  "activo": true,
+  "createdAt": "2026-09-03T18:22:04.113Z",
+  "updatedAt": "2026-09-03T18:22:04.113Z"
+}
+```
+
+El listado devuelve `{ maquinas: [...], total }`, **sin paginar** y ordenado por
+identificador con orden natural (`ECO-2` antes que `ECO-10`). Por omisión trae
+sólo las activas; `?incluirInactivas=true` suma las de baja y `?busqueda=` filtra
+por identificador o modelo, sin acentos ni mayúsculas.
+
+**El identificador es único dentro de la empresa**, comparado sin acentos, sin
+mayúsculas y con los espacios colapsados: `eco 12` y `ECO-12` **no** chocan
+(el guión cuenta), pero `Eco 12` y `ECO 12` sí. Chocar responde:
+
+```jsonc
+// 409
+{
+  "status": "error",
+  "message": "Esa empresa ya tiene una máquina con ese identificador",
+  "code": "MAQUINA_DUPLICADA",
+  "errors": [
+    { "msg": "Ya existe una máquina con ese identificador", "path": "identificador" }
+  ],
+  "data": { "maquina": { "_id": "…", "identificador": "ECO-12", "…": "…" } } // la que ya está
+}
+```
+
+**La imagen.** Opcional al dar de alta y se pone o cambia después con el mismo
+`PATCH /maquinas/:id`: `multipart/form-data` con el campo **`archivo`** —solo o
+junto a `identificador` y `modelo`— o `application/json` con `subidaId` (D-83,
+destino `maquina`). Reemplazarla **borra la anterior**: no hay versiones. La
+`url` caduca a los 10 minutos; `GET /maquinas/:id/imagen` devuelve `{ imagen }`
+con una nueva sin recargar el catálogo.
+
+| Código | Cuándo                                                                     |
+| ------ | -------------------------------------------------------------------------- |
+| `400`  | Sin `identificador` o `modelo` en el alta; `PATCH` sin nada que actualizar |
+| `409`  | `MAQUINA_DUPLICADA`                                                        |
+| `413`  | La imagen pasa de 30 MB                                                    |
+| `415`  | La «imagen» no es JPG, PNG ni WEBP — un PDF, un HEIC, un Word              |
+| `403`  | Escribir sin `manageProjects` (`rh_consulta`)                              |
+| `404`  | Empresa o máquina fuera de alcance; `GET …/imagen` de una máquina sin foto |
 
 ### Tipos de archivo aceptados (D-78)
 

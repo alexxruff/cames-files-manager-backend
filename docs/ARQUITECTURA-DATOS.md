@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-85)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-86)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -24,7 +24,7 @@ cambiar cualquier esquema.
 
 ---
 
-## 1. Panorama: 15 colecciones en tres grupos
+## 1. Panorama: 16 colecciones en tres grupos
 
 Lo primero que hay que entender es que **no todas son iguales**. Se comportan
 distinto y se rompen distinto.
@@ -78,6 +78,7 @@ lo dejaría con un puesto o un área ambiguos (D-32).
 | `projects`            | Obras y proyectos                              | `companies`, `clients`                |
 | `assignments`         | Quién está en qué proyecto                     | `projects`, `employees`, `categories` |
 | `contracts`           | **El contrato/fase** de una obra, con su SIROC | `projects`                            |
+| `machines`            | **La maquinaria** de cada empresa (D-86)       | `companies`                           |
 | `checklist_templates` | Qué documentos exige cada perfil               | `companies` (o global), `areas`       |
 | `uploads`             | **Permiso de subida directa**, efímero (D-83)  | `employees` (quien lo pidió)          |
 | `records`             | **El expediente.** Uno por persona             | `employees`, `checklist_templates`    |
@@ -122,6 +123,8 @@ erDiagram
     CATEGORIES ||--o{ ASSIGNMENTS  : "con el puesto"
 
     PROJECTS   ||--o{ CONTRACTS    : "sus contratos (fases)"
+
+    COMPANIES  ||--o{ MACHINES     : "su maquinaria (D-86)"
 
     COMPANIES  ||--o{ REGISTROS_PATRONALES : "embebidos"
     CLIENTS    ||--o{ REGISTROS_OBRA       : "embebidos"
@@ -263,6 +266,32 @@ Lo que hay que saber al tocarla:
 - **Nada la referencia.** Ninguna otra colección guarda un `uploadId`: cuando el
   adjunto queda registrado, lo que se guarda en el recurso es el subdocumento
   `archivo` de siempre, igual que si hubiera llegado por `multipart`.
+
+### `machines` — la maquinaria de cada empresa
+
+El catálogo de **maquinaria y equipo de trabajo** (D-86). A diferencia de los
+cuatro catálogos de la sección 1, **es por empresa, no del grupo**: la
+excavadora de Maquinaria CAMES no está en el patio de Urbanizadora, y el número
+con el que cada empresa conoce a sus máquinas —económico, placa o serie— sólo
+tiene sentido dentro de ella. Por eso `empresaId` es obligatorio y el alcance
+es el de la empresa: fuera de él, la máquina no existe (404).
+
+Tres datos y nada más, a propósito: `identificador`, `modelo` e `imagen`.
+
+- **`identificador` es único dentro de la empresa**, sobre su forma normalizada
+  (`identificadorNormalizado`, sin acentos ni mayúsculas, `select: false`): dos
+  empresas pueden tener cada una su `ECO-12`. Chocar responde `409
+MAQUINA_DUPLICADA` con la que ya está.
+- **`imagen` es el `attachmentSchema`** de siempre —una sola, reemplazable, sin
+  versiones (D-79)— con una restricción que los demás adjuntos no tienen: **sólo
+  admite imágenes**. Un PDF ahí no es un papel raro, es un error, y responde 415. Entra por `multipart` o por subida directa (D-83, destino `maquina`).
+- **`activo: false` es la baja.** Se esconde del listado salvo que se pida, no
+  se borra, y desde la tarea #31 una máquina de baja no se podrá asignar.
+
+**Lo que NO vive aquí:** quién la tiene y en qué obra está. Eso es la asignación
+de la máquina (tarea #31), que se resuelve al leer contra las asignaciones del
+trabajador; guardar aquí un `empleadoId` o un `proyectoId` sería un derivado y
+se desincronizaría.
 
 ### `contracts` — el contrato, que es la fase, y su SIROC
 
@@ -419,6 +448,8 @@ colección: `records.documentos[].tipo` apunta a `DOCUMENT_TYPES` en
 | **`contracts.fechaFin`**                         | Es el techo del SIROC (D-84): moverla recalcula al leer cuántos refrendos pide, y decide `seguimientoContrato`  |
 | **Quitar el SIROC o su última renovación**       | Sus archivos **se borran de R2** (D-80): el del aviso y el acuse de cada refrendo. No hay versiones             |
 | **Reemplazar el archivo de un contrato**         | El anterior **se borra de R2** (D-81): uno solo, sin versiones. El tope de subida son 30 MB, salvo la nómina    |
+| **Reemplazar la imagen de una máquina**          | Lo mismo (D-86): la anterior se borra de R2. Y sólo entra una imagen: un PDF responde 415                       |
+| **`machines.identificador`**                     | Único por empresa sobre la forma normalizada: cambiarlo puede chocar con otra máquina (409)                     |
 | **`affiliations.registroPatronalId`**            | El aviso de coherencia al asignar y en el listado (D-71). Manda sobre el texto; no bloquea nada                 |
 | **`affiliations.condiciones.registroPatronal`**  | Lo mismo, pero **sólo mientras no haya vínculo**: es el respaldo de las que M3 no resolvió (D-72)               |
 | **`projects.registroPatronalId`**                | Lo mismo: el aviso se recalcula al leer, así que cambiarlo mueve toda la trazabilidad ya registrada             |

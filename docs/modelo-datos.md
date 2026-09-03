@@ -135,9 +135,9 @@ quien administra los catálogos compartidos. Detalle en la sección 8.
 
 ## 3. Mapa de colecciones
 
-Las **15 que existen hoy**. Las tres últimas llegaron después de escribir este
-documento y no tienen sección propia en §5: su detalle está en
-[`ARQUITECTURA-DATOS.md`](./ARQUITECTURA-DATOS.md).
+Las **16 que existen hoy**. Las tres que van antes de `machines` llegaron
+después de escribir este documento y no tienen sección propia en §5: su detalle
+está en [`ARQUITECTURA-DATOS.md`](./ARQUITECTURA-DATOS.md).
 
 | Colección | Naturaleza | Pertenece a | Esquema |
 | --- | --- | --- | --- |
@@ -156,6 +156,7 @@ documento y no tienen sección propia en §5: su detalle está en
 | `areas` | **Catálogo compartido**, dejó de ser enum (D-58) | — | — |
 | `access_logs` | Auditoría | — | — |
 | `uploads` | **Permiso de subida directa**, efímero (D-83) | — | — |
+| `machines` | **Catálogo por empresa**: la maquinaria (D-86) | Empresa | §5.5c |
 
 > **Los nombres de arriba son los de MongoDB, en inglés**; en el contrato HTTP
 > las rutas y las llaves van en español (`/empresas`, `/expedientes`). La tabla
@@ -525,6 +526,55 @@ front: `src/interfaces/contrato-api.ts`,
 `src/modules/proyectos/contratos-service.ts` y el panel de contratos de la ficha
 del proyecto; la regla de qué traba cada contrato la tienen aislada y con
 pruebas en `candadosDeProyecto` (`src/modules/proyectos/cambios-proyecto.ts`).
+
+### 5.5c `maquinas` — el catálogo de maquinaria de cada empresa
+
+Cada empresa tiene su catálogo de **maquinaria y equipo de trabajo** (3 sept
+2026, D-86). Al revés que los catálogos de §5.3 y §5.4, **no es compartido**: la
+máquina es de una empresa, el identificador con el que la conocen sólo tiene
+sentido dentro de ella, y el alcance es el de la empresa.
+
+```js
+const maquinaSchema = new mongoose.Schema({
+  empresaId: { type: ObjectId, ref: 'Empresa', required: true },
+
+  // Con qué número la conoce la empresa: económico, placa, serie… Lo teclea
+  // quien la da de alta. ÚNICO DENTRO DE LA EMPRESA sobre la forma normalizada
+  // (sin acentos ni mayúsculas): `eco-12` y `ECO 12` son la misma máquina.
+  identificador:            { type: String, required: true, maxlength: 60 },
+  identificadorNormalizado: { type: String, select: false },
+
+  modelo:            { type: String, required: true, maxlength: 120 },
+  modeloNormalizado: { type: String, select: false },   // para la búsqueda
+
+  // La foto. Una sola, opcional, se reemplaza y no se versiona (D-79). Es el
+  // mismo `attachmentSchema` del contrato, con una diferencia: SÓLO IMÁGENES
+  // (JPG, PNG, WEBP). Un PDF responde 415.
+  imagen: { type: attachmentSchema, default: null },
+
+  // La baja. Se esconde del listado salvo que se pida; no se borra.
+  activo: { type: Boolean, default: true }
+}, { timestamps: true });
+```
+
+**Lo que la máquina NO tiene**, a propósito: marca, tipo, serie ni papeles
+(entran después como campos nuevos si hacen falta), y **ni `empleadoId` ni
+`proyectoId`**: quién la tiene y en qué obra está es la asignación de la máquina
+(tarea #31), que toma la obra de la asignación del trabajador y se resuelve al
+leer.
+
+Reglas:
+
+- **El identificador no se repite dentro de la empresa.** Chocar responde
+  `409 MAQUINA_DUPLICADA` con la máquina que ya está, para que el front pueda
+  abrirla desde el aviso.
+- **Se lista y se da de alta bajo la empresa** (`/empresas/:id/maquinas`) y se
+  opera por su id (`/maquinas/:id`). Fuera de alcance, 404.
+- **Escribe quien gestiona proyectos** (`manageProjects`): la maquinaria es de
+  la obra. Lee cualquiera con sesión y alcance.
+
+Aquí vive en `src/api/v1/machines/` y el detalle de la entrega está en
+[`ENDPOINTS-MAQUINAS.md`](./ENDPOINTS-MAQUINAS.md).
 
 ### 5.6 `expedientes`
 
@@ -1097,7 +1147,7 @@ Cómo se lee cada celda:
 | `uploadDocuments`        | Subir y reemplazar documentos del expediente                            |        ✓         |       ✓       |      —      |
 | `reviewDocuments`        | Validar o rechazar un documento (D-44)                                  |        ✓         |       ✓       |      —      |
 | `openSensitiveDocuments` | Abrir documentos sensibles                                              |        ✓         |       ✓       |      —      |
-| `manageProjects`         | Crear, aplazar, finalizar y reabrir proyectos, y sus contratos          |        ✓         |       —       |      ✓      |
+| `manageProjects`         | Crear, aplazar, finalizar y reabrir proyectos, sus contratos y la maquinaria (D-86) |        ✓         |       —       |      ✓      |
 | `assignToProjects`       | Asignar personal a un proyecto y darle salida                           |        ✓         |       —       |      ✓      |
 | `manageClients`          | Alta, edición y baja de clientes del catálogo global                    |        ✓         |       —       |      ✓      |
 | `manageClientPortfolio`  | Vincular un cliente a la cartera de una empresa propia                  |        ✓         |       —       |      ✓      |

@@ -89,7 +89,8 @@ describe('La documentación no se desfasó del código', () => {
       ['docs/ENDPOINTS-PROYECTOS.md', 30],
       ['docs/ENDPOINTS-ADSCRIPCIONES.md', 6],
       ['docs/ENDPOINTS-EXPEDIENTES.md', 6],
-      ['docs/ENDPOINTS-IMPORTACION.md', 2]
+      ['docs/ENDPOINTS-IMPORTACION.md', 2],
+      ['docs/ENDPOINTS-MAQUINAS.md', 6]
     ])('%s', (archivo, esperados) => {
       const contenido = leer(archivo)
 

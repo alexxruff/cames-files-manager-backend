@@ -13,7 +13,7 @@ vigencias, alertas y reportes de auditoría.
   la capa simulada la conserva para desarrollar. Donde su lógica y la nuestra
   difieran, **manda ésta**.
 - Documentos autoritativos, los tres en `docs/`:
-  - **`ARQUITECTURA-DATOS.md`** — el mapa de lo que HAY: las 15 colecciones, cómo
+  - **`ARQUITECTURA-DATOS.md`** — el mapa de lo que HAY: las 16 colecciones, cómo
     se relacionan y qué se rompe al tocar cada una. **Léelo antes de cambiar
     cualquier esquema, y actualízalo en el mismo cambio.**
   - **`modelo-datos.md`** — el diseño y su porqué. Ha derivado; donde discrepe
@@ -116,7 +116,6 @@ tiempo en una tarea, asi que:
   no termina nunca. Si tienes que esperar, busca la linea de resumen en el archivo
   de salida, no un proceso.
 
-
 ## Idiomas — la regla que más se equivoca
 
 | Qué                                                                   | Idioma                               |
@@ -135,7 +134,7 @@ Mapa de nombres (modelo → colección → nombre en el spec):
 `Affiliation`/`affiliations`/adscripciones ·
 `Portfolio`/`portfolios`/carteras · `Assignment`/`assignments`/asignaciones ·
 `Project`/`projects`/proyectos · `Contract`/`contracts`/contratos ·
-`Record`/`records`/expedientes ·
+`Record`/`records`/expedientes · `Machine`/`machines`/máquinas ·
 `ChecklistTemplate`/`checklist_templates`/plantillas ·
 `AccessLog`/`access_logs`/bitácora.
 
@@ -152,6 +151,7 @@ src/
     affiliations/       adscripción empresa ↔ empleado: la relación laboral, con
                         su registro patronal vinculado (D-72)
     contracts/          contratos del proyecto (= fases) y su SIROC (D-70)
+    machines/           catálogo de maquinaria por empresa, con su imagen (D-86)
     assignments/        proyecto ↔ empleado; avisa si el registro patronal no
                         coincide y resuelve la trazabilidad (D-71)
     alerts/             bandeja derivada: documentos y cumpleaños (D-47)
@@ -359,7 +359,6 @@ entrada.
   no vive ahi—, y en ella di como atacas lo que te devolvieron.
 - **Una tarea que nunca se devolvio no lleva el campo.** No lo agregues vacio.
 
-
 **Si una tarea vuelve, vuelve con el motivo escrito.** Cuando el usuario la
 devuelve de `in_review` a `in_progress`, el porque queda en el campo
 `revisiones` de la tarea: una lista que crece, con `fecha` y `motivo` en cada
@@ -373,7 +372,6 @@ entrada.
   proposito. Tu `propuestaTecnica` si la reescribes al retomar —por eso el motivo
   no vive ahi—, y en ella di como atacas lo que te devolvieron.
 - **Una tarea que nunca se devolvio no lleva el campo.** No lo agregues vacio.
-
 
 **Nunca hagas `git add`, `git commit` ni `git push`.** El usuario revisa el diff y
 commitea. Deja el árbol como está.
@@ -501,5 +499,5 @@ Escribir el JSON no es aprobarlo. Espera su respuesta:
 - «no» → no insertas nada. La propuesta se queda como archivo, por si cambia de
   opinion.
 
-Si lo que falta es una decisión de producto —si algo *debe* existir, no cómo
+Si lo que falta es una decisión de producto —si algo _debe_ existir, no cómo
 hacerlo—, la propuesta es el sitio para plantearla, no para resolverla.

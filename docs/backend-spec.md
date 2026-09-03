@@ -313,7 +313,7 @@ desincronizadas. Índice rápido:
 | Necesitas | Sección |
 | --- | --- |
 | La jerarquía y por qué los catálogos son compartidos | §1, §2 |
-| El mapa de las 15 colecciones que existen hoy | §3 |
+| El mapa de las 16 colecciones que existen hoy | §3 |
 | Esquemas de Mongoose, ocho de ellas | §5 |
 | Las tres colecciones de vínculo: adscripciones, carteras, asignaciones | §5b |
 | Estatus efectivo, avance, semáforo, checklist por unión, alertas | §6 |
@@ -824,6 +824,23 @@ de la nómina) y `registroPatronalCoincide`, que tiene **tres estados**: `true`,
 `false` (cotiza en otro) y `null` (**no se pudo comparar**). `null` no es
 `false`. La comparación la hace el servidor, que ya ignora guiones, espacios y
 mayúsculas.
+
+#### Maquinaria por empresa (3 sept 2026, D-86)
+
+| Método | Ruta | Nota |
+| --- | --- | --- |
+| `GET` `POST` | `/empresas/:id/maquinas` | `?incluirInactivas=&busqueda=`; el alta es `{ identificador, modelo }` + imagen opcional (`multipart` o `subidaId`) |
+| `GET` `PATCH` | `/maquinas/:id` | El `PATCH` acepta `identificador`, `modelo` y/o la imagen nueva; con sólo la imagen también vale |
+| `PATCH` | `/maquinas/:id/estado` | `{ activo }` — la baja y la reactivación |
+| `GET` | `/maquinas/:id/imagen` | Un enlace fresco a la foto (`?descargar=true` fuerza descarga) |
+
+El catálogo **es de la empresa**, por eso cuelga de ella: fuera de alcance
+responde `404`. El identificador **no se repite dentro de la empresa** (sin
+acentos ni mayúsculas) y chocar es `409 MAQUINA_DUPLICADA` con `data.maquina`,
+la que ya está. La imagen es el adjunto de siempre —una, reemplazable, con URL
+firmada que caduca— pero **sólo admite JPG, PNG o WEBP**: un PDF responde `415`.
+Escribe quien tiene `manageProjects`; lee cualquiera con sesión y alcance. El
+detalle está en [`ENDPOINTS-MAQUINAS.md`](./ENDPOINTS-MAQUINAS.md).
 
 ### 6.5 Expedientes y documentos
 

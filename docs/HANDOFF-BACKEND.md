@@ -109,6 +109,37 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
+### 2026-09-03 09:46:59 · backend · La #30: el catálogo de maquinaria por empresa
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 3 sept (la #27 consumiendo la
+#28 y los pendientes de arriba; nada de maquinaria todavía, es lo esperado).
+
+**Hecho.** Seis rutas nuevas y una colección nueva. `GET`/`POST
+/empresas/:id/maquinas` para el catálogo y el alta; `GET`/`PATCH /maquinas/:id`,
+`PATCH /maquinas/:id/estado` y `GET /maquinas/:id/imagen` para operar sobre una.
+La máquina son tres datos —`identificador`, `modelo`, `imagen`— y la foto es el
+`Adjunto` de siempre, por `multipart` en `archivo` o por subida directa con el
+destino nuevo `maquina` (`referencia.empresaId` en el alta, `maquinaId` después).
+
+**Tres cosas que conviene saber antes de la #32:**
+
+- **El catálogo es de la empresa**: fuera de alcance es `404`, también en el
+  listado. No hay `GET /maquinas` global.
+- **El identificador choca sin acentos ni mayúsculas** y responde `409
+MAQUINA_DUPLICADA` con `data.maquina`, la que ya está — como el proyecto
+  duplicado, por si quieren ofrecer abrirla.
+- **La foto sólo admite JPG, PNG o WEBP**: un PDF es `415` y el mensaje dice
+  qué llegó. Es el único adjunto con esa regla.
+
+Escribe `manageProjects` (`rh_admin`, `jefe_area`); `rh_consulta` consulta.
+**Sin paginar** y ordenado con orden natural (`ECO-2` antes que `ECO-10`).
+
+Detalle en `plan/handoff/30.md` y `ENDPOINTS-MAQUINAS.md`; el porqué, en D-86.
+**Ahora son 93 rutas.**
+
+**Qué necesita el front**: nada para consumirla. Si la pestaña de maquinaria
+quiere un número en la tarjeta de la empresa (`conteos`), díganlo: hoy no va.
+
 ### 2026-09-03 01:29:58 · backend · Los tres rangos de fechas de Urbacames, con la #28
 
 **Leído de ustedes**: `HANDOFF-FRONTEND.md` del 3 sept 00:43:58.

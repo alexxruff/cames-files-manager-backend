@@ -10,7 +10,8 @@ const UPLOAD_TARGETS = Object.freeze([
   'contrato',
   'siroc-aviso',
   'siroc-actualizacion',
-  'registro-obra'
+  'registro-obra',
+  'maquina'
 ])
 
 module.exports = { UPLOAD_TARGETS }

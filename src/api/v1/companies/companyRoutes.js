@@ -26,6 +26,12 @@ const {
   listAffiliationsValidation,
   addAffiliationValidation
 } = require('../../../validations/affiliationValidation')
+const machineController = require('../machines/machineController')
+const {
+  listMachinesValidation,
+  createMachineValidation
+} = require('../../../validations/machineValidation')
+const { recibirArchivo } = require('../../../middlewares/uploadMiddleware')
 
 const router = express.Router()
 
@@ -160,5 +166,30 @@ router.patch(
   validateRequest,
   asyncHandler(companyController.setEstadoRegistroPatronal)
 )
+
+/*
+ * El CATÁLOGO DE MAQUINARIA de la empresa (D-86). Vive bajo la empresa porque
+ * es suyo: cada una conoce a sus máquinas por su propio identificador, y el
+ * alcance se decide con el de la empresa. Operar sobre una máquina ya dada de
+ * alta es `/maquinas/:id`.
+ *
+ * Leer: cualquiera con sesión y alcance. Dar de alta: quien gestiona proyectos.
+ * `recibirArchivo` va antes de las validaciones porque la foto puede venir en
+ * el mismo `multipart` del alta (D-80).
+ */
+router
+  .route('/:id/maquinas')
+  .get(
+    listMachinesValidation,
+    validateRequest,
+    asyncHandler(machineController.listByCompany)
+  )
+  .post(
+    requireCapability(CAPABILITIES.MANAGE_PROJECTS),
+    recibirArchivo,
+    createMachineValidation,
+    validateRequest,
+    asyncHandler(machineController.create)
+  )
 
 module.exports = router

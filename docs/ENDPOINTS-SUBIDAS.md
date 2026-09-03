@@ -57,7 +57,7 @@ misma que la ruta que va a confirmar.
 }
 ```
 
-### Los cinco destinos
+### Los seis destinos
 
 | `destino`             | `referencia` que exige           | Se confirma en                                                                                           |
 | --------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -66,9 +66,13 @@ misma que la ruta que va a confirmar.
 | `siroc-aviso`         | `contratoId`                     | `PUT /contratos/:id/siroc`                                                                               |
 | `siroc-actualizacion` | `contratoId`                     | `POST /contratos/:id/siroc/actualizaciones` · `PUT /contratos/:id/siroc/actualizaciones/:indice/archivo` |
 | `registro-obra`       | `clienteId`                      | `POST /clientes/:id/registros-obra` · `PATCH /clientes/:id/registros-obra/:roId`                         |
+| `maquina`             | `maquinaId` **o** `empresaId`    | `PATCH /maquinas/:id` · `POST /empresas/:id/maquinas` (D-86)                                             |
 
 En `contrato` va `proyectoId` cuando el contrato **todavía no existe** —el papel
-viaja en el alta— y `contratoId` cuando ya está capturado.
+viaja en el alta— y `contratoId` cuando ya está capturado. `maquina` funciona
+igual: `empresaId` para la foto que viaja en el alta, `maquinaId` para
+reemplazarla. Y es el único destino que **sólo admite imágenes** (JPG, PNG,
+WEBP): al confirmar con un PDF responde `415`, y borra el objeto y el permiso.
 
 ### Errores
 
@@ -123,7 +127,7 @@ El mismo endpoint de siempre, con JSON:
 ```
 
 Y la respuesta es la de siempre: el contrato con su `archivo`, ya firmado y listo
-para abrir. Igual en los cinco destinos:
+para abrir. Igual en los seis destinos:
 
 ```jsonc
 // POST /expedientes/:id/documentos/ine

@@ -3,6 +3,7 @@ const recordService = require('../records/recordService')
 const contractService = require('../contracts/contractService')
 const clientService = require('../clients/clientService')
 const projectService = require('../projects/projectService')
+const machineService = require('../machines/machineService')
 const storage = require('../../../services/storageService')
 const env = require('../../../config/env')
 const { AppError } = require('../../../middlewares/errorHandler')
@@ -69,6 +70,19 @@ const DESTINOS = {
     capacidad: CAPABILITIES.MANAGE_CLIENTS,
     ids: ['clienteId'],
     comprobar: (ref, contexto) => clientService.getById(ref.clienteId, contexto)
+  },
+  maquina: {
+    capacidad: CAPABILITIES.MANAGE_PROJECTS,
+    /*
+     * Como en el contrato: la máquina NUEVA no existe cuando se pide el permiso
+     * —la foto viaja en el alta—, así que ahí el dueño es la empresa. Al
+     * reemplazar la foto, el dueño es la máquina.
+     */
+    ids: [],
+    comprobar: (ref, contexto) =>
+      ref.maquinaId
+        ? machineService.assertVisible(ref.maquinaId, contexto)
+        : machineService.assertEmpresaVisible(ref.empresaId, contexto)
   }
 }
 
@@ -101,6 +115,11 @@ class UploadService {
     ) {
       throw AppError.validation('Indica el proyecto o el contrato del archivo', [
         { msg: 'Falta el proyecto o el contrato', path: 'referencia' }
+      ])
+    }
+    if (datos.destino === 'maquina' && !referencia.maquinaId && !referencia.empresaId) {
+      throw AppError.validation('Indica la empresa o la máquina de la imagen', [
+        { msg: 'Falta la empresa o la máquina', path: 'referencia' }
       ])
     }
 
@@ -161,7 +180,9 @@ class UploadService {
       proyectoId: referencia.proyectoId || null,
       contratoId: referencia.contratoId || null,
       clienteId: referencia.clienteId || null,
-      registroObraId: referencia.registroObraId || null
+      registroObraId: referencia.registroObraId || null,
+      empresaId: referencia.empresaId || null,
+      maquinaId: referencia.maquinaId || null
     }
   }
 }
