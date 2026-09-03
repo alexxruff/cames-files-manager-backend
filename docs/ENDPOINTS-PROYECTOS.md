@@ -833,7 +833,7 @@ por cubrir, cae en `no_requiere` con:
   "requiereActualizacion": false,
   "diasParaActualizacion": null, // ya no hay una cuenta atrás que pintar
   "vigenciaPeriodoHasta": "2026-07-01", // hasta dónde llegó el aviso: eso SÍ viene
-  "mensaje": "El contrato terminó el 2026-05-02: su SIROC ya no requiere actualizaciones."
+  "mensaje": "El contrato terminó el 2026-05-02: su SIROC ya no requiere reportes bimestrales."
 }
 ```
 
@@ -848,7 +848,7 @@ por mucho que pase el tiempo— y este mensaje:
   "actualizacionesPendientes": 2, // del 2 de marzo al 30 de mayo, y ahí se corta
   "requiereActualizacion": true,
   "diasParaActualizacion": -185,
-  "mensaje": "El SIROC requiere actualización desde el 2026-03-02: venció hace 185 días, con el contrato todavía en curso. Regístrala con la fecha en que se presentó, a más tardar el 2026-05-30."
+  "mensaje": "El SIROC requiere su reporte bimestral desde el 2026-03-02: venció hace 185 días, con el contrato todavía en curso. Regístralo con la fecha en que se presentó, a más tardar el 2026-05-30."
 }
 ```
 
@@ -961,16 +961,16 @@ les sale ese `400`, lo que toca ofrecer es finalizar el contrato o editar su
 `fechaRegistro` tampoco: va por `PUT /contratos/:id/siroc`. Y `vigenciaHasta` no
 existe en ninguna de las dos: la vigencia se deriva.
 
-| Código | Cuándo                                                           | `message`                                                                                                                                       |
-| ------ | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `400`  | El contrato no tiene SIROC                                       | `Ese contrato no tiene SIROC registrado`                                                                                                        |
-| `400`  | Contrato finalizado o dado de baja                               | `El contrato ya no está en curso: su SIROC no necesita actualizarse`                                                                            |
-| `400`  | `fecha` futura                                                   | `La actualización del SIROC no puede tener fecha futura`                                                                                        |
-| `400`  | `fecha` anterior al registro o a la actualización anterior       | `La actualización no puede ser anterior al registro del SIROC (…)`                                                                              |
-| `400`  | `fecha` antes de un mes y 25 días del movimiento anterior (D-85) | `El SIROC se registró el AAAA-MM-DD: la siguiente actualización no puede fecharse antes del AAAA-MM-DD` (o «se actualizó el»)                   |
-| `400`  | `fecha` posterior a `fechaFin` del contrato (D-84)               | `El contrato terminó el AAAA-MM-DD y su SIROC ya no requiere actualizaciones: finaliza el contrato, o corrige su fecha de fin si la obra sigue` |
-| `400`  | Campos que no van aquí (`numero`, `fechaRegistro`…)              | Lista los campos y dice por dónde va cada uno (en `errors[0].msg`)                                                                              |
-| `404`  | Contrato inexistente o de otra empresa                           | `El contrato no existe`                                                                                                                         |
+| Código | Cuándo                                                           | `message`                                                                                                                                            |
+| ------ | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `400`  | El contrato no tiene SIROC                                       | `Ese contrato no tiene SIROC registrado`                                                                                                             |
+| `400`  | Contrato finalizado o dado de baja                               | `El contrato ya no está en curso: su SIROC no necesita más reportes bimestrales`                                                                     |
+| `400`  | `fecha` futura                                                   | `El reporte bimestral del SIROC no puede tener fecha futura`                                                                                         |
+| `400`  | `fecha` anterior al registro o a la actualización anterior       | `El reporte bimestral no puede ser anterior al registro del SIROC (…)`                                                                               |
+| `400`  | `fecha` antes de un mes y 25 días del movimiento anterior (D-85) | `El SIROC se registró el AAAA-MM-DD: el siguiente reporte bimestral no puede fecharse antes del AAAA-MM-DD` (o «se reportó el»)                      |
+| `400`  | `fecha` posterior a `fechaFin` del contrato (D-84)               | `El contrato terminó el AAAA-MM-DD y su SIROC ya no requiere reportes bimestrales: finaliza el contrato, o corrige su fecha de fin si la obra sigue` |
+| `400`  | Campos que no van aquí (`numero`, `fechaRegistro`…)              | Lista los campos y dice por dónde va cada uno (en `errors[0].msg`)                                                                                   |
+| `404`  | Contrato inexistente o de otra empresa                           | `El contrato no existe`                                                                                                                              |
 
 Ojo: los `400` de negocio traen el texto en **`message`**; sólo los de validación
 de campos traen `errors[0].msg`. Es la misma convención del resto del recurso.
@@ -1070,7 +1070,7 @@ de esa misma ruta sigue pidiendo sólo sesión y alcance.
 | ------ | ---------------------------------------------------------- | ---------------------------------- |
 | `400`  | `Envía el archivo en el campo "archivo"` (`errors[0].msg`) | La petición no trae archivo        |
 | `400`  | `Ese contrato no tiene SIROC registrado`                   | El contrato todavía no tiene aviso |
-| `404`  | `Esa actualización del SIROC no existe`                    | La posición está fuera del arreglo |
+| `404`  | `Ese reporte bimestral del SIROC no existe`                | La posición está fuera del arreglo |
 
 Un `415` **no deja la actualización a medias**: si el archivo se rechaza, el
 refrendo se queda exactamente como estaba.
@@ -1095,13 +1095,13 @@ pantalla de basura binaria.
 `_id`. El índice es estable porque el arreglo sólo crece y sólo se puede quitar la
 última.
 
-| Código | Cuándo                                 | `message`                                                     |
-| ------ | -------------------------------------- | ------------------------------------------------------------- |
-| `400`  | El índice no es un número              | `La actualización indicada no es válida` (en `errors[0].msg`) |
-| `404`  | El contrato no tiene SIROC             | `Ese contrato no tiene SIROC registrado`                      |
-| `404`  | El SIROC no tiene archivo              | `Ese SIROC no tiene archivo`                                  |
-| `404`  | Esa posición no existe                 | `Esa actualización del SIROC no existe`                       |
-| `404`  | Contrato inexistente o de otra empresa | `El contrato no existe`                                       |
+| Código | Cuándo                                 | `message`                                                         |
+| ------ | -------------------------------------- | ----------------------------------------------------------------- |
+| `400`  | El índice no es un número              | `El reporte bimestral indicado no es válido` (en `errors[0].msg`) |
+| `404`  | El contrato no tiene SIROC             | `Ese contrato no tiene SIROC registrado`                          |
+| `404`  | El SIROC no tiene archivo              | `Ese SIROC no tiene archivo`                                      |
+| `404`  | Esa posición no existe                 | `Ese reporte bimestral del SIROC no existe`                       |
+| `404`  | Contrato inexistente o de otra empresa | `El contrato no existe`                                           |
 
 **Permisos.** Subir exige `rh_admin` o `jefe_area`, lo mismo que capturar el
 SIROC. **Abrir el papel sólo pide sesión y alcance**: quien puede leer el número

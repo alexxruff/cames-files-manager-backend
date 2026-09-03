@@ -211,7 +211,7 @@ class ContractService {
     if (primera && isBefore(primera, datos.fechaRegistro)) {
       throw new AppError(
         400,
-        `Ese SIROC ya tiene una actualización del ${primera}: la fecha de registro no puede ser posterior. Quita el SIROC si necesitas capturarlo de nuevo.`
+        `Ese SIROC ya tiene un reporte bimestral del ${primera}: la fecha de registro no puede ser posterior. Quita el SIROC si necesitas capturarlo de nuevo.`
       )
     }
 
@@ -298,7 +298,7 @@ class ContractService {
     if (contrato.estado === 'finalizado' || !contrato.activo) {
       throw new AppError(
         400,
-        'El contrato ya no está en curso: su SIROC no necesita actualizarse'
+        'El contrato ya no está en curso: su SIROC no necesita más reportes bimestrales'
       )
     }
 
@@ -307,7 +307,10 @@ class ContractService {
     const fecha = datos.fecha ?? hoy
 
     if (isAfter(fecha, hoy)) {
-      throw new AppError(400, 'La actualización del SIROC no puede tener fecha futura')
+      throw new AppError(
+        400,
+        'El reporte bimestral del SIROC no puede tener fecha futura'
+      )
     }
 
     /*
@@ -322,7 +325,7 @@ class ContractService {
     if (contrato.fechaFin && isAfter(fecha, contrato.fechaFin)) {
       throw new AppError(
         400,
-        `El contrato terminó el ${contrato.fechaFin} y su SIROC ya no requiere actualizaciones: finaliza el contrato, o corrige su fecha de fin si la obra sigue`
+        `El contrato terminó el ${contrato.fechaFin} y su SIROC ya no requiere reportes bimestrales: finaliza el contrato, o corrige su fecha de fin si la obra sigue`
       )
     }
 
@@ -332,8 +335,8 @@ class ContractService {
       throw new AppError(
         400,
         previas.length === 0
-          ? `La actualización no puede ser anterior al registro del SIROC (${anterior})`
-          : `Ya hay una actualización del ${anterior}: la nueva no puede ser anterior`
+          ? `El reporte bimestral no puede ser anterior al registro del SIROC (${anterior})`
+          : `Ya hay un reporte bimestral del ${anterior}: el nuevo no puede ser anterior`
       )
     }
 
@@ -349,7 +352,7 @@ class ContractService {
     if (isBefore(fecha, minima)) {
       throw new AppError(
         400,
-        `El SIROC se ${previas.length === 0 ? 'registró' : 'actualizó'} el ${anterior}: la siguiente actualización no puede fecharse antes del ${minima}`
+        `El SIROC se ${previas.length === 0 ? 'registró' : 'reportó'} el ${anterior}: el siguiente reporte bimestral no puede fecharse antes del ${minima}`
       )
     }
 
@@ -387,7 +390,7 @@ class ContractService {
     const { contrato } = await this.#buscarVisible(id, contexto)
 
     if (!contrato.siroc?.actualizaciones?.length) {
-      throw new AppError(400, 'Ese SIROC no tiene actualizaciones registradas')
+      throw new AppError(400, 'Ese SIROC no tiene reportes bimestrales registrados')
     }
 
     const quitada = contrato.siroc.actualizaciones.pop()
@@ -504,15 +507,16 @@ class ContractService {
     if (!contrato.siroc) throw AppError.notFound('Ese contrato no tiene SIROC registrado')
 
     const actualizacion = (contrato.siroc.actualizaciones ?? [])[indice]
-    if (!actualizacion) throw AppError.notFound('Esa actualización del SIROC no existe')
+    if (!actualizacion)
+      throw AppError.notFound('Ese reporte bimestral del SIROC no existe')
     if (!actualizacion.archivo) {
-      throw AppError.notFound('Esa actualización del SIROC no tiene archivo')
+      throw AppError.notFound('Ese reporte bimestral del SIROC no tiene acuse')
     }
 
     return {
       archivo: await storage.firmarAdjunto(
         actualizacion.archivo,
-        storage.nombreDeActualizacion(contrato.siroc.numero, actualizacion.fecha),
+        storage.nombreDeReporteBimestral(contrato.siroc.numero, actualizacion.fecha),
         { descargar: contexto.descargar === true ? true : null }
       )
     }
@@ -537,7 +541,8 @@ class ContractService {
     if (!contrato.siroc) throw new AppError(400, 'Ese contrato no tiene SIROC registrado')
 
     const actualizacion = (contrato.siroc.actualizaciones ?? [])[indice]
-    if (!actualizacion) throw AppError.notFound('Esa actualización del SIROC no existe')
+    if (!actualizacion)
+      throw AppError.notFound('Ese reporte bimestral del SIROC no existe')
 
     /*
      * A propósito NO se exige que el contrato siga en curso, al revés que
@@ -550,7 +555,7 @@ class ContractService {
       referencia: { contratoId: contrato._id }
     })
     if (!entrada) {
-      throw AppError.validation('Adjunta el acuse de la actualización', [
+      throw AppError.validation('Adjunta el acuse del reporte bimestral', [
         { msg: 'El archivo es requerido', path: 'archivo' }
       ])
     }

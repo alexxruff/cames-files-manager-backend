@@ -90,7 +90,7 @@ describe('domain/siroc — el aviso se actualiza cada 2 meses (D-76)', () => {
       expect(s.diasParaActualizacion).toBe(2)
       expect(s.requiereActualizacion).toBe(false)
       expect(s.mensaje).toBe(
-        'El SIROC cumple sus dos meses el 2026-03-01: requiere actualización en 2 días.'
+        'El SIROC cumple sus dos meses el 2026-03-01: requiere su reporte bimestral en 2 días.'
       )
     })
 
@@ -102,7 +102,7 @@ describe('domain/siroc — el aviso se actualiza cada 2 meses (D-76)', () => {
       expect(elDia.estado).toBe('por_vencer')
       expect(elDia.diasParaActualizacion).toBe(0)
       expect(elDia.mensaje).toBe(
-        'El SIROC cumple hoy sus dos meses y requiere actualización.'
+        'El SIROC cumple hoy sus dos meses y requiere su reporte bimestral.'
       )
     })
 
@@ -113,7 +113,7 @@ describe('domain/siroc — el aviso se actualiza cada 2 meses (D-76)', () => {
       expect(s.requiereActualizacion).toBe(true)
       expect(s.diasParaActualizacion).toBe(-3)
       expect(s.mensaje).toBe(
-        'El SIROC requiere actualización desde el 2026-03-01: venció hace 3 días.'
+        'El SIROC requiere su reporte bimestral desde el 2026-03-01: venció hace 3 días.'
       )
     })
 
@@ -153,7 +153,7 @@ describe('domain/siroc — el aviso se actualiza cada 2 meses (D-76)', () => {
       expect(s.estado).toBe('no_requiere')
       expect(s.requiereActualizacion).toBe(false)
       expect(s.mensaje).toBe(
-        'El contrato ya no está en curso: su SIROC no necesita actualizarse.'
+        'El contrato ya no está en curso: su SIROC no necesita más reportes bimestrales.'
       )
     })
 
@@ -196,7 +196,7 @@ describe('domain/siroc — el aviso se actualiza cada 2 meses (D-76)', () => {
         expect(s.estado).toBe('no_requiere')
         expect(s.requiereActualizacion).toBe(false)
         expect(s.mensaje).toBe(
-          'El contrato terminó el 2026-02-15: su SIROC ya no requiere actualizaciones.'
+          'El contrato terminó el 2026-02-15: su SIROC ya no requiere reportes bimestrales.'
         )
       })
 
@@ -246,7 +246,7 @@ describe('domain/siroc — el aviso se actualiza cada 2 meses (D-76)', () => {
 
         it('y el mensaje dice que se capture con la fecha de entonces', () => {
           expect(seguimiento(conDeuda, '2026-09-03').mensaje).toBe(
-            'El SIROC requiere actualización desde el 2026-03-02: venció hace 185 días, con el contrato todavía en curso. Regístrala con la fecha en que se presentó, a más tardar el 2026-05-30.'
+            'El SIROC requiere su reporte bimestral desde el 2026-03-02: venció hace 185 días, con el contrato todavía en curso. Regístralo con la fecha en que se presentó, a más tardar el 2026-05-30.'
           )
         })
 
@@ -268,7 +268,7 @@ describe('domain/siroc — el aviso se actualiza cada 2 meses (D-76)', () => {
           expect(s.estado).toBe('no_requiere')
           expect(s.actualizacionesPendientes).toBe(0)
           expect(s.mensaje).toBe(
-            'El contrato terminó el 2026-05-30: su SIROC ya no requiere actualizaciones.'
+            'El contrato terminó el 2026-05-30: su SIROC ya no requiere reportes bimestrales.'
           )
         })
 

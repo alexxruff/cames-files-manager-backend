@@ -136,7 +136,7 @@ class ContractController {
       numero: datos.contrato.siroc?.numero,
       actualizaciones: datos.contrato.siroc?.actualizaciones?.length
     })
-    return created(res, datos, 'Actualización del SIROC registrada')
+    return created(res, datos, 'Reporte bimestral del SIROC registrado')
   }
 
   /** DELETE /contratos/:id/siroc/actualizaciones/ultima */
@@ -146,7 +146,7 @@ class ContractController {
       this.#contexto(req)
     )
     req.log.info('Actualización de SIROC deshecha', { contratoId: req.params.id })
-    return ok(res, datos, 'Última actualización del SIROC deshecha')
+    return ok(res, datos, 'Último reporte bimestral del SIROC deshecho')
   }
 
   /**
@@ -190,7 +190,7 @@ class ContractController {
       contratoId: req.params.id,
       indice: req.params.indice
     })
-    return ok(res, datos, 'Acuse de la actualización guardado')
+    return ok(res, datos, 'Acuse del reporte bimestral guardado')
   }
 
   /** POST /contratos/:id/finalizar */

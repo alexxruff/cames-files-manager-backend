@@ -4192,3 +4192,52 @@ tipo o por rango de fechas: se piden por máquina. `GET /maquinas/:id` **no** tr
 un contador de incidencias abiertas: la ficha las pide aparte, y si la pantalla lo
 quiere en el listado del catálogo, se agrega. Y las incidencias no entran a
 `GET /alertas`: la bandeja es de documentación y cumpleaños (D-47).
+
+---
+
+## D-89 · El refrendo del SIROC se llama «reporte bimestral», pero las llaves no cambian
+
+**Contexto.** Tarea #38, 3 sept 2026, a pedido de Urbacames. Lo que el código
+llama «actualización» del SIROC ellos lo llaman **reporte bimestral**: es el
+nombre del trámite ante el IMSS, y en pantalla decir «actualización» hace pensar
+en corregir un dato, no en presentar un papel cada dos meses. El front cambia sus
+etiquetas en la tarea #37; esto es la otra mitad, la de los textos que salen de
+aquí.
+
+**Qué cambió.** Los ~25 mensajes en español que ve el usuario. Los cuatro estados
+del seguimiento (`utils/domain/siroc.js`), los mensajes de validación del modelo y
+de las rutas, y los errores y confirmaciones de registrar, deshacer, adjuntar y
+abrir el acuse. «El SIROC está al día. La próxima actualización toca el X» pasó a
+«…El próximo reporte bimestral toca el X»; «Esa actualización del SIROC no
+existe» a «Ese reporte bimestral del SIROC no existe», y así.
+
+Cambió también **el nombre con el que baja el acuse**:
+`<número>-actualizacion-<fecha>.pdf` pasó a `<número>-reporte-bimestral-<fecha>.pdf`
+(D-80 documentó el anterior). Ese nombre **se arma al leer** y no es la clave de
+almacenamiento, así que los acuses que ya estaban en R2 bajan con el nombre nuevo
+sin tocar un solo objeto. La clave sigue siendo `siroc/{contratoId}/actualizacion-{uuid}.{ext}`:
+renombrarla habría obligado a mover archivos para no ganar nada, porque nadie la ve.
+
+**Qué NO cambió, y es la mitad de la decisión.** Las llaves de la respuesta
+—`siroc.actualizaciones[]`, `actualizacionesRequeridas`, `actualizacionesRegistradas`,
+`actualizacionesPendientes`, `ultimaActualizacion`, `requiereActualizacion`—, la
+ruta `POST /contratos/:id/siroc/actualizaciones` y el destino de subida
+`siroc-actualizacion`. Son **contrato con el front**: renombrarlas rompe la
+pantalla el mismo día, obliga a un cambio coordinado en los dos repos y a
+reescribir cada documento, y el usuario no gana nada porque **nunca ve una
+llave**. El vocabulario del negocio vive en el texto; el del código, en las
+llaves, y ésa es la misma separación de idiomas que rige todo el proyecto
+(`CLAUDE.md` § Idiomas).
+
+Si algún día se quieren renombrar de verdad, es otra tarea: una sola, coordinada,
+con el front migrando a la vez y las dos formas conviviendo un tiempo.
+
+**Los mensajes de log no cambiaron.** No los ve el usuario, y son lo que uno
+busca en Fly cuando algo falla: dejarlos con la palabra vieja mantiene rastreable
+todo lo que ya está escrito en los registros de producción.
+
+**«Registro inicial» se quedó igual.** El primer movimiento no es un reporte
+bimestral: es el alta del aviso de obra. Lo confirmó Urbacames en la misma
+petición.
+
+**Sin migración.** No se guardó nunca ninguno de estos textos: se arman al leer.

@@ -109,6 +109,40 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
+### 2026-09-03 16:21:22 · backend · La #38: el refrendo del SIROC se llama «reporte bimestral»
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 3 sept 12:07:45 (la #33 cerrada;
+la #36, el calendario, apenas empezando).
+
+**Hecho.** Los ~25 textos en español que el servidor manda llamando
+«actualización» al refrendo del SIROC ahora dicen **reporte bimestral**: los
+cuatro estados del seguimiento, los mensajes de validación, y los errores y
+confirmaciones de registrar, deshacer, adjuntar y abrir el acuse. Lo pidió
+Urbacames, y es la otra mitad de su #37 —las etiquetas de la línea de tiempo—.
+
+**Tres cosas, y sólo la tercera les da trabajo:**
+
+- **No cambió ninguna ruta ni ninguna llave.** `siroc.actualizaciones[]`,
+  `actualizacionesRequeridas|Registradas|Pendientes`, `ultimaActualizacion`,
+  `requiereActualizacion`, `POST …/siroc/actualizaciones` y el destino de subida
+  `siroc-actualizacion` se quedan exactamente igual. Es deliberado (D-89): el
+  vocabulario del negocio vive en el texto, no en las llaves, y renombrarlas les
+  rompería la pantalla el mismo día sin que el usuario gane nada.
+- **El texto nuevo les llega solo**, porque pintan `seguimientoSiroc.mensaje` tal
+  cual en `seguimiento-siroc.tsx` y `aviso-cierre-contrato.tsx`. No hay nada que
+  consumir distinto.
+- **El acuse baja con otro nombre**: `SIR-2026-0001-reporte-bimestral-2026-03-05.pdf`
+  en vez de `…-actualizacion-…`. Viaja en `archivo.nombreDescarga`, como siempre.
+  Los acuses ya subidos también bajan con el nombre nuevo: se arma al leer y no se
+  movió un archivo en R2. **Si alguna prueba suya fija ese nombre o alguno de los
+  mensajes, hay que actualizarla** — es lo único que les toca de esto.
+
+Las cadenas exactas, antes y después, están en `plan/handoff/38.md`.
+
+**Qué necesitamos de ustedes:** nada. Cuando tomen la #37, el servidor ya dice
+«reporte bimestral», así que las etiquetas y los mensajes van a concordar.
+«Registro inicial» se queda con ese nombre en los dos lados.
+
 ### 2026-09-03 13:36:58 · backend · La #34: incidencias de la máquina, con su catálogo de tipos
 
 **Leído de ustedes**: `HANDOFF-FRONTEND.md` del 3 sept 12:07:45 (la #33 cerrada,

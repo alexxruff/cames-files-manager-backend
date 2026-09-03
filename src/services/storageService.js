@@ -250,7 +250,7 @@ async function firmarSiroc(siroc, sirocOriginal) {
       ...a,
       archivo: await firmarAdjunto(
         sirocOriginal?.actualizaciones?.[indice]?.archivo,
-        nombreDeActualizacion(siroc.numero, a.fecha)
+        nombreDeReporteBimestral(siroc.numero, a.fecha)
       )
     }))
   )
@@ -262,9 +262,9 @@ async function firmarSiroc(siroc, sirocOriginal) {
   }
 }
 
-/** Con qué nombre baja el acuse de una renovación. */
-function nombreDeActualizacion(numero, fecha) {
-  return `${numero}-actualizacion-${fecha}`
+/** Con qué nombre baja el acuse de un reporte bimestral. */
+function nombreDeReporteBimestral(numero, fecha) {
+  return `${numero}-reporte-bimestral-${fecha}`
 }
 
 /**
@@ -456,7 +456,7 @@ module.exports = {
   firmarAdjunto,
   firmarRegistro,
   firmarSiroc,
-  nombreDeActualizacion,
+  nombreDeReporteBimestral,
   nombreDeContrato,
   subir,
   urlDeSubida,

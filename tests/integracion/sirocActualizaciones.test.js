@@ -135,7 +135,7 @@ describe('Actualización del SIROC cada dos meses', () => {
       expect(seguimiento.estado).toBe('por_vencer')
       expect(seguimiento.diasParaActualizacion).toBe(2)
       expect(seguimiento.requiereActualizacion).toBe(false)
-      expect(seguimiento.mensaje).toMatch(/requiere actualización en 2 días/)
+      expect(seguimiento.mensaje).toMatch(/requiere su reporte bimestral en 2 días/)
     })
 
     it('pasados los dos meses con el contrato en curso, la exige', async () => {
@@ -147,7 +147,9 @@ describe('Actualización del SIROC cada dos meses', () => {
         requiereActualizacion: true
       })
       expect(contrato.seguimientoSiroc.diasParaActualizacion).toBeLessThan(0)
-      expect(contrato.seguimientoSiroc.mensaje).toMatch(/requiere actualización desde el/)
+      expect(contrato.seguimientoSiroc.mensaje).toMatch(
+        /requiere su reporte bimestral desde el/
+      )
     })
 
     /*
@@ -175,7 +177,7 @@ describe('Actualización del SIROC cada dos meses', () => {
         diasParaActualizacion: null
       })
       expect(res.body.data.contrato.seguimientoSiroc.mensaje).toMatch(
-        /^El contrato terminó el .+: su SIROC ya no requiere actualizaciones\.$/
+        /^El contrato terminó el .+: su SIROC ya no requiere reportes bimestrales\.$/
       )
     })
 
@@ -509,7 +511,7 @@ describe('Actualización del SIROC cada dos meses', () => {
 
       expect(res.status).toBe(400)
       expect(res.body.message).toMatch(
-        /ya no requiere actualizaciones: finaliza el contrato, o corrige su fecha de fin/
+        /ya no requiere reportes bimestrales: finaliza el contrato, o corrige su fecha de fin/
       )
     })
 
@@ -539,7 +541,7 @@ describe('Actualización del SIROC cada dos meses', () => {
 
         expect(res.status).toBe(400)
         expect(res.body.message).toBe(
-          `El SIROC se registró el ${HOY}: la siguiente actualización no puede fecharse antes del ${addDays(addMonths(HOY, 1), 25)}`
+          `El SIROC se registró el ${HOY}: el siguiente reporte bimestral no puede fecharse antes del ${addDays(addMonths(HOY, 1), 25)}`
         )
       })
 
@@ -567,7 +569,7 @@ describe('Actualización del SIROC cada dos meses', () => {
 
         expect(res.status).toBe(400)
         expect(res.body.message).toMatch(
-          new RegExp(`^El SIROC se actualizó el ${addMonths(HOY, -1)}`)
+          new RegExp(`^El SIROC se reportó el ${addMonths(HOY, -1)}`)
         )
       })
 
@@ -604,7 +606,7 @@ describe('Actualización del SIROC cada dos meses', () => {
         .set(auth(e.token))
 
       expect(res.status).toBe(400)
-      expect(res.body.message).toMatch(/no tiene actualizaciones registradas/)
+      expect(res.body.message).toMatch(/no tiene reportes bimestrales registrados/)
     })
   })
 

@@ -39,8 +39,8 @@ const sirocRenovacionSchema = new mongoose.Schema(
   {
     fecha: {
       type: String,
-      required: [true, 'La fecha de la actualización es requerida'],
-      validate: validadorFecha('La fecha de la actualización')
+      required: [true, 'La fecha del reporte bimestral es requerida'],
+      validate: validadorFecha('La fecha del reporte bimestral')
     },
     /** Folio del acuse, quién fue, lo que haga falta recordar. */
     nota: {
@@ -263,8 +263,8 @@ contractSchema.pre('validate', function forzarInvariantes(next) {
       this.invalidate(
         `siroc.actualizaciones.${indice}.fecha`,
         indice === 0
-          ? 'La actualización no puede ser anterior al registro del SIROC'
-          : 'Las actualizaciones del SIROC deben ir en orden de fecha'
+          ? 'El reporte bimestral no puede ser anterior al registro del SIROC'
+          : 'Los reportes bimestrales del SIROC deben ir en orden de fecha'
       )
     }
     anterior = renovacion.fecha

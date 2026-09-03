@@ -151,10 +151,10 @@ exports.sirocRenovacionValidation = [
     )
     if (invalidos.length > 0) {
       const pistas = {
-        numero: 'actualizar el SIROC conserva el mismo número',
+        numero: 'reportar el SIROC conserva el mismo número',
         fechaRegistro: 'usa PUT /contratos/:id/siroc para corregir el registro',
         vigenciaHasta:
-          'el SIROC no tiene fecha final: vence dos meses después de esta actualización'
+          'el SIROC no tiene fecha final: vence dos meses después de este reporte'
       }
       const detalle = invalidos
         .map((c) => (pistas[c] ? `${c} (${pistas[c]})` : c))
@@ -163,7 +163,7 @@ exports.sirocRenovacionValidation = [
     }
     return true
   }),
-  fecha('fecha', 'La fecha de la actualización', { obligatoria: false }),
+  fecha('fecha', 'La fecha del reporte bimestral', { obligatoria: false }),
   body('nota')
     .optional({ values: 'null' })
     .customSanitizer((v) => (typeof v === 'string' ? v.trim() : v))
@@ -196,7 +196,7 @@ exports.sirocUpdateFileValidation = [
   param('id').isMongoId().withMessage('El contrato indicado no es válido'),
   param('indice')
     .isInt({ min: 0 })
-    .withMessage('La actualización indicada no es válida')
+    .withMessage('El reporte bimestral indicado no es válido')
     .toInt(),
   query('descargar')
     .optional()
@@ -212,7 +212,7 @@ exports.sirocUpdateFileUploadValidation = [
   param('id').isMongoId().withMessage('El contrato indicado no es válido'),
   param('indice')
     .isInt({ min: 0 })
-    .withMessage('La actualización indicada no es válida')
+    .withMessage('El reporte bimestral indicado no es válido')
     .toInt(),
   body().custom((cuerpo, { req }) => {
     if (!req.file && !cuerpo?.subidaId) {

@@ -232,7 +232,7 @@ describe('El SIROC de su obra, en el expediente', () => {
         actualizacionesPendientes: 0
       })
       expect(obra.seguimientoSiroc.mensaje).toBe(
-        'El contrato terminó el 2020-02-15: su SIROC ya no requiere actualizaciones.'
+        'El contrato terminó el 2020-02-15: su SIROC ya no requiere reportes bimestrales.'
       )
     })
 

@@ -304,12 +304,12 @@ distintas a propósito: `POST /contratos/:id/finalizar` mueve el primero,
 **Tres rangos de fechas** (D-85), comprobados en el servicio y **sólo sobre lo
 que entra** —lo ya capturado no se toca—, cada uno con su `400` en `message`:
 
-| Dónde                                      | Rango                                                          | `message`                                                                                               |
-| ------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `POST`/`PATCH` contrato, `fechaInicio`     | ≥ `proyecto.fechaInicio`                                       | `La fecha de inicio del contrato no puede ser anterior al inicio del proyecto (AAAA-MM-DD)`             |
-| `POST`/`PATCH` contrato, `fechaFin`        | ≤ `proyecto.fechaFinReal ?? fechaFinEstimada`                  | `La fecha de fin del contrato no puede ser posterior al fin del proyecto (AAAA-MM-DD)`                  |
-| `PUT …/siroc`, `fechaRegistro` (si cambia) | `contrato.fechaInicio` … +7 días, incluidos                    | `La fecha de registro del SIROC debe estar entre el AAAA-MM-DD y el AAAA-MM-DD: …`                      |
-| `POST …/siroc/actualizaciones`, `fecha`    | ≥ movimiento anterior + 1 mes (fin de mes recortado) + 25 días | `El SIROC se registró el AAAA-MM-DD: la siguiente actualización no puede fecharse antes del AAAA-MM-DD` |
+| Dónde                                      | Rango                                                          | `message`                                                                                                   |
+| ------------------------------------------ | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `POST`/`PATCH` contrato, `fechaInicio`     | ≥ `proyecto.fechaInicio`                                       | `La fecha de inicio del contrato no puede ser anterior al inicio del proyecto (AAAA-MM-DD)`                 |
+| `POST`/`PATCH` contrato, `fechaFin`        | ≤ `proyecto.fechaFinReal ?? fechaFinEstimada`                  | `La fecha de fin del contrato no puede ser posterior al fin del proyecto (AAAA-MM-DD)`                      |
+| `PUT …/siroc`, `fechaRegistro` (si cambia) | `contrato.fechaInicio` … +7 días, incluidos                    | `La fecha de registro del SIROC debe estar entre el AAAA-MM-DD y el AAAA-MM-DD: …`                          |
+| `POST …/siroc/actualizaciones`, `fecha`    | ≥ movimiento anterior + 1 mes (fin de mes recortado) + 25 días | `El SIROC se registró el AAAA-MM-DD: el siguiente reporte bimestral no puede fecharse antes del AAAA-MM-DD` |
 
 En el `PATCH` se revisan **sólo las fechas que vienen**.
 
@@ -440,7 +440,7 @@ renovación el aviso desaparece solo.
   "diasParaActualizacion": 3,        // negativo si ya pasó; null sin SIROC
   "requiereActualizacion": false,    // true SÓLO cuando ya venció
   "estado": "por_vencer",
-  "mensaje": "El SIROC cumple sus dos meses el 2027-01-12: requiere actualización en 3 días."
+  "mensaje": "El SIROC cumple sus dos meses el 2027-01-12: requiere su reporte bimestral en 3 días."
 }
 ```
 
@@ -460,7 +460,7 @@ uno más— y un mensaje que pide capturarlos con la fecha de entonces. Sólo si
 deuda cae en `no_requiere` con
 `actualizacionesPendientes: 0`, `requiereActualizacion: false` y
 `diasParaActualizacion: null`, y su mensaje es «El contrato terminó el
-AAAA-MM-DD: su SIROC ya no requiere actualizaciones.». `vigenciaPeriodoHasta`
+AAAA-MM-DD: su SIROC ya no requiere reportes bimestrales.». `vigenciaPeriodoHasta`
 sigue viniendo: hasta dónde llegó el aviso es un hecho del expediente. **El día
 justo de `fechaFin` todavía cuenta como dentro.**
 
@@ -534,15 +534,15 @@ exactamente en `terminado_sin_cerrar`.
 del IMSS. `numero` y `fechaRegistro` **no se aceptan aquí** y el 400 dice por
 dónde van. Los 400 posibles, con el texto en `message`:
 
-| Qué pasó                                                 | `message`                                                                                                                                       |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| El contrato no tiene SIROC                               | `Ese contrato no tiene SIROC registrado`                                                                                                        |
-| El contrato está finalizado o dado de baja               | `El contrato ya no está en curso: su SIROC no necesita actualizarse`                                                                            |
-| La fecha es futura                                       | `La actualización del SIROC no puede tener fecha futura`                                                                                        |
-| La fecha va antes del registro o de la anterior          | `La actualización no puede ser anterior al registro del SIROC (…)`                                                                              |
-| La fecha es posterior a `fechaFin` (D-84)                | `El contrato terminó el AAAA-MM-DD y su SIROC ya no requiere actualizaciones: finaliza el contrato, o corrige su fecha de fin si la obra sigue` |
-| Antes de un mes y 25 días del movimiento anterior (D-85) | `El SIROC se registró el AAAA-MM-DD: la siguiente actualización no puede fecharse antes del AAAA-MM-DD` (o «se actualizó el»)                   |
-| No hay ninguna que deshacer                              | `Ese SIROC no tiene actualizaciones registradas`                                                                                                |
+| Qué pasó                                                 | `message`                                                                                                                                            |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| El contrato no tiene SIROC                               | `Ese contrato no tiene SIROC registrado`                                                                                                             |
+| El contrato está finalizado o dado de baja               | `El contrato ya no está en curso: su SIROC no necesita más reportes bimestrales`                                                                     |
+| La fecha es futura                                       | `El reporte bimestral del SIROC no puede tener fecha futura`                                                                                         |
+| La fecha va antes del registro o de la anterior          | `El reporte bimestral no puede ser anterior al registro del SIROC (…)`                                                                               |
+| La fecha es posterior a `fechaFin` (D-84)                | `El contrato terminó el AAAA-MM-DD y su SIROC ya no requiere reportes bimestrales: finaliza el contrato, o corrige su fecha de fin si la obra sigue` |
+| Antes de un mes y 25 días del movimiento anterior (D-85) | `El SIROC se registró el AAAA-MM-DD: el siguiente reporte bimestral no puede fecharse antes del AAAA-MM-DD` (o «se reportó el»)                      |
+| No hay ninguna que deshacer                              | `Ese SIROC no tiene reportes bimestrales registrados`                                                                                                |
 
 **El techo se mira contra la fecha DE LA ACTUALIZACIÓN, no contra hoy** (D-84):
 capturar tarde un refrendo que sí se tramitó dentro del contrato **sigue

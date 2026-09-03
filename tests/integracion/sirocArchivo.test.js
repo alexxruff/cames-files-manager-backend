@@ -252,7 +252,7 @@ describe('El archivo del SIROC', () => {
         archivo: {
           nombre: 'refrendo.pdf',
           tamanoBytes: OTRO_PDF.length,
-          nombreDescarga: `${numero}-actualizacion-2026-03-05.pdf`
+          nombreDescarga: `${numero}-reporte-bimestral-2026-03-05.pdf`
         }
       })
       // El del aviso sigue en su sitio, intacto.
@@ -430,7 +430,7 @@ describe('El archivo del SIROC', () => {
       expect(res.status).toBe(200)
       expect(res.body.data.archivo).toMatchObject({
         nombre: 'refrendo.pdf',
-        nombreDescarga: `${numero}-actualizacion-2026-03-05.pdf`
+        nombreDescarga: `${numero}-reporte-bimestral-2026-03-05.pdf`
       })
     })
 
@@ -459,7 +459,7 @@ describe('El archivo del SIROC', () => {
         .get(`${CONTRATOS}/${contrato._id}/siroc/actualizaciones/3/archivo`)
         .set(auth(e.token))
       expect(sinRenovacion.status).toBe(404)
-      expect(sinRenovacion.body.message).toBe('Esa actualización del SIROC no existe')
+      expect(sinRenovacion.body.message).toBe('Ese reporte bimestral del SIROC no existe')
     })
 
     it('400 si la posición no es un número', async () => {
@@ -471,7 +471,7 @@ describe('El archivo del SIROC', () => {
         .set(auth(e.token))
 
       expect(res.status).toBe(400)
-      expect(res.body.errors[0].msg).toBe('La actualización indicada no es válida')
+      expect(res.body.errors[0].msg).toBe('El reporte bimestral indicado no es válido')
     })
 
     it('401 sin sesión', async () => {
@@ -570,7 +570,7 @@ describe('El archivo del SIROC', () => {
         nota: 'Refrendo 1',
         archivo: {
           nombre: 'acuse sellado.pdf',
-          nombreDescarga: `${numero}-actualizacion-2026-03-05.pdf`,
+          nombreDescarga: `${numero}-reporte-bimestral-2026-03-05.pdf`,
           previsualizable: true
         }
       })
@@ -664,7 +664,7 @@ describe('El archivo del SIROC', () => {
         .set(auth(e.token))
         .attach('archivo', PDF, 'acuse.pdf')
       expect(fuera.status).toBe(404)
-      expect(fuera.body.message).toBe('Esa actualización del SIROC no existe')
+      expect(fuera.body.message).toBe('Ese reporte bimestral del SIROC no existe')
 
       const tipo = await request(app)
         .put(`${CONTRATOS}/${contrato._id}/siroc/actualizaciones/0/archivo`)
@@ -756,7 +756,7 @@ describe('El archivo del SIROC', () => {
       expect(obra.siroc.archivo.url).toEqual(expect.any(String))
       expect(obra.siroc.actualizaciones[0].archivo).toMatchObject({
         nombre: 'refrendo.pdf',
-        nombreDescarga: `${numero}-actualizacion-2026-03-05.pdf`
+        nombreDescarga: `${numero}-reporte-bimestral-2026-03-05.pdf`
       })
       // Tampoco aquí sale la clave de almacenamiento.
       expect(obra.siroc.archivo.claveAlmacenamiento).toBeUndefined()

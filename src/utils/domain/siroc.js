@@ -170,7 +170,8 @@ function deriveSirocTracking(contrato, opciones = {}) {
       ...base,
       vigenciaPeriodoHasta,
       estado: 'no_requiere',
-      mensaje: 'El contrato ya no está en curso: su SIROC no necesita actualizarse.'
+      mensaje:
+        'El contrato ya no está en curso: su SIROC no necesita más reportes bimestrales.'
     }
   }
 
@@ -205,7 +206,7 @@ function deriveSirocTracking(contrato, opciones = {}) {
         actualizacionesPendientes: pendientes,
         requiereActualizacion: true,
         estado: 'vencida',
-        mensaje: `El SIROC requiere actualización desde el ${vigenciaPeriodoHasta}: venció hace ${enDias(Math.abs(dias))}, con el contrato todavía en curso. Regístrala con la fecha en que se presentó, a más tardar el ${fechaFin}.`
+        mensaje: `El SIROC requiere su reporte bimestral desde el ${vigenciaPeriodoHasta}: venció hace ${enDias(Math.abs(dias))}, con el contrato todavía en curso. Regístralo con la fecha en que se presentó, a más tardar el ${fechaFin}.`
       }
     }
 
@@ -213,7 +214,7 @@ function deriveSirocTracking(contrato, opciones = {}) {
       ...base,
       vigenciaPeriodoHasta,
       estado: 'no_requiere',
-      mensaje: `El contrato terminó el ${fechaFin}: su SIROC ya no requiere actualizaciones.`
+      mensaje: `El contrato terminó el ${fechaFin}: su SIROC ya no requiere reportes bimestrales.`
     }
   }
 
@@ -322,13 +323,13 @@ function deriveContractTracking(contrato, opciones = {}) {
 function mensajeDeSiroc(estado, dias, vigenciaPeriodoHasta) {
   switch (estado) {
     case 'vencida':
-      return `El SIROC requiere actualización desde el ${vigenciaPeriodoHasta}: venció hace ${enDias(Math.abs(dias))}.`
+      return `El SIROC requiere su reporte bimestral desde el ${vigenciaPeriodoHasta}: venció hace ${enDias(Math.abs(dias))}.`
     case 'por_vencer':
       return dias === 0
-        ? 'El SIROC cumple hoy sus dos meses y requiere actualización.'
-        : `El SIROC cumple sus dos meses el ${vigenciaPeriodoHasta}: requiere actualización en ${enDias(dias)}.`
+        ? 'El SIROC cumple hoy sus dos meses y requiere su reporte bimestral.'
+        : `El SIROC cumple sus dos meses el ${vigenciaPeriodoHasta}: requiere su reporte bimestral en ${enDias(dias)}.`
     default:
-      return `El SIROC está al día. La próxima actualización toca el ${vigenciaPeriodoHasta}.`
+      return `El SIROC está al día. El próximo reporte bimestral toca el ${vigenciaPeriodoHasta}.`
   }
 }
 
