@@ -96,7 +96,13 @@ const uploadSchema = new mongoose.Schema(
   }
 )
 
-// Lo que pregunta la limpieza: qué sigue pendiente y ya caducó.
-uploadSchema.index({ estado: 1, expiraEn: 1 })
+/*
+ * Lo único que se consulta de esta colección: qué permisos ya caducaron, para
+ * barrer lo que dejaron en el almacenamiento. Por `expiraEn` a secas y no
+ * compuesto con `estado`, porque la limpieza mira **todos** los vencidos: de los
+ * `pendiente` borra permiso y archivo, y de los `usada` sólo el temporal que
+ * haya sobrevivido a un movimiento a medias.
+ */
+uploadSchema.index({ expiraEn: 1 })
 
 module.exports = mongoose.model('Upload', uploadSchema)
