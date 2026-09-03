@@ -9,12 +9,9 @@ const ChecklistTemplate = require('../checklistTemplates/checklistTemplateModel'
 const AccessLog = require('../accessLogs/accessLogModel')
 const employeeService = require('../employees/employeeService')
 const storage = require('../../../services/storageService')
+const intake = require('../../../services/attachmentIntake')
 const { AppError } = require('../../../middlewares/errorHandler')
-const {
-  detectarTipo,
-  esPrevisualizable,
-  mensajeTipoNoPermitido
-} = require('../../../utils/fileTypes')
+const { esPrevisualizable } = require('../../../utils/fileTypes')
 const { isCalendarDate, addMonths, today, compare } = require('../../../utils/dates')
 const {
   construirChecklist,
@@ -279,19 +276,22 @@ class RecordService {
       documento = expediente.documento(tipo)
     }
 
-    // 1. El tipo real del archivo, por contenido. Ni la extensión ni el
-    //    Content-Type sirven: los controla quien sube.
-    const archivo = datos.archivo
-    if (!archivo?.buffer?.length) {
+    /*
+     * 1. El archivo, venga en la petición (`multipart`) o ya subido directo al
+     *    almacenamiento (D-83). En los dos casos el tipo se decide **por
+     *    contenido**: ni la extensión ni el `Content-Type` sirven, porque los
+     *    controla quien sube. El nombre sólo desempata entre formatos que
+     *    comparten contenedor y habilita el CSV, que no tiene firma (D-78).
+     */
+    const entrada = await intake.resolver(datos, {
+      destino: 'expediente',
+      referencia: { expedienteId: expediente._id, tipoDocumento: tipo }
+    })
+    if (!entrada) {
       throw AppError.validation('Adjunta el archivo del documento', [
         { msg: 'El archivo es requerido', path: 'archivo' }
       ])
     }
-
-    // El nombre sólo desempata entre formatos que comparten contenedor y
-    // habilita el CSV, que no tiene firma; nunca decide por sí solo (D-78).
-    const tipoReal = detectarTipo(archivo.buffer, archivo.nombreOriginal)
-    if (!tipoReal) throw new AppError(415, mensajeTipoNoPermitido(archivo.buffer))
 
     // 2. La vigencia, si este documento caduca.
     const vigenciaHasta = await this.#resolverVigencia(documento, empleado, datos)
@@ -302,19 +302,15 @@ class RecordService {
       empleadoId: empleado._id,
       tipo,
       version,
-      extension: tipoReal.extension
+      extension: entrada.tipoReal.extension
     })
 
-    await storage.subir({
-      buffer: archivo.buffer,
-      clave,
-      contentType: tipoReal.mime
-    })
+    await entrada.guardarEn(clave)
 
     const registroArchivo = {
-      nombre: archivo.nombreOriginal || `${tipo}.${tipoReal.extension}`,
-      mime: tipoReal.mime,
-      tamanoBytes: archivo.buffer.length,
+      nombre: entrada.nombreOriginal || `${tipo}.${entrada.tipoReal.extension}`,
+      mime: entrada.tipoReal.mime,
+      tamanoBytes: entrada.tamanoBytes,
       // El NOMBRE de quien sube, no sólo el id: es histórico.
       subidoPor: contexto.user?.nombre || 'Sistema',
       subidoPorId: contexto.user?._id,

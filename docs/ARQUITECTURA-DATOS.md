@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-82)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-83)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -24,7 +24,7 @@ cambiar cualquier esquema.
 
 ---
 
-## 1. Panorama: 14 colecciones en tres grupos
+## 1. Panorama: 15 colecciones en tres grupos
 
 Lo primero que hay que entender es que **no todas son iguales**. Se comportan
 distinto y se rompen distinto.
@@ -79,6 +79,7 @@ lo dejaría con un puesto o un área ambiguos (D-32).
 | `assignments`         | Quién está en qué proyecto                     | `projects`, `employees`, `categories` |
 | `contracts`           | **El contrato/fase** de una obra, con su SIROC | `projects`                            |
 | `checklist_templates` | Qué documentos exige cada perfil               | `companies` (o global), `areas`       |
+| `uploads`             | **Permiso de subida directa**, efímero (D-83)  | `employees` (quien lo pidió)          |
 | `records`             | **El expediente.** Uno por persona             | `employees`, `checklist_templates`    |
 | `access_logs`         | Bitácora legal de accesos a documentos         | `employees`, `records`                |
 
@@ -133,6 +134,8 @@ erDiagram
 
     EMPLOYEES  ||--o{ ACCESS_LOGS  : "quién consultó"
     RECORDS    ||--o{ ACCESS_LOGS  : "qué se consultó"
+
+    EMPLOYEES  ||--o{ UPLOADS       : "pidió subir (efímero, D-83)"
 
     AREAS      ||--o{ AFFILIATIONS : "por clave (string)"
     AREAS      ||--o{ CHECKLIST_TEMPLATES : "por clave (string)"
@@ -237,6 +240,29 @@ activa** — índice parcial, para que alguien pueda volver al mismo proyecto
 después. Conserva su propio `categoriaId`: el puesto con el que esa persona
 figura **en esa obra**, que ya no se valida contra nada del proyecto y, si el
 alta no lo manda, se toma del propio empleado (D-82).
+
+### `uploads` — el permiso de subida, que dura minutos
+
+La única colección **efímera** del modelo (D-83). Un documento nace cuando alguien
+pide subir un archivo, dice a qué recurso va y qué declaró el navegador —nombre,
+tipo y tamaño—, y muere cuando el adjunto queda registrado o cuando caduca sin
+usarse. No es el archivo: es el permiso.
+
+Existe por una sola razón: **un permiso tiene que valer una vez**. Con un token
+firmado bastaría para autorizar, pero no para impedir que el mismo se reutilice
+hasta caducar; eso exige estado. De paso deja rastro de quién pidió subir qué.
+
+Lo que hay que saber al tocarla:
+
+- **`estado: 'usada'` no se borra.** Es el rastro de la subida que sí llegó a su
+  sitio. Lo que se limpia son los `pendiente` vencidos, con
+  `npm run limpiar:subidas`.
+- **`claveTemporal` apunta a `pendientes/`**, nunca a una carpeta definitiva: el
+  archivo se mueve al confirmar, y sólo después de comprobar su tipo por
+  contenido.
+- **Nada la referencia.** Ninguna otra colección guarda un `uploadId`: cuando el
+  adjunto queda registrado, lo que se guarda en el recurso es el subdocumento
+  `archivo` de siempre, igual que si hubiera llegado por `multipart`.
 
 ### `contracts` — el contrato, que es la fase, y su SIROC
 

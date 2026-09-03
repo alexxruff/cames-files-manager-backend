@@ -313,7 +313,7 @@ desincronizadas. Índice rápido:
 | Necesitas | Sección |
 | --- | --- |
 | La jerarquía y por qué los catálogos son compartidos | §1, §2 |
-| El mapa de las 14 colecciones que existen hoy | §3 |
+| El mapa de las 15 colecciones que existen hoy | §3 |
 | Esquemas de Mongoose, ocho de ellas | §5 |
 | Las tres colecciones de vínculo: adscripciones, carteras, asignaciones | §5b |
 | Estatus efectivo, avance, semáforo, checklist por unión, alertas | §6 |
@@ -492,6 +492,7 @@ del final devuelve lista vacía y el `total` real, no un `404`.
 | `GET` `POST` | `/clientes` | Catálogo global. `?busqueda=` |
 | `GET` `PATCH` | `/clientes/:id` | |
 | `PATCH` | `/clientes/:id/estado` | Falla si tiene proyectos en curso |
+| `POST` | `/subidas` | Permiso de subida directa a R2 (D-83): `{ destino, referencia, nombre, mime?, tamanoBytes }` → `{ subida }`. Se confirma con `subidaId` en la ruta del recurso |
 | `GET` `POST` | `/categorias` | `POST` **idempotente por nombre**: si ya existe, devuelve la existente en vez de fallar. Lleva `tipo`, y `GET` acepta `?tipo=` |
 | `PATCH` | `/categorias/:id/estado` | Falla si hay empleados con ese puesto. Los proyectos ya no habilitan puestos (D-82) |
 

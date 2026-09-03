@@ -112,7 +112,9 @@ class ClientController {
     return ok(
       res,
       datos,
-      req.file ? 'Archivo del registro de obra guardado' : 'Registro de obra actualizado'
+      req.file || req.body?.subidaId
+        ? 'Archivo del registro de obra guardado'
+        : 'Registro de obra actualizado'
     )
   }
 

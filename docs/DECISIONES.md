@@ -3685,3 +3685,86 @@ puesto de cada persona en `empleados` y en cada asignación. Y no se dejó la ru
 de clonar respondiendo `410`, como se hizo con `/usuarios`: aquella la llamaba un
 front en producción que no podía migrar de inmediato; ésta la limpia la tarea #21
 en la misma entrega, así que un `410` habría sido código muerto desde el día uno.
+
+---
+
+## D-83 · El archivo sube directo al almacenamiento; el servidor sólo da permiso y registra
+
+**Contexto.** Tarea #22. Subir un contrato de 12 MB a producción **nunca
+terminaba**. La causa no estaba en el código: el archivo viajaba del navegador a
+Fly y de ahí a R2, y ese primer tramo iba a 7 KB/s. Medido, con el mismo archivo
+y el mismo servidor:
+
+| Camino                                           | Subida           |
+| ------------------------------------------------ | ---------------- |
+| Del equipo a Cloudflare                          | 1 046 000 B/s    |
+| Del equipo a la máquina, por túnel WireGuard     | 927 000 B/s      |
+| Del equipo a la máquina, por `cames-api.fly.dev` | 7 000–17 000 B/s |
+| Lo mismo desde otra red y otro operador          | 15 271 B/s       |
+
+No era el navegador (`curl` fallaba igual), ni HTTP/2, ni IPv6, ni el proveedor
+de internet, ni la máquina: por el túnel el archivo entero subía en 13 segundos.
+Era el borde público de Fly, sólo de subida. A 7 KB/s, 12 MB tardan media hora y
+Node corta la petición a los cinco minutos con un `408`.
+
+**Decisión.** El archivo deja de pasar por el servidor. `POST /subidas` emite una
+**URL firmada de un solo uso** contra R2; el navegador sube ahí —a Cloudflare,
+donde ya medimos 1 MB/s—; y después llama a la **ruta de siempre** con
+`subidaId` en el cuerpo, que es la que registra el adjunto. Vale para los cinco
+destinos: expediente, contrato, aviso del SIROC, acuse de un refrendo y registro
+de obra.
+
+**Por qué no esperar a que Fly arregle su ruta.** Hay que abrirles el ticket, y
+se abrió. Pero mientras el archivo pase por nuestro servidor dependemos de que
+ese camino esté bueno, y hoy el tráfico de México entra por Virginia sin que
+nadie nos avise. Esto quita la dependencia entera, no este mal día.
+
+**Se confirma por la ruta del recurso, no por una ruta nueva.** `PATCH
+/contratos/:id` con `{ subidaId }` hace lo mismo que con `multipart`. Así las
+reglas de negocio —versiones del expediente, vigencias, el candado del SIROC, el
+reemplazo del papel— se quedan donde estaban, con sus permisos y sus mensajes, y
+el front migra cambiando el cuerpo de peticiones que ya hace. **Las rutas
+`multipart` siguen funcionando**: se apagarán cuando el front no las use.
+
+**Lo que sostiene que esto no reste seguridad.** El bucket sigue privado y sin
+URL pública. El permiso se emite **después** de comprobar capacidad y alcance con
+las mismas reglas de la ruta que confirmará —incluido el 404 de siempre, para que
+pedirlo no revele lo que la confirmación escondería—. La URL vale para **una
+clave, un método y quince minutos**, y **el tamaño va firmado**: subir algo más
+grande invalida la firma, que es lo que sustituye al tope de multer. Y la
+validación por contenido no se pierde: al confirmar se piden a R2 los **primeros
+4 KB** del objeto para reconocer su firma —ese tramo es el rápido, cuesta
+milisegundos— antes de registrar nada.
+
+**El archivo aterriza en `pendientes/` y de ahí se mueve.** Nada llega a
+`expedientes/`, `contratos/`, `siroc/` o `registros-obra/` sin haber pasado la
+comprobación de tipo. Lo que no se confirma no existe para el sistema: nadie
+puede pedirlo, porque cada apertura sigue pasando por una firma nuestra. Eso deja
+toda la basura posible bajo un solo prefijo, que es lo que sabe barrer
+`npm run limpiar:subidas` —y, si se configura, una regla de ciclo de vida de R2—.
+
+**El permiso es un documento, no un token firmado.** Colección `uploads`, corta
+de vida. Un JWT habría evitado la colección, pero **de un solo uso** exige
+estado: sin él, el mismo permiso valdría hasta caducar. Guarda además quién pidió
+subir qué, que es rastro útil el día que sobre un archivo en el bucket.
+
+**Lo declarado no se cree.** El nombre, el tipo y el tamaño que manda el
+navegador se guardan para mostrarlos y para firmar, pero al confirmar se
+comparan contra el objeto real: tamaño distinto → `400`; contenido de un tipo no
+permitido → `415`, y el objeto se borra ahí mismo junto con su permiso.
+
+**Prerrequisito que no es código.** El bucket necesita política **CORS** para el
+origen del front, con `PUT`. Se configuró el 2 sep 2026 en Cloudflare
+(`https://cames-expedientes.fly.dev` y `http://localhost:5174`). Sin eso el
+navegador no puede subir, y no hay nada en este repo que lo arregle.
+
+**`GET` no se abrió en esa política, a propósito.** El front abre los archivos
+**navegando** a la URL firmada (`window.open`), y una navegación no dispara CORS.
+Haría falta el día que quiera leer el archivo con `fetch` para pintarlo dentro de
+la página.
+
+**Qué NO se hizo.** La **importación de nómina** se queda por `multipart`: ahí el
+servidor no guarda el archivo, lo **lee** —`exceljs` abre el libro entero—, así
+que sacarlo del camino no ahorra nada y complicaría la única ruta con un tope
+distinto (D-81). Tampoco se subieron los archivos por partes (_multipart upload_
+de S3): con 30 MB de tope, una sola petición basta.

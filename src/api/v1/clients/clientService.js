@@ -6,7 +6,7 @@ const storage = require('../../../services/storageService')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { normalize, escapeRegex } = require('../../../utils/text')
 const { attachmentToJson } = require('../../../utils/attachments')
-const { detectarTipo, mensajeTipoNoPermitido } = require('../../../utils/fileTypes')
+const intake = require('../../../services/attachmentIntake')
 const { CAPABILITIES, can, isPlatformAdmin } = require('../../../utils/permissions')
 
 /**
@@ -201,9 +201,20 @@ class ClientService {
    * registros patronales (D-65) y por lo mismo: la interfaz no tiene que
    * preguntar antes de crear.
    */
-  async agregarRegistroObra(clienteId, { numero, descripcion, archivo }, contexto = {}) {
+  async agregarRegistroObra(clienteId, datos, contexto = {}) {
+    const { numero, descripcion } = datos
     const cliente = await this.#buscarEnAlcance(clienteId, contexto)
     const buscado = String(numero).trim().toUpperCase()
+
+    /*
+     * El papel puede venir en la misma petición (`multipart`) o estar ya en el
+     * almacenamiento porque el navegador lo subió directo (D-83). De aquí para
+     * abajo da igual: la entrada es la misma.
+     */
+    const entrada = await intake.resolver(datos, {
+      destino: 'registro-obra',
+      referencia: { clienteId: cliente._id }
+    })
 
     const existente = cliente.registrosObra.find((r) => r.numero === buscado)
     /*
@@ -212,7 +223,7 @@ class ClientService {
      * alternativa —descartarlo en silencio— es la peor de las dos.
      */
     if (existente) {
-      if (archivo) await this.#guardarArchivo(cliente, existente, archivo, contexto)
+      if (entrada) await this.#guardarArchivo(cliente, existente, entrada, contexto)
       return {
         cliente: await this.#conArchivos(cliente),
         registro: await this.#registroFirmado(existente),
@@ -223,7 +234,7 @@ class ClientService {
     cliente.registrosObra.push({ numero: buscado, descripcion: descripcion || null })
     const creado = cliente.registrosObra.find((r) => r.numero === buscado)
 
-    if (archivo) await this.#guardarArchivo(cliente, creado, archivo, contexto)
+    if (entrada) await this.#guardarArchivo(cliente, creado, entrada, contexto)
     else await cliente.save()
 
     return {
@@ -247,8 +258,11 @@ class ClientService {
     if (datos.numero !== undefined) registro.numero = datos.numero
     if (datos.descripcion !== undefined) registro.descripcion = datos.descripcion || null
 
-    if (datos.archivo)
-      await this.#guardarArchivo(cliente, registro, datos.archivo, contexto)
+    const entrada = await intake.resolver(datos, {
+      destino: 'registro-obra',
+      referencia: { clienteId: cliente._id }
+    })
+    if (entrada) await this.#guardarArchivo(cliente, registro, entrada, contexto)
     else await cliente.save()
 
     return {
@@ -322,28 +336,21 @@ class ClientService {
    * anterior se borra al final, cuando ya nadie lo referencia — al revés, un
    * fallo al guardar dejaría el registro apuntando a un archivo borrado.
    */
-  async #guardarArchivo(cliente, registro, archivo, contexto = {}) {
-    const tipoReal = detectarTipo(archivo.buffer, archivo.nombreOriginal)
-    if (!tipoReal) throw new AppError(415, mensajeTipoNoPermitido(archivo.buffer))
-
+  async #guardarArchivo(cliente, registro, entrada, contexto = {}) {
     const clave = storage.construirClaveAdjunto({
       carpeta: 'registros-obra',
       ids: [cliente._id, registro._id],
-      extension: tipoReal.extension
+      extension: entrada.tipoReal.extension
     })
 
-    await storage.subir({
-      buffer: archivo.buffer,
-      clave,
-      contentType: tipoReal.mime
-    })
+    await entrada.guardarEn(clave)
 
     const anterior = registro.archivo?.claveAlmacenamiento || null
 
     registro.archivo = {
-      nombre: archivo.nombreOriginal || `registro-obra.${tipoReal.extension}`,
-      mime: tipoReal.mime,
-      tamanoBytes: archivo.buffer.length,
+      nombre: entrada.nombreOriginal || `registro-obra.${entrada.tipoReal.extension}`,
+      mime: entrada.tipoReal.mime,
+      tamanoBytes: entrada.tamanoBytes,
       subidoPor: contexto.user?.nombre || 'Sistema',
       subidoPorId: contexto.user?._id ?? null,
       subidoEn: new Date(),

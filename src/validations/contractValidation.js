@@ -1,5 +1,6 @@
 const { body, param, query } = require('express-validator')
 const { isCalendarDate } = require('../utils/dates')
+const { subidaIdOpcional } = require('./uploadValidation')
 
 /**
  * Contratos y SIROC (D-70).
@@ -52,7 +53,8 @@ exports.createContractValidation = [
   nombreContrato(),
   faseContrato(),
   fecha('fechaInicio', 'La fecha de inicio'),
-  fecha('fechaFin', 'La fecha de fin')
+  fecha('fechaFin', 'La fecha de fin'),
+  subidaIdOpcional
 ]
 
 /**
@@ -78,10 +80,15 @@ exports.updateContractValidation = [
     /*
      * Un `multipart` con SÓLO el archivo no trae campos, y es una petición
      * legítima: así se le adjunta el papel a un contrato ya capturado (D-81).
+     * Con la subida directa (D-83) el equivalente es un cuerpo con sólo
+     * `subidaId`, que tampoco es «nada que actualizar».
      */
     if (campos.length === 0 && !req.file) throw new Error('No hay nada que actualizar')
 
-    const invalidos = campos.filter((c) => !CAMPOS_EDITABLES.includes(c))
+    // `subidaId` dice de dónde sale el archivo; no es un campo del contrato.
+    const invalidos = campos
+      .filter((c) => c !== 'subidaId')
+      .filter((c) => !CAMPOS_EDITABLES.includes(c))
     if (invalidos.length > 0) {
       const pistas = {
         siroc: 'usa PUT /contratos/:id/siroc',
@@ -100,7 +107,8 @@ exports.updateContractValidation = [
   nombreContrato(),
   faseContrato(),
   fecha('fechaInicio', 'La fecha de inicio', { obligatoria: false }),
-  fecha('fechaFin', 'La fecha de fin', { obligatoria: false })
+  fecha('fechaFin', 'La fecha de fin', { obligatoria: false }),
+  subidaIdOpcional
 ]
 
 exports.contractEstadoValidation = [
@@ -117,7 +125,7 @@ exports.setSirocValidation = [
     .trim()
     .isLength({ min: 3, max: 40 })
     .withMessage('El número de SIROC debe tener entre 3 y 40 caracteres'),
-  fecha('fechaRegistro', 'La fecha de registro')
+  fecha('fechaRegistro', 'La fecha de registro'),
   /*
    * NO se pide fecha final (D-76). El aviso vale dos meses desde el registro —o
    * desde la última actualización— y esa vigencia se deriva, así que capturarla
@@ -125,6 +133,7 @@ exports.setSirocValidation = [
    * cuerpo y se ignora, para que el front pueda quitar el campo de su formulario
    * sin quedarse sin registrar SIROCs mientras tanto.
    */
+  subidaIdOpcional
 ]
 
 /**
@@ -137,7 +146,8 @@ exports.sirocRenovacionValidation = [
   param('id').isMongoId().withMessage('El contrato indicado no es válido'),
   body().custom((cuerpo) => {
     const invalidos = Object.keys(cuerpo || {}).filter(
-      (c) => !['fecha', 'nota'].includes(c)
+      // `subidaId` no es un dato de la renovación: dice dónde está su acuse.
+      (c) => !['fecha', 'nota', 'subidaId'].includes(c)
     )
     if (invalidos.length > 0) {
       const pistas = {
@@ -204,10 +214,13 @@ exports.sirocUpdateFileUploadValidation = [
     .isInt({ min: 0 })
     .withMessage('La actualización indicada no es válida')
     .toInt(),
-  body().custom((_cuerpo, { req }) => {
-    if (!req.file) throw new Error('Envía el archivo en el campo "archivo"')
+  body().custom((cuerpo, { req }) => {
+    if (!req.file && !cuerpo?.subidaId) {
+      throw new Error('Envía el archivo en el campo "archivo", o su `subidaId`')
+    }
     return true
-  })
+  }),
+  subidaIdOpcional
 ]
 
 exports.CAMPOS_EDITABLES = CAMPOS_EDITABLES

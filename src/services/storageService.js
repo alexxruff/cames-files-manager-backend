@@ -3,6 +3,8 @@ const {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
+  CopyObjectCommand,
   DeleteObjectCommand
 } = require('@aws-sdk/client-s3')
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner')
@@ -281,6 +283,141 @@ function nombreDeContrato(contrato) {
  * es el requisito de trazabilidad): esto existe para limpiar una subida que
  * falló a medias, no para el flujo normal.
  */
+/**
+ * Clave temporal de una subida directa (D-83): `pendientes/{subidaId}`.
+ *
+ * Todo lo que sube el navegador aterriza aquí y **sólo se mueve a su carpeta
+ * definitiva cuando se confirma**, con el tipo ya comprobado por contenido. Dos
+ * cosas se ganan con eso: las carpetas de verdad no ven nunca un archivo sin
+ * validar, y la basura de las subidas que nadie confirma queda toda bajo un
+ * prefijo, que es lo que una regla de ciclo de vida sabe barrer sola.
+ *
+ * Sin extensión a propósito: el tipo real todavía no se conoce.
+ */
+function construirClaveTemporal(subidaId) {
+  const ruta = `pendientes/${String(subidaId).replace(/[^a-z0-9]/gi, '')}`
+  return env.R2_PREFIX ? `${env.R2_PREFIX}/${ruta}` : ruta
+}
+
+/**
+ * URL firmada para que **el navegador suba directo** al almacenamiento (D-83).
+ *
+ * `contentLength` va **firmado**: la petición que no mande exactamente ese
+ * tamaño no valida la firma, así que el tope deja de depender de que el cliente
+ * se porte bien. Es lo que sustituye al límite de multer cuando el archivo ya no
+ * pasa por aquí.
+ */
+async function urlDeSubida(clave, { contentType, contentLength, ttlSegundos } = {}) {
+  const expiresIn = ttlSegundos || env.R2_UPLOAD_URL_TTL
+
+  if (driver() === 'memoria') {
+    // Sin R2 no hay nada que firmar. La URL simulada permite ejercitar el flujo
+    // en desarrollo y en pruebas, donde el objeto se coloca con `subir`.
+    return `memoria://${clave}?subida=1&expiraEn=${expiresIn}`
+  }
+
+  return getSignedUrl(
+    cliente(),
+    new PutObjectCommand({
+      Bucket: env.R2_BUCKET,
+      Key: clave,
+      ContentType: contentType,
+      ContentLength: contentLength
+    }),
+    { expiresIn, signableHeaders: new Set(['content-length', 'content-type']) }
+  )
+}
+
+/**
+ * Qué hay guardado bajo esa clave, sin traerse el contenido: tamaño y tipo
+ * declarado. `null` si el objeto no existe — que es como se sabe que el
+ * navegador nunca llegó a subir.
+ */
+async function cabecera(clave) {
+  if (driver() === 'memoria') {
+    const guardado = enMemoria.get(clave)
+    if (!guardado) return null
+    return { tamanoBytes: guardado.buffer.length, contentType: guardado.contentType }
+  }
+
+  try {
+    const respuesta = await cliente().send(
+      new HeadObjectCommand({ Bucket: env.R2_BUCKET, Key: clave })
+    )
+    return {
+      tamanoBytes: Number(respuesta.ContentLength) || 0,
+      contentType: respuesta.ContentType || null
+    }
+  } catch (error) {
+    if (error?.$metadata?.httpStatusCode === 404 || error?.name === 'NotFound')
+      return null
+    throw error
+  }
+}
+
+/**
+ * Los primeros bytes del objeto, para detectar el tipo real por su firma.
+ *
+ * **Es lo que conserva la validación por contenido cuando el archivo ya no pasa
+ * por el servidor** (D-83): en vez de mirar un buffer que teníamos en memoria,
+ * se piden unos kilobytes al almacenamiento. Ese tramo —servidor a R2— es el
+ * rápido, así que cuesta milisegundos aunque el archivo pese 30 MB.
+ */
+async function leerRango(clave, bytes = 4096) {
+  if (driver() === 'memoria') {
+    const guardado = enMemoria.get(clave)
+    return guardado ? guardado.buffer.subarray(0, bytes) : null
+  }
+
+  try {
+    const respuesta = await cliente().send(
+      new GetObjectCommand({
+        Bucket: env.R2_BUCKET,
+        Key: clave,
+        Range: `bytes=0-${bytes - 1}`
+      })
+    )
+    return Buffer.from(await respuesta.Body.transformToByteArray())
+  } catch (error) {
+    if (error?.$metadata?.httpStatusCode === 404 || error?.name === 'NoSuchKey')
+      return null
+    throw error
+  }
+}
+
+/**
+ * Mueve un objeto dentro del bucket: copia y borra el origen.
+ *
+ * Es cómo una subida pendiente llega a su carpeta definitiva con la extensión
+ * real. La copia ocurre **dentro** del almacenamiento, así que el archivo no
+ * vuelve a viajar por la red del servidor.
+ */
+async function mover(origen, destino, { contentType } = {}) {
+  if (driver() === 'memoria') {
+    const guardado = enMemoria.get(origen)
+    if (!guardado) throw new Error(`mover: no hay nada en ${origen}`)
+    enMemoria.set(destino, {
+      buffer: guardado.buffer,
+      contentType: contentType || guardado.contentType
+    })
+    enMemoria.delete(origen)
+    return destino
+  }
+
+  await cliente().send(
+    new CopyObjectCommand({
+      Bucket: env.R2_BUCKET,
+      CopySource: `${env.R2_BUCKET}/${origen}`,
+      Key: destino,
+      ContentType: contentType,
+      MetadataDirective: contentType ? 'REPLACE' : 'COPY'
+    })
+  )
+  await borrar(origen)
+  logger.info('Documento movido a su carpeta definitiva', { origen, destino })
+  return destino
+}
+
 async function borrar(clave) {
   if (!clave) return
 
@@ -315,12 +452,17 @@ module.exports = {
   estaConfigurado,
   construirClave,
   construirClaveAdjunto,
+  construirClaveTemporal,
   firmarAdjunto,
   firmarRegistro,
   firmarSiroc,
   nombreDeActualizacion,
   nombreDeContrato,
   subir,
+  urlDeSubida,
+  cabecera,
+  leerRango,
+  mover,
   urlDeDescarga,
   borrar,
   contenidoEnMemoria,

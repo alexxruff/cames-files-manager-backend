@@ -10,6 +10,11 @@ class ContractController {
       : null
   }
 
+  /** Si esta petición trae papel, por el camino que sea (D-83). */
+  #trajoArchivo(req) {
+    return Boolean(req.file || req.body?.subidaId)
+  }
+
   #contexto(req) {
     return {
       user: req.user,
@@ -63,7 +68,9 @@ class ContractController {
     return ok(
       res,
       datos,
-      req.file ? 'Contrato actualizado con su archivo' : 'Contrato actualizado'
+      this.#trajoArchivo(req)
+        ? 'Contrato actualizado con su archivo'
+        : 'Contrato actualizado'
     )
   }
 
@@ -101,7 +108,7 @@ class ContractController {
     return ok(
       res,
       datos,
-      req.file ? 'SIROC registrado con su archivo' : 'SIROC registrado'
+      this.#trajoArchivo(req) ? 'SIROC registrado con su archivo' : 'SIROC registrado'
     )
   }
 
@@ -176,7 +183,7 @@ class ContractController {
     const datos = await contractService.reemplazarArchivoActualizacion(
       req.params.id,
       Number(req.params.indice),
-      this.#archivo(req),
+      { ...req.body, archivo: this.#archivo(req) },
       this.#contexto(req)
     )
     req.log.info('Acuse de actualización del SIROC guardado', {

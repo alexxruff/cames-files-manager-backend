@@ -1,4 +1,5 @@
 const { body, param, query } = require('express-validator')
+const { subidaIdOpcional } = require('./uploadValidation')
 
 // Persona moral (12) o física (13).
 const PATRON_RFC = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/
@@ -141,7 +142,8 @@ const descripcionObra = () =>
 exports.addConstructionRegistrationValidation = [
   param('id').isMongoId().withMessage('El cliente indicado no es válido'),
   numeroObra(true),
-  descripcionObra()
+  descripcionObra(),
+  subidaIdOpcional
 ]
 
 exports.updateConstructionRegistrationValidation = [
@@ -154,7 +156,8 @@ exports.updateConstructionRegistrationValidation = [
     return true
   }),
   numeroObra(false),
-  descripcionObra()
+  descripcionObra(),
+  subidaIdOpcional
 ]
 
 exports.constructionRegistrationFileValidation = [

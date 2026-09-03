@@ -5,7 +5,7 @@ const storage = require('../../../services/storageService')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { empresaEsVisible } = require('../../../middlewares/scopeMiddleware')
 const { deriveSirocTracking } = require('../../../utils/domain')
-const { detectarTipo, mensajeTipoNoPermitido } = require('../../../utils/fileTypes')
+const intake = require('../../../services/attachmentIntake')
 const { today, isAfter, isBefore } = require('../../../utils/dates')
 
 /**
@@ -46,8 +46,12 @@ class ContractService {
      * el mismo id en los reintentos: lo que choca es el número, no el documento.
      */
     const id = new mongoose.Types.ObjectId()
-    const archivo = datos.archivo
-      ? await this.#subirAdjunto({ _id: id }, datos.archivo, 'contrato', contexto)
+    const entrada = await intake.resolver(datos, {
+      destino: 'contrato',
+      referencia: { proyectoId: proyecto._id }
+    })
+    const archivo = entrada
+      ? await this.#guardarAdjunto({ _id: id }, entrada, 'contrato', contexto)
       : null
 
     /*
@@ -103,8 +107,12 @@ class ContractService {
      * final, cuando la base ya no lo referencia.
      */
     const anterior = contrato.archivo?.claveAlmacenamiento ?? null
-    const nuevo = datos.archivo
-      ? await this.#subirAdjunto(contrato, datos.archivo, 'contrato', contexto)
+    const entrada = await intake.resolver(datos, {
+      destino: 'contrato',
+      referencia: { contratoId: contrato._id }
+    })
+    const nuevo = entrada
+      ? await this.#guardarAdjunto(contrato, entrada, 'contrato', contexto)
       : null
     if (nuevo) contrato.archivo = nuevo
 
@@ -173,10 +181,14 @@ class ContractService {
      * anterior se borra hasta que la base ya no lo referencia.
      */
     const anterior = contrato.siroc?.archivo?.claveAlmacenamiento ?? null
-    const archivo = datos.archivo
-      ? await this.#subirAdjunto(contrato, datos.archivo, 'aviso', contexto)
+    const entrada = await intake.resolver(datos, {
+      destino: 'siroc-aviso',
+      referencia: { contratoId: contrato._id }
+    })
+    const archivo = entrada
+      ? await this.#guardarAdjunto(contrato, entrada, 'aviso', contexto)
       : this.#planoAdjunto(contrato.siroc?.archivo)
-    const claveNueva = datos.archivo ? archivo.claveAlmacenamiento : null
+    const claveNueva = entrada ? archivo.claveAlmacenamiento : null
 
     contrato.siroc = {
       numero,
@@ -271,8 +283,12 @@ class ContractService {
 
     // El acuse de ESTA renovación, si vino (D-80). Es opcional: se puede
     // capturar la fecha al volver del IMSS y escanear el papel más tarde.
-    const archivo = datos.archivo
-      ? await this.#subirAdjunto(contrato, datos.archivo, 'actualizacion', contexto)
+    const entrada = await intake.resolver(datos, {
+      destino: 'siroc-actualizacion',
+      referencia: { contratoId: contrato._id }
+    })
+    const archivo = entrada
+      ? await this.#guardarAdjunto(contrato, entrada, 'actualizacion', contexto)
       : null
 
     contrato.siroc.actualizaciones.push({ fecha, nota: datos.nota || null, archivo })
@@ -443,7 +459,7 @@ class ContractService {
    * de refrendos, ni la vigencia. Y sirve para cualquiera de ellas, no sólo la
    * última: las de en medio no se podían tocar de ninguna manera.
    */
-  async reemplazarArchivoActualizacion(id, indice, archivo, contexto = {}) {
+  async reemplazarArchivoActualizacion(id, indice, datos, contexto = {}) {
     const { contrato } = await this.#buscarVisible(id, contexto)
 
     if (!contrato.siroc) throw new AppError(400, 'Ese contrato no tiene SIROC registrado')
@@ -457,7 +473,16 @@ class ContractService {
      * esta ruta viene a resolver, y una obra puede haber cerrado mientras tanto.
      */
     const anterior = actualizacion.archivo?.claveAlmacenamiento ?? null
-    const nuevo = await this.#subirAdjunto(contrato, archivo, 'actualizacion', contexto)
+    const entrada = await intake.resolver(datos, {
+      destino: 'siroc-actualizacion',
+      referencia: { contratoId: contrato._id }
+    })
+    if (!entrada) {
+      throw AppError.validation('Adjunta el acuse de la actualización', [
+        { msg: 'El archivo es requerido', path: 'archivo' }
+      ])
+    }
+    const nuevo = await this.#guardarAdjunto(contrato, entrada, 'actualizacion', contexto)
 
     actualizacion.archivo = nuevo
     contrato.markModified('siroc.actualizaciones')
@@ -473,6 +498,18 @@ class ContractService {
     if (anterior && anterior !== nuevo.claveAlmacenamiento) await storage.borrar(anterior)
 
     return { contrato: await this.#serializar(contrato) }
+  }
+
+  /**
+   * Que el contrato exista y sea visible, sin devolverlo serializado (D-83).
+   *
+   * Lo usa el permiso de subida directa: antes de firmar nada hay que responder
+   * la misma pregunta que respondería la ruta que va a confirmar —incluido el
+   * 404 cuando el contrato es de otra empresa—.
+   */
+  async assertVisible(id, contexto = {}) {
+    const { contrato } = await this.#buscarVisible(id, contexto)
+    return contrato
   }
 
   // ─── Lo que consulta el proyecto para sus candados (G3) ────────────────────
@@ -514,19 +551,20 @@ class ContractService {
   }
 
   /**
-   * Sube el adjunto y devuelve el subdocumento listo para guardar.
+   * Deja el adjunto en su sitio y devuelve el subdocumento listo para guardar.
+   *
+   * Recibe la **entrada** de `attachmentIntake`, así que le da igual si el
+   * archivo llegó en `multipart` o si el navegador lo subió directo a R2 (D-83):
+   * el tipo ya viene comprobado por contenido en los dos casos.
    *
    * Al almacenamiento primero y a la base después, como en el expediente y en el
    * registro de obra: si la base falla, quien llama borra el objeto recién
-   * subido en vez de dejarlo huérfano.
+   * guardado en vez de dejarlo huérfano.
    *
    * @param {'aviso'|'actualizacion'|'contrato'} clase qué papel es, para la ruta
    *   en R2
    */
-  async #subirAdjunto(contrato, archivo, clase, contexto = {}) {
-    const tipoReal = detectarTipo(archivo.buffer, archivo.nombreOriginal)
-    if (!tipoReal) throw new AppError(415, mensajeTipoNoPermitido(archivo.buffer))
-
+  async #guardarAdjunto(contrato, entrada, clase, contexto = {}) {
     /*
      * Lo del SIROC cuelga de `siroc/{contratoId}/` y el contrato escaneado de
      * `contratos/{contratoId}/`: son papeles distintos —uno es del IMSS y el
@@ -536,17 +574,17 @@ class ContractService {
     const clave = storage.construirClaveAdjunto({
       carpeta: esDelContrato ? 'contratos' : 'siroc',
       ids: [contrato._id, clase],
-      extension: tipoReal.extension
+      extension: entrada.tipoReal.extension
     })
 
-    await storage.subir({ buffer: archivo.buffer, clave, contentType: tipoReal.mime })
+    await entrada.guardarEn(clave)
 
     return {
       nombre:
-        archivo.nombreOriginal ||
-        `${esDelContrato ? 'contrato' : 'siroc'}.${tipoReal.extension}`,
-      mime: tipoReal.mime,
-      tamanoBytes: archivo.buffer.length,
+        entrada.nombreOriginal ||
+        `${esDelContrato ? 'contrato' : 'siroc'}.${entrada.tipoReal.extension}`,
+      mime: entrada.tipoReal.mime,
+      tamanoBytes: entrada.tamanoBytes,
       subidoPor: contexto.user?.nombre || 'Sistema',
       subidoPorId: contexto.user?._id ?? null,
       subidoEn: new Date(),

@@ -649,7 +649,11 @@ describe('El archivo del SIROC', () => {
         .put(`${CONTRATOS}/${contrato._id}/siroc/actualizaciones/0/archivo`)
         .set(auth(e.token))
       expect(vacia.status).toBe(400)
-      expect(vacia.body.errors[0].msg).toBe('Envía el archivo en el campo "archivo"')
+      // El mensaje nombra los dos caminos desde D-83: el `multipart` y la
+      // subida directa, que se confirma con `subidaId`.
+      expect(vacia.body.errors[0].msg).toBe(
+        'Envía el archivo en el campo "archivo", o su `subidaId`'
+      )
 
       const fuera = await request(app)
         .put(`${CONTRATOS}/${contrato._id}/siroc/actualizaciones/7/archivo`)

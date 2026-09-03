@@ -13,5 +13,6 @@ module.exports = {
   ...require('./contractTypes'),
   ...require('./documentTypes'),
   ...require('./statuses'),
-  ...require('./alertTypes')
+  ...require('./alertTypes'),
+  ...require('./uploadTargets')
 }

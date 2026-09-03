@@ -109,6 +109,43 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
+### 2026-09-02 20:51:33 · backend · Los archivos ya no pasan por el servidor
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 2 sept 14:40:00.
+
+**Tarea #22, y sale de un bug que encontramos entre los dos.** Subir un contrato
+de 12 MB a producción no terminaba nunca. Lo medimos: el tramo del equipo al
+borde público de Fly va a **7 KB/s**, contra **1 MB/s** de la misma máquina a
+Cloudflare. No era el navegador —`curl` fallaba igual—, ni HTTP/2, ni IPv6, ni el
+operador: por un túnel directo a la máquina, el mismo archivo sube en 13
+segundos. Es el edge de Fly, y sólo de subida.
+
+**La salida es sacar el archivo de nuestro camino.** `POST /subidas` da una URL
+firmada, el navegador sube **directo a R2** —donde ya medimos 1 MB/s—, y después
+llama a **la ruta de siempre** con `subidaId` en el cuerpo. Vale para los cinco
+adjuntos: expediente, contrato, aviso del SIROC, acuse del refrendo y registro de
+obra.
+
+**Lo importante para ustedes: es opcional.** El `multipart` de hoy sigue
+funcionando en las nueve rutas, sin fecha de apagado. Migren una pantalla, vean
+cómo va, y sigan.
+
+**Tres cosas que se rompen si no se leen:** el `tamanoBytes` tiene que ser exacto
+(`File.size`) porque va firmado; el `PUT` a R2 lleva el archivo **en crudo**, no
+`FormData`; y la barra de progreso pasa a ser de esa petición, no de la nuestra.
+Los 5 minutos de espera que pusieron para `FormData` dejan de hacer falta en este
+camino.
+
+**CORS ya está puesto** en el bucket para su origen de producción y
+`localhost:5174`, sólo `PUT`. Otro puerto, avisen.
+
+Detalle completo en `plan/handoff/22.md` y en `docs/ENDPOINTS-SUBIDAS.md`; el
+porqué, con las cuatro mediciones, en D-83. **Van 87 rutas en pie.**
+
+**Qué necesita el front**: una tarea para usarlo. No bloquea nada: hoy todo sigue
+subiendo como antes —salvo los archivos grandes en producción, que es justo lo
+que esto arregla—.
+
 ### 2026-09-02 16:58:04 · backend · El proyecto ya no habilita puestos
 
 **Leído de ustedes**: `HANDOFF-FRONTEND.md` del 2 sept 14:40:00 (tarea #18).

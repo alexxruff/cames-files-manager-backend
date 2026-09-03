@@ -1,6 +1,7 @@
 const { body, param, query } = require('express-validator')
 const { DOCUMENT_TYPES, RECORD_STATUSES } = require('../constants')
 const { isCalendarDate } = require('../utils/dates')
+const { subidaIdOpcional } = require('./uploadValidation')
 
 exports.recordIdValidation = [
   param('id').isMongoId().withMessage('El expediente indicado no es válido')
@@ -65,7 +66,8 @@ exports.uploadDocumentValidation = [
         throw new Error('La vigencia debe tener el formato AAAA-MM-DD')
       }
       return true
-    })
+    }),
+  subidaIdOpcional
 ]
 
 exports.reviewDocumentValidation = [

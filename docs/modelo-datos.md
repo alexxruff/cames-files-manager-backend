@@ -135,7 +135,7 @@ quien administra los catálogos compartidos. Detalle en la sección 8.
 
 ## 3. Mapa de colecciones
 
-Las **14 que existen hoy**. Las tres últimas llegaron después de escribir este
+Las **15 que existen hoy**. Las tres últimas llegaron después de escribir este
 documento y no tienen sección propia en §5: su detalle está en
 [`ARQUITECTURA-DATOS.md`](./ARQUITECTURA-DATOS.md).
 
@@ -155,6 +155,7 @@ documento y no tienen sección propia en §5: su detalle está en
 | `credentials` | Material secreto, aislado (D-27) | Empleado | — |
 | `areas` | **Catálogo compartido**, dejó de ser enum (D-58) | — | — |
 | `access_logs` | Auditoría | — | — |
+| `uploads` | **Permiso de subida directa**, efímero (D-83) | — | — |
 
 > **Los nombres de arriba son los de MongoDB, en inglés**; en el contrato HTTP
 > las rutas y las llaves van en español (`/empresas`, `/expedientes`). La tabla

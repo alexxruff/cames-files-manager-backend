@@ -29,7 +29,8 @@ const modelos = {
   Contract: require('../api/v1/contracts/contractModel'),
   ChecklistTemplate: require('../api/v1/checklistTemplates/checklistTemplateModel'),
   Record: require('../api/v1/records/recordModel'),
-  AccessLog: require('../api/v1/accessLogs/accessLogModel')
+  AccessLog: require('../api/v1/accessLogs/accessLogModel'),
+  Upload: require('../api/v1/uploads/uploadModel')
 }
 
 /** Nombres que deben estar registrados. Lo usa la prueba de humo. */

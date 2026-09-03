@@ -57,6 +57,9 @@ class RecordController {
         archivo: req.file
           ? { buffer: req.file.buffer, nombreOriginal: req.file.originalname }
           : null,
+        // El papel puede venir aquí o estar ya subido directo al almacenamiento
+        // (D-83); el servicio resuelve una cosa u otra.
+        subidaId: req.body?.subidaId || null,
         vigenciaHasta: req.body?.vigenciaHasta || null
       },
       this.#contexto(req)
@@ -65,7 +68,8 @@ class RecordController {
     req.log.info('Documento subido', {
       expedienteId: req.params.id,
       tipo: req.params.tipo,
-      bytes: req.file?.size
+      bytes: req.file?.size,
+      subidaId: req.body?.subidaId || null
     })
 
     return created(

@@ -93,6 +93,13 @@ const schema = z.object({
   R2_SIGNED_URL_TTL: z.coerce.number().int().positive().default(600),
 
   /**
+   * Vida del permiso de subida directa, en segundos (D-83). 15 minutos: tiene
+   * que alcanzar para subir 30 MB por una conexión mediocre, y no más — es una
+   * credencial de escritura, aunque sea de un solo objeto.
+   */
+  R2_UPLOAD_URL_TTL: z.coerce.number().int().positive().default(900),
+
+  /**
    * Tamaño máximo de un adjunto: expediente, registro de obra, SIROC y contrato.
    * 30 MB (D-81): un contrato de obra escaneado pasa de 20 con facilidad, y el
    * tope anterior de 10 MB lo rebotaba.

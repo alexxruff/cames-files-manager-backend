@@ -28,22 +28,23 @@ tiempo de ejecución**, así que no puede mentir:
 curl -s http://localhost:8080/api/v1 | jq '.data.implementados, .data.pendientes'
 ```
 
-`GET /api/v1` es público. Hoy son **86 rutas** en pie y 6 anunciadas como
+`GET /api/v1` es público. Hoy son **87 rutas** en pie y 6 anunciadas como
 pendientes. Dónde está el detalle de cada familia:
 
-| Familia                                      | Detalle en                                             |
-| -------------------------------------------- | ------------------------------------------------------ |
-| `/auth` — sesión y contraseñas               | **Este documento**, §5                                 |
-| `/empleados` — catálogo, alta, edición, baja | **Este documento**, §5                                 |
-| `/empleados/:id/acceso` — quién entra        | **Este documento**, §5                                 |
-| `/empleados/importar` — el `.xlsx` de nómina | `ENDPOINTS-IMPORTACION.md`                             |
-| `/empresas`, `/adscripciones`, `/carteras`   | `ENDPOINTS-ADSCRIPCIONES.md`                           |
-| `/proyectos`, `/asignaciones`, `/contratos`  | `ENDPOINTS-PROYECTOS.md`                               |
-| `/expedientes` y sus documentos              | `ENDPOINTS-EXPEDIENTES.md` (§`obras`: el SIROC, D-77)  |
-| `/alertas`                                   | `ENDPOINTS-ALERTAS.md`                                 |
-| `/areas`                                     | `ENDPOINTS-AREAS.md`                                   |
-| `/clientes`, `/categorias`                   | `CONTRATO-API.md` (§«El archivo del registro de obra») |
-| `/usuarios*`                                 | Responde **410**: se movió, y el mensaje dice a dónde  |
+| Familia                                          | Detalle en                                             |
+| ------------------------------------------------ | ------------------------------------------------------ |
+| `/auth` — sesión y contraseñas                   | **Este documento**, §5                                 |
+| `/empleados` — catálogo, alta, edición, baja     | **Este documento**, §5                                 |
+| `/empleados/:id/acceso` — quién entra            | **Este documento**, §5                                 |
+| `/empleados/importar` — el `.xlsx` de nómina     | `ENDPOINTS-IMPORTACION.md`                             |
+| `/empresas`, `/adscripciones`, `/carteras`       | `ENDPOINTS-ADSCRIPCIONES.md`                           |
+| `/proyectos`, `/asignaciones`, `/contratos`      | `ENDPOINTS-PROYECTOS.md`                               |
+| `/expedientes` y sus documentos                  | `ENDPOINTS-EXPEDIENTES.md` (§`obras`: el SIROC, D-77)  |
+| `/alertas`                                       | `ENDPOINTS-ALERTAS.md`                                 |
+| `/areas`                                         | `ENDPOINTS-AREAS.md`                                   |
+| `/clientes`, `/categorias`                       | `CONTRATO-API.md` (§«El archivo del registro de obra») |
+| `/subidas` — subir un archivo sin pasar por aquí | `ENDPOINTS-SUBIDAS.md`                                 |
+| `/usuarios*`                                     | Responde **410**: se movió, y el mensaje dice a dónde  |
 
 > **`data.empleado` significa siempre lo mismo:** el **RenglonEmpleado**
 > (`{ empleado, categoriaNombre, adscripciones, asignaciones, avanceExpediente,

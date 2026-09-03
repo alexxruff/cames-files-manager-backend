@@ -2,7 +2,12 @@
 
 Referencia de los **30 endpoints** de este dominio para el equipo de front.
 
-> **Actualizado hasta D-82.** Lo último: **el proyecto ya no habilita puestos**
+> **Actualizado hasta D-83.** Todas las rutas de este documento que aceptan un
+> archivo —el contrato, el aviso del SIROC y el acuse de un refrendo— aceptan
+> ahora, **como alternativa al `multipart`**, un JSON con `subidaId`: el archivo
+> se sube directo a R2 y el servidor sólo lo registra. Es aditivo y el
+> `multipart` sigue igual; el paso a paso está en
+> [`ENDPOINTS-SUBIDAS.md`](./ENDPOINTS-SUBIDAS.md). Antes de eso, **D-82.** Lo último: **el proyecto ya no habilita puestos**
 > (§2). `categorias` desaparece del alta, de la edición y de la respuesta; la
 > ruta `POST /proyectos/:id/categorias/clonar` **ya no existe**; y el selector de
 > asignables devuelve a todo el personal adscrito y activo de la empresa, sea

@@ -1,5 +1,9 @@
 # Expedientes: listado, consulta, subida y revisión de documentos
 
+> **D-83:** subir un documento acepta ahora, como alternativa al `multipart`, un
+> JSON con `subidaId` — el archivo va directo a R2 y aquí sólo se registra. Ver
+> [`ENDPOINTS-SUBIDAS.md`](./ENDPOINTS-SUBIDAS.md).
+
 Referencia de los **6 endpoints nuevos** y de **un cambio** en algo que ya
 consumen (`RenglonEmpleado`). Nada más cambió.
 

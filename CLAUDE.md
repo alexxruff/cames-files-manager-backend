@@ -13,7 +13,7 @@ vigencias, alertas y reportes de auditoría.
   la capa simulada la conserva para desarrollar. Donde su lógica y la nuestra
   difieran, **manda ésta**.
 - Documentos autoritativos, los tres en `docs/`:
-  - **`ARQUITECTURA-DATOS.md`** — el mapa de lo que HAY: las 14 colecciones, cómo
+  - **`ARQUITECTURA-DATOS.md`** — el mapa de lo que HAY: las 15 colecciones, cómo
     se relacionan y qué se rompe al tocar cada una. **Léelo antes de cambiar
     cualquier esquema, y actualízalo en el mismo cambio.**
   - **`modelo-datos.md`** — el diseño y su porqué. Ha derivado; donde discrepe
@@ -155,6 +155,8 @@ src/
     assignments/        proyecto ↔ empleado; avisa si el registro patronal no
                         coincide y resuelve la trazabilidad (D-71)
     alerts/             bandeja derivada: documentos y cumpleaños (D-47)
+    uploads/            permisos de subida directa a R2 (D-83): el archivo va del
+                        navegador al almacenamiento, no por aquí
     clients/ categories/  catálogos compartidos
     areas/              catálogo de áreas: 9 base + las temporales que deja el
                         archivo de nómina (D-58)
@@ -172,7 +174,8 @@ src/
                         schemaSkeleton (el esqueleto real, derivado del código)
   utils/domain/         reglas PURAS: documentStatus · progress · alerts ·
                         checklist · expiry · employeeImport · registries
-  services/             bootstrapAdmin · seedChecklistTemplates
+  services/             bootstrapAdmin · seedChecklistTemplates · storageService ·
+                        attachmentIntake (de dónde viene un adjunto, D-83)
 scripts/                semillas, índices, migración y el esqueleto
 tests/                  unitarias/ · integracion/ · helpers/
 docs/                   modelo-datos · backend-spec · arquitectura · contrato ·
@@ -269,6 +272,13 @@ registro patronal **avisa, no bloquea** —Maquinaria CAMES tiene 144 personas
 repartidas en cuatro registros—, y `GET /asignaciones/:id` devuelve la cadena
 `empleado → empresa → registro patronal → proyecto → registro de obra` resuelta
 al leer, sin guardar un solo id nuevo.
+
+Y la **subida directa** (D-83): el archivo ya no pasa por el servidor. `POST
+/subidas` da una URL firmada de un solo uso, el navegador sube a R2 y la ruta de
+siempre registra el adjunto con `subidaId` en el cuerpo. Es para los cinco
+adjuntos —expediente, contrato, aviso del SIROC, acuse del refrendo y registro de
+obra—, **el `multipart` de siempre sigue funcionando**, y salió de que subir 12 MB
+a producción no terminaba nunca: el borde público de Fly va a 7 KB/s de subida.
 
 Y desde D-72 la adscripción **se vincula a su registro patronal** por id
 (`registroPatronalId`), que convive con el texto de la nómina en vez de
