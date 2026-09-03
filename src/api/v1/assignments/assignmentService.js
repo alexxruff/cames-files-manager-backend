@@ -4,6 +4,7 @@ const Project = require('../projects/projectModel')
 const Employee = require('../employees/employeeModel')
 const Affiliation = require('../affiliations/affiliationModel')
 const Company = require('../companies/companyModel')
+const machineAssignmentService = require('../machineAssignments/machineAssignmentService')
 const storage = require('../../../services/storageService')
 const { AppError } = require('../../../middlewares/errorHandler')
 const {
@@ -354,7 +355,16 @@ class AssignmentService {
     }
   }
 
-  /** Cierra la asignación. No borra: el histórico es el punto. */
+  /**
+   * Cierra la asignación. No borra: el histórico es el punto.
+   *
+   * **Y sus máquinas pierden al trabajador, no la obra** (D-87): la máquina se
+   * queda donde está —una excavadora no vuelve al patio porque su operador ya no
+   * esté en la obra— y pasa a estar «sin trabajador» hasta que alguien la
+   * reasigne o la devuelva. Va en la misma transacción que la salida: dejar la
+   * asignación cerrada y la máquina en manos de quien ya se fue es justo la
+   * mentira que esto evita.
+   */
   async salida(id, { fechaSalida }, contexto = {}) {
     const asignacion = await this.#buscarAsignacion(id)
 
@@ -365,11 +375,41 @@ class AssignmentService {
       throw new AppError(400, 'Esa asignación ya está cerrada')
     }
 
-    asignacion.activo = false
-    asignacion.fechaSalida = fechaSalida
-    await asignacion.save()
+    let maquinasLiberadas = []
 
-    return this.#unaConNombres(asignacion._id)
+    const sesion = await mongoose.startSession()
+    try {
+      await sesion.withTransaction(async () => {
+        // Cada intento parte de cero: `withTransaction` puede reintentar.
+        maquinasLiberadas = []
+
+        asignacion.activo = false
+        asignacion.fechaSalida = fechaSalida
+        await asignacion.save({ session: sesion })
+
+        maquinasLiberadas = await machineAssignmentService.liberarDelTrabajador(
+          {
+            empleadoId: asignacion.empleadoId,
+            proyectoId: asignacion.proyectoId,
+            fecha: fechaSalida,
+            motivo: 'salida_de_obra'
+          },
+          sesion
+        )
+      })
+    } finally {
+      await sesion.endSession()
+    }
+
+    return {
+      ...(await this.#unaConNombres(asignacion._id)),
+      // Lo que quedó en la obra sin operador, para que la pantalla lo diga.
+      maquinasLiberadas,
+      avisos: maquinasLiberadas.map(
+        (m) =>
+          `La máquina ${m.identificador} se queda en ${m.proyectoNombre} sin trabajador.`
+      )
+    }
   }
 
   /**

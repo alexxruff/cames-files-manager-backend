@@ -64,9 +64,20 @@ class AssignmentController {
     )
     req.log.info('Asignación cerrada', {
       asignacionId: req.params.id,
-      fechaSalida: req.body.fechaSalida
+      fechaSalida: req.body.fechaSalida,
+      maquinasLiberadas: datos.maquinasLiberadas.length
     })
-    return ok(res, datos, 'Asignación cerrada. Queda en el historial del proyecto.')
+    /*
+     * Si dejó máquinas, el mensaje lo dice: quien cierra la asignación es quien
+     * puede hacer algo al respecto, y en ese momento.
+     */
+    return ok(
+      res,
+      datos,
+      datos.avisos.length > 0
+        ? `Asignación cerrada. ${datos.avisos.join(' ')}`
+        : 'Asignación cerrada. Queda en el historial del proyecto.'
+    )
   }
 }
 

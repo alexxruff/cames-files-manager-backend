@@ -1,5 +1,6 @@
 const express = require('express')
 const machineController = require('./machineController')
+const machineAssignmentController = require('../machineAssignments/machineAssignmentController')
 const asyncHandler = require('../../../utils/asyncHandler')
 const validateRequest = require('../../../middlewares/validateRequest')
 const { protect, requireCapability } = require('../../../middlewares/authMiddleware')
@@ -13,6 +14,11 @@ const {
   updateMachineValidation,
   machineEstadoValidation
 } = require('../../../validations/machineValidation')
+const {
+  asignarMaquinaValidation,
+  devolverMaquinaValidation,
+  machineHistoryValidation
+} = require('../../../validations/machineAssignmentValidation')
 
 /**
  * `/maquinas/:id` — operar sobre una máquina concreta (D-86).
@@ -70,6 +76,40 @@ router.get(
   machineImageValidation,
   validateRequest,
   asyncHandler(machineController.urlImagen)
+)
+
+/*
+ * ─── La máquina en la obra (D-87) ───────────────────────────────────────────
+ *
+ * `asignacion` es singular porque **sólo hay una vigente**: asignarla otra vez
+ * la reasigna, no acumula. La obra NO se captura —sale de la asignación del
+ * trabajador—, así que el cuerpo lleva a la persona y, sólo si está en varias
+ * obras, en cuál va.
+ *
+ * La devolución es lo único que la saca de la obra sin llevarla a otra; el
+ * historial es de lectura, como el resto de la ficha.
+ */
+router.post(
+  '/:id/asignacion',
+  gestionarProyectos,
+  asignarMaquinaValidation,
+  validateRequest,
+  asyncHandler(machineAssignmentController.asignar)
+)
+
+router.post(
+  '/:id/devolucion',
+  gestionarProyectos,
+  devolverMaquinaValidation,
+  validateRequest,
+  asyncHandler(machineAssignmentController.devolver)
+)
+
+router.get(
+  '/:id/historial',
+  machineHistoryValidation,
+  validateRequest,
+  asyncHandler(machineAssignmentController.historial)
 )
 
 module.exports = router

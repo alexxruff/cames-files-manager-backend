@@ -4013,4 +4013,89 @@ cientos, se pagina entonces con los mismos `pagina`/`porPagina` de los demás.
 **Qué NO se hizo.** No se agregó el conteo de máquinas a los `conteos` de
 `GET /empresas`: nadie lo pidió y la tarjeta de empresa no lo pinta. Y no se
 decidió qué pasa con la máquina cuando el trabajador sale de la obra: es de la
-#31 y está planteado en la propuesta (se libera sola).
+#31. **La propuesta decía «se libera sola» y NO fue lo que se decidió**: ver
+D-87.
+
+---
+
+## D-87 · La máquina va a la obra del trabajador, y cuando él se va pierde a la persona, no la obra
+
+**Contexto.** Tarea #31, 3 sept 2026, continuación de D-86. Una máquina se le
+asigna a un trabajador y con eso queda en la obra donde él está; hay que poder
+responder quién la tiene, qué máquinas hay en cada obra, y cuánto tiempo la ha
+usado cada quien. La propuesta está en
+`cames-ops/plan/propuestas/2026-09-03-maquinaria.md`.
+
+**La obra no se captura: sale de la asignación del trabajador.** Es la regla que
+pidió Urbacames y la que decide todo lo demás. `POST /maquinas/:id/asignacion`
+recibe `empleadoId`; el servidor busca las asignaciones activas de esa persona en
+proyectos **de la empresa de la máquina** y toma de ahí la obra. `proyectoId` en
+el cuerpo **sólo desempata** cuando hay varias, y tiene que ser una de las suyas:
+nunca decide por su cuenta, igual que `empresaId` nunca decide alcance. Si está
+en varias y no lo mandan, la respuesta es `400 OBRA_REQUERIDA` **con la lista de
+obras** en `data.obras`, para que la pantalla pregunte en vez de adivinar; si no
+está en ninguna, 400 diciendo que hay que asignarlo a la obra primero.
+
+La alternativa —capturar la obra aparte— se descartó por lo que permite: una
+máquina en una obra donde su operador no está, que es justo lo que el pedido
+prohíbe. El `asignacionId` queda guardado como trazabilidad de **de dónde salió**
+esa obra.
+
+**Una colección nueva, `machine_assignments`, y el trabajador es anulable.** Un
+tramo es «esta máquina, en esta obra, con esta persona, entre estas dos fechas».
+El campo que parece un detalle y es la decisión entera: **`empleadoId` puede ser
+`null`**, y eso significa «en la obra, sin trabajador». Sin ese estado no se
+podría cumplir la regla de abajo.
+
+**La máquina pierde al trabajador, no la obra.** Es la corrección explícita de
+Urbacames sobre la propuesta, que decía que la máquina «se libera sola» y vuelve
+al patio. No: cuando al operador lo dan de baja (`PATCH /empleados/:id/estado`) o
+sale de la obra (`PATCH /asignaciones/:id/salida`), el tramo se cierra
+—`baja_de_trabajador` o `salida_de_obra`— y **se abre otro en la misma obra con
+`empleadoId: null`**, dentro de la misma transacción. Una excavadora no vuelve al
+patio porque su operador ya no esté; sigue ahí hasta que alguien la mueva. Las
+dos respuestas devuelven `maquinasLiberadas` y lo dicen en su `message`, porque
+quien cierra la asignación es quien puede hacer algo al respecto, en ese momento.
+
+Sacarla de la obra es **una decisión a mano**: `POST /maquinas/:id/devolucion` la
+regresa al patio, o se le asigna a otra persona. Ese «a mano» es el punto: el
+sistema no adivina dónde acabó la máquina.
+
+**La excepción es la baja de la máquina.** `PATCH /maquinas/:id/estado` con
+`activo: false` **sí** cierra el tramo del todo (`baja_de_maquina`) y no abre
+otro: una máquina fuera de servicio no está en ninguna obra ni con nadie. Se
+consideró bloquear la baja hasta devolverla; se descartó porque obliga a un
+trámite para registrar algo que ya pasó, y el motivo del cierre deja el rastro
+igual.
+
+**Una máquina con una sola persona a la vez, impuesto por la base.** Índice único
+**parcial** `{ maquinaId }` sobre `activo: true`, el mismo patrón de
+`assignments`: permite el histórico —muchos tramos cerrados de la misma máquina—
+e impide dos vigentes. Asignarla a otra persona cierra el tramo anterior con
+`reasignacion` y lo devuelve en `liberada`, con el aviso para mostrar. Al revés
+no hay límite: una persona puede traer varias máquinas.
+
+**Los días se calculan al leer** (`utils/domain/machineTime.js`, regla #6). Cada
+tramo dice cuántos días duró y el vigente **cuenta hasta hoy**, así que crece
+solo y no hay nada que cerrar para saber cuánto va. Son **días naturales
+inclusivos** —entregada y devuelta el mismo día es 1 día, no 0—, que es como los
+cuenta quien renta maquinaria; y el día del cambio de manos lo cuentan los dos
+trabajadores, porque ese día la tuvieron ambos. `porTrabajador` suma por persona,
+de más a menos días, y los tramos sin trabajador aparecen en la historia pero **no
+le suman días a nadie**.
+
+**La máquina sigue sin guardar dónde está.** `asignacion` viaja en todas las
+respuestas de máquinas y se resuelve con una sola consulta por listado; en
+`machines` no se guardó ni `empleadoId` ni `proyectoId`. Hay una prueba que lo
+comprueba: dos verdades sobre dónde está una máquina se desincronizan siempre, y
+la que se quedaría vieja es la de la máquina.
+
+**Sin migración.** La colección nace vacía y ningún dato existente cambia de
+forma.
+
+**Qué NO se hizo.** No se toca la máquina cuando el **proyecto** se finaliza: las
+máquinas se quedan en la obra terminada hasta que alguien las devuelva, y sí se
+impide llevar una máquina nueva a un proyecto finalizado. No hay listado global
+de tramos ni filtro por rango de fechas: la historia se pide por máquina. Y no
+hay conteo de máquinas en `GET /proyectos` ni en `GET /empresas`; si la pantalla
+lo quiere, se agrega.

@@ -16,5 +16,6 @@ module.exports = {
   ...require('./checklist'),
   ...require('./expiry'),
   ...require('./registries'),
-  ...require('./siroc')
+  ...require('./siroc'),
+  ...require('./machineTime')
 }

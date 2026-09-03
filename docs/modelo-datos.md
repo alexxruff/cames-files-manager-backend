@@ -135,7 +135,7 @@ quien administra los catálogos compartidos. Detalle en la sección 8.
 
 ## 3. Mapa de colecciones
 
-Las **16 que existen hoy**. Las tres que van antes de `machines` llegaron
+Las **17 que existen hoy**. Las tres que van antes de `machines` llegaron
 después de escribir este documento y no tienen sección propia en §5: su detalle
 está en [`ARQUITECTURA-DATOS.md`](./ARQUITECTURA-DATOS.md).
 
@@ -157,6 +157,7 @@ está en [`ARQUITECTURA-DATOS.md`](./ARQUITECTURA-DATOS.md).
 | `access_logs` | Auditoría | — | — |
 | `uploads` | **Permiso de subida directa**, efímero (D-83) | — | — |
 | `machines` | **Catálogo por empresa**: la maquinaria (D-86) | Empresa | §5.5c |
+| `machine_assignments` | **Vínculo** máquina ↔ obra ↔ trabajador (D-87) | Máquina | §5.5d |
 
 > **Los nombres de arriba son los de MongoDB, en inglés**; en el contrato HTTP
 > las rutas y las llaves van en español (`/empresas`, `/expedientes`). La tabla
@@ -559,9 +560,9 @@ const maquinaSchema = new mongoose.Schema({
 
 **Lo que la máquina NO tiene**, a propósito: marca, tipo, serie ni papeles
 (entran después como campos nuevos si hacen falta), y **ni `empleadoId` ni
-`proyectoId`**: quién la tiene y en qué obra está es la asignación de la máquina
-(tarea #31), que toma la obra de la asignación del trabajador y se resuelve al
-leer.
+`proyectoId`**: quién la tiene y en qué obra está vive en §5.5d y se resuelve al
+leer. Todas las respuestas de máquinas traen `asignacion`, que es `null` cuando
+está en el patio.
 
 Reglas:
 
@@ -575,6 +576,62 @@ Reglas:
 
 Aquí vive en `src/api/v1/machines/` y el detalle de la entrega está en
 [`ENDPOINTS-MAQUINAS.md`](./ENDPOINTS-MAQUINAS.md).
+
+### 5.5d `asignaciones de máquina` — dónde está y quién la tiene
+
+Un **tramo**: una máquina, en una obra, con una persona, entre dos fechas (3 sept
+2026, D-87). La cadena de tramos de una máquina **es** su historia.
+
+```js
+const asignacionDeMaquinaSchema = new mongoose.Schema({
+  maquinaId:  { type: ObjectId, ref: 'Maquina',  required: true },
+  // Copiada de la máquina: con esto se recorta al alcance sin cruzarla.
+  empresaId:  { type: ObjectId, ref: 'Empresa',  required: true },
+  // La obra. NUNCA se captura: sale de la asignación del trabajador.
+  proyectoId: { type: ObjectId, ref: 'Proyecto', required: true },
+
+  // NULO A PROPÓSITO: `null` = «en la obra, sin trabajador». Es lo que deja la
+  // salida de la obra o la baja de la persona (D-87).
+  empleadoId:   { type: ObjectId, ref: 'Empleado',   default: null },
+  // De qué asignación tomó la obra. La trazabilidad de «la máquina va donde va
+  // la persona»; nula en los tramos sin trabajador.
+  asignacionId: { type: ObjectId, ref: 'Asignacion', default: null },
+
+  fechaAsignacion: { type: String, required: true },   // 'YYYY-MM-DD'
+  fechaDevolucion: { type: String, default: null },
+
+  // Sólo en los tramos cerrados, y obligatorio en ellos.
+  motivoCierre: {
+    type: String,
+    enum: ['devolucion', 'reasignacion', 'baja_de_maquina',
+           'salida_de_obra', 'baja_de_trabajador'],
+    default: null
+  },
+
+  activo: { type: Boolean, default: true }
+}, { timestamps: true });
+
+// Una máquina está con UNA sola persona a la vez. Parcial, no `unique` a secas:
+// el histórico son muchos tramos cerrados de la misma máquina.
+schema.index({ maquinaId: 1 }, { unique: true, partialFilterExpression: { activo: true } });
+```
+
+Reglas:
+
+- **La obra sale del trabajador.** El cuerpo manda `empleadoId`; `proyectoId`
+  sólo desempata cuando la persona está en varias obras, y tiene que ser una de
+  las suyas, en la empresa de la máquina.
+- **Una máquina, una persona.** Asignarla a otra cierra el tramo anterior con
+  motivo `reasignacion`. Una persona sí puede traer varias máquinas.
+- **La máquina pierde al trabajador, no la obra.** Al cerrar su asignación a la
+  obra o al darlo de baja, el tramo se cierra y **se abre otro en la misma obra
+  con `empleadoId: null`**. Sólo la devolución la saca de ahí.
+- **Dar de baja la máquina sí cierra el tramo del todo** (`baja_de_maquina`):
+  fuera de servicio no está en ninguna obra.
+- **Nada de tiempo se guarda** (§6): los días de cada tramo y el acumulado por
+  trabajador se calculan al leer, y el tramo vigente cuenta hasta hoy.
+
+Aquí vive en `src/api/v1/machineAssignments/`.
 
 ### 5.6 `expedientes`
 

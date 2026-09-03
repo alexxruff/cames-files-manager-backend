@@ -83,7 +83,7 @@ class EmployeeController {
 
   /** PATCH /empleados/:id/estado — baja o reactivación del sistema */
   setEstado = async (req, res) => {
-    const renglon = await employeeService.setEstado(
+    const { renglon, maquinasLiberadas } = await employeeService.setEstado(
       req.params.id,
       { activo: req.body.activo, motivo: req.body.motivo, fecha: req.body.fecha },
       this.#contexto(req)
@@ -91,15 +91,30 @@ class EmployeeController {
 
     req.log.info(req.body.activo ? 'Empleado reactivado' : 'Empleado dado de baja', {
       empleadoId: renglon.empleado._id,
-      motivo: req.body.motivo || null
+      motivo: req.body.motivo || null,
+      maquinasLiberadas: maquinasLiberadas.length
     })
+
+    /*
+     * Si traía máquinas, el mensaje lo dice: se quedaron en su obra sin
+     * operador (D-87) y alguien tiene que decidir qué hacer con ellas.
+     */
+    const avisoMaquinas =
+      maquinasLiberadas.length > 0
+        ? ` ${maquinasLiberadas
+            .map(
+              (m) =>
+                `La máquina ${m.identificador} se queda en ${m.proyectoNombre} sin trabajador.`
+            )
+            .join(' ')}`
+        : ''
 
     return ok(
       res,
-      { empleado: renglon },
+      { empleado: renglon, maquinasLiberadas },
       req.body.activo
         ? 'Empleado reactivado. Si necesita entrar a la plataforma, vuelve a darle acceso.'
-        : 'Empleado dado de baja. Su expediente y su historial se conservan.'
+        : `Empleado dado de baja. Su expediente y su historial se conservan.${avisoMaquinas}`
     )
   }
 

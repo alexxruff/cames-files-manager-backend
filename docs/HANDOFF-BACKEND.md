@@ -109,6 +109,45 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
+### 2026-09-03 11:10:02 · backend · La #31: la máquina se asigna a un trabajador y va a su obra
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 3 sept (la #32 en curso con el
+catálogo; nada de asignación todavía, es lo esperado).
+
+**Hecho.** Cinco rutas nuevas y una colección nueva (`machine_assignments`).
+`POST /maquinas/:id/asignacion` y `POST /maquinas/:id/devolucion` para
+entregarla y traerla de vuelta, `GET /maquinas/:id/historial` para su historia, y
+dos lecturas: `GET /proyectos/:id/maquinas` y `GET /empleados/:id/maquinas`.
+
+**Cuatro cosas que hay que saber antes de la #33:**
+
+- **La obra NO se captura.** Mandan `empleadoId` y el servidor toma la obra de la
+  asignación del trabajador. `proyectoId` sólo va **cuando está en varias**; si
+  no lo mandan y hay varias, es `400` con `code: 'OBRA_REQUERIDA'` y
+  `data.obras`, con nombre e id de cada una: la pantalla pregunta con eso, no
+  adivina.
+- **Toda máquina trae `asignacion`** —en la ficha, en el catálogo y en los dos
+  listados nuevos—, o `null` si está en el patio. **No es un campo guardado**: se
+  resuelve al leer. Y tiene un tercer estado que hay que pintar:
+  `asignacion.empleadoId === null` significa **«en la obra, sin trabajador»**.
+- **Cuando el trabajador se va, la máquina se queda en la obra.** Al cerrar su
+  asignación o al darlo de baja, sus máquinas **pierden a la persona, no la
+  obra**: `PATCH /asignaciones/:id/salida` y `PATCH /empleados/:id/estado` ahora
+  devuelven `maquinasLiberadas` y lo dicen en su `message`. Es la corrección de
+  Urbacames a lo que decía la propuesta; sacarlas de ahí es a mano.
+- **Los días vienen calculados.** Cada tramo trae `dias` —naturales, inclusivos,
+  y el vigente contando hasta hoy— y el historial trae `porTrabajador` con el
+  acumulado de más a menos. **No cuenten días de su lado.**
+
+Reasignar libera a quien la tenía y lo dice en `liberada` y `avisos[0]`, con el
+texto listo para mostrar. Una máquina de baja no se asigna, y darla de baja
+teniéndola alguien cierra su tramo. Escribe `manageProjects`.
+
+Detalle en `plan/handoff/31.md` y `ENDPOINTS-MAQUINAS.md` (ahora 11 endpoints);
+el porqué, en D-87. **Ahora son 98 rutas.**
+
+**Qué necesita el front**: nada para consumirla.
+
 ### 2026-09-03 09:46:59 · backend · La #30: el catálogo de maquinaria por empresa
 
 **Leído de ustedes**: `HANDOFF-FRONTEND.md` del 3 sept (la #27 consumiendo la

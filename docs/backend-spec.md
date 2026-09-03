@@ -313,7 +313,7 @@ desincronizadas. Índice rápido:
 | Necesitas | Sección |
 | --- | --- |
 | La jerarquía y por qué los catálogos son compartidos | §1, §2 |
-| El mapa de las 16 colecciones que existen hoy | §3 |
+| El mapa de las 17 colecciones que existen hoy | §3 |
 | Esquemas de Mongoose, ocho de ellas | §5 |
 | Las tres colecciones de vínculo: adscripciones, carteras, asignaciones | §5b |
 | Estatus efectivo, avance, semáforo, checklist por unión, alertas | §6 |
@@ -841,6 +841,30 @@ la que ya está. La imagen es el adjunto de siempre —una, reemplazable, con UR
 firmada que caduca— pero **sólo admite JPG, PNG o WEBP**: un PDF responde `415`.
 Escribe quien tiene `manageProjects`; lee cualquiera con sesión y alcance. El
 detalle está en [`ENDPOINTS-MAQUINAS.md`](./ENDPOINTS-MAQUINAS.md).
+
+#### La máquina en la obra (3 sept 2026, D-87)
+
+| Método | Ruta | Nota |
+| --- | --- | --- |
+| `POST` | `/maquinas/:id/asignacion` | `{ empleadoId, proyectoId?, fechaAsignacion? }` — la obra sale de la asignación del trabajador; `proyectoId` sólo si está en varias |
+| `POST` | `/maquinas/:id/devolucion` | `{ fechaDevolucion? }` — la deja sin asignar y disponible |
+| `GET` | `/maquinas/:id/historial` | Los tramos con sus días, y el acumulado por trabajador |
+| `GET` | `/proyectos/:id/maquinas` | Qué máquinas hay en la obra y con quién |
+| `GET` | `/empleados/:id/maquinas` | Qué máquinas trae esa persona |
+
+**La obra no se captura**: sale de la asignación del trabajador y no puede ser
+otra. Si está en varias y no se dice cuál, la respuesta es `400` con
+`code: 'OBRA_REQUERIDA'` y `data.obras` para que la pantalla pregunte. Una
+máquina está **con una sola persona a la vez** —asignarla a otra la libera de la
+anterior y lo dice en `liberada` y `avisos`— y una persona puede traer varias.
+
+Toda respuesta de máquina trae `asignacion`: quién la tiene y en qué obra, o
+`null` si está en el patio. **Nada de eso se guarda en la máquina.**
+
+Cuando el trabajador sale de la obra o lo dan de baja, la máquina **pierde a la
+persona, no la obra**: se queda ahí con `asignacion.empleadoId: null` y las
+respuestas de `PATCH /asignaciones/:id/salida` y `PATCH /empleados/:id/estado`
+lo dicen en `maquinasLiberadas`. Escribe quien tiene `manageProjects`.
 
 ### 6.5 Expedientes y documentos
 

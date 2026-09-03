@@ -809,6 +809,23 @@ lo mismo cualquier ruta de `/maquinas/:id` cuando la máquina es de otra.
     "url": "https://…" // FIRMADA, caduca a los 10 minutos
   },
   "activo": true,
+  // Quién la tiene y en qué obra (D-87). `null` = en el patio, disponible.
+  // NO es un campo de la máquina: se resuelve al leer.
+  "asignacion": {
+    "_id": "6710…",
+    "maquinaId": "66f…",
+    "empleadoId": "66b…", // null = en la obra, SIN trabajador
+    "empleadoNombre": "Juan Pérez",
+    "proyectoId": "66c…",
+    "proyectoNombre": "Fraccionamiento Sur",
+    "asignacionId": "66d…", // la asignación del trabajador de la que tomó la obra
+    "fechaAsignacion": "2026-08-10",
+    "fechaDevolucion": null,
+    "motivoCierre": null,
+    "motivoCierreTexto": null,
+    "vigente": true,
+    "dias": 25 // inclusivos; el vigente cuenta hasta hoy
+  },
   "createdAt": "2026-09-03T18:22:04.113Z",
   "updatedAt": "2026-09-03T18:22:04.113Z"
 }
@@ -851,6 +868,88 @@ con una nueva sin recargar el catálogo.
 | `415`  | La «imagen» no es JPG, PNG ni WEBP — un PDF, un HEIC, un Word              |
 | `403`  | Escribir sin `manageProjects` (`rh_consulta`)                              |
 | `404`  | Empresa o máquina fuera de alcance; `GET …/imagen` de una máquina sin foto |
+
+### La máquina en la obra (D-87)
+
+**La obra no se captura.** `POST /maquinas/:id/asignacion` recibe `empleadoId` y,
+sólo si esa persona está en varias obras de la empresa de la máquina,
+`proyectoId` para desempatar. La obra sale de **su asignación**, cuyo id queda en
+`asignacion.asignacionId`; una máquina no puede quedar en una obra donde su
+operador no está.
+
+```jsonc
+// 201 — data
+{
+  "maquina": { "…": "…", "asignacion": { "…": "…" } },
+  "liberada": { "…": "…" }, // el tramo que se cerró, o null
+  "avisos": ["La máquina se le quitó a Juan Pérez en Obra Norte, que la tuvo 11 días."]
+}
+```
+
+Si está en varias obras y no se dice cuál:
+
+```jsonc
+// 400
+{
+  "status": "fail",
+  "message": "Juan Pérez está en 2 obras: dinos en cuál va la máquina.",
+  "code": "OBRA_REQUERIDA",
+  "errors": [{ "msg": "Indica en qué obra va la máquina", "path": "proyectoId" }],
+  "data": {
+    "obras": [
+      {
+        "proyectoId": "66c…",
+        "proyectoNombre": "Obra Norte",
+        "asignacionId": "66d…",
+        "fechaAsignacion": "2026-08-05"
+      }
+    ]
+  }
+}
+```
+
+**Una máquina está con una sola persona a la vez** —asignarla a otra cierra el
+tramo anterior con `motivoCierre: 'reasignacion'` y lo devuelve en `liberada`— y
+**una persona puede traer varias**. Una máquina de baja no se asigna (400), y
+darla de baja teniéndola alguien cierra su tramo (`baja_de_maquina`).
+
+**Cuando el trabajador se va, la máquina pierde a la persona, no la obra.** Al
+cerrar su asignación (`PATCH /asignaciones/:id/salida`) o al darlo de baja
+(`PATCH /empleados/:id/estado`), el tramo se cierra —`salida_de_obra` o
+`baja_de_trabajador`— y **se abre otro en la misma obra con `empleadoId: null`**.
+Las dos respuestas lo dicen en `maquinasLiberadas`, y su `message` también:
+
+```jsonc
+// data — en las dos rutas
+{
+  "…": "…",
+  "maquinasLiberadas": [
+    {
+      "maquinaId": "66f…",
+      "identificador": "ECO-12",
+      "modelo": "CAT 320D",
+      "proyectoId": "66c…",
+      "proyectoNombre": "Obra Norte",
+      "motivo": "salida_de_obra"
+    }
+  ]
+}
+```
+
+`GET /maquinas/:id/historial` devuelve la cadena completa —`tramos[]`, del más
+reciente al más viejo, con `dias` calculados y el vigente contando hasta hoy— y
+`porTrabajador[]`, el acumulado de más a menos días. Los tramos sin trabajador
+salen en la historia pero **no le suman días a nadie**.
+
+| Código | Cuándo                                                                                        |
+| ------ | --------------------------------------------------------------------------------------------- |
+| `400`  | Sin `empleadoId`; empleado de baja, sin obra en esa empresa, o no asignado a la obra indicada |
+| `400`  | `OBRA_REQUERIDA` — está en varias obras y no se dijo en cuál                                  |
+| `400`  | Máquina de baja; devolver una que no está asignada; fecha anterior a la entrega               |
+| `409`  | `MAQUINA_YA_ASIGNADA` — ya la tiene esa misma persona en esa misma obra                       |
+
+El detalle, con todos los cuerpos y ejemplos, está en
+[`ENDPOINTS-MAQUINAS.md`](./ENDPOINTS-MAQUINAS.md).
 
 ### Tipos de archivo aceptados (D-78)
 

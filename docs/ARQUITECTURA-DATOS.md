@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-86)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-87)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -24,7 +24,7 @@ cambiar cualquier esquema.
 
 ---
 
-## 1. Panorama: 16 colecciones en tres grupos
+## 1. Panorama: 17 colecciones en tres grupos
 
 Lo primero que hay que entender es que **no todas son iguales**. Se comportan
 distinto y se rompen distinto.
@@ -69,33 +69,36 @@ lo dejaría con un puesto o un área ambiguos (D-32).
 
 ### Entidades y vínculos — el núcleo
 
-| Colección             | Qué es                                         | Depende de                            |
-| --------------------- | ---------------------------------------------- | ------------------------------------- |
-| `employees`           | **La persona.** El centro de todo              | `categories`                          |
-| `credentials`         | La contraseña, aislada (D-27)                  | `employees` (1 a 1)                   |
-| `affiliations`        | **La relación laboral** empresa ↔ persona      | `companies`, `employees`, `areas`     |
-| `portfolios`          | Qué clientes usa cada empresa                  | `companies`, `clients`                |
-| `projects`            | Obras y proyectos                              | `companies`, `clients`                |
-| `assignments`         | Quién está en qué proyecto                     | `projects`, `employees`, `categories` |
-| `contracts`           | **El contrato/fase** de una obra, con su SIROC | `projects`                            |
-| `machines`            | **La maquinaria** de cada empresa (D-86)       | `companies`                           |
-| `checklist_templates` | Qué documentos exige cada perfil               | `companies` (o global), `areas`       |
-| `uploads`             | **Permiso de subida directa**, efímero (D-83)  | `employees` (quien lo pidió)          |
-| `records`             | **El expediente.** Uno por persona             | `employees`, `checklist_templates`    |
-| `access_logs`         | Bitácora legal de accesos a documentos         | `employees`, `records`                |
+| Colección             | Qué es                                              | Depende de                            |
+| --------------------- | --------------------------------------------------- | ------------------------------------- |
+| `employees`           | **La persona.** El centro de todo                   | `categories`                          |
+| `credentials`         | La contraseña, aislada (D-27)                       | `employees` (1 a 1)                   |
+| `affiliations`        | **La relación laboral** empresa ↔ persona           | `companies`, `employees`, `areas`     |
+| `portfolios`          | Qué clientes usa cada empresa                       | `companies`, `clients`                |
+| `projects`            | Obras y proyectos                                   | `companies`, `clients`                |
+| `assignments`         | Quién está en qué proyecto                          | `projects`, `employees`, `categories` |
+| `contracts`           | **El contrato/fase** de una obra, con su SIROC      | `projects`                            |
+| `machines`            | **La maquinaria** de cada empresa (D-86)            | `companies`                           |
+| `machine_assignments` | **Dónde está cada máquina y quién la tiene** (D-87) | `machines`, `projects`, `employees`   |
+| `checklist_templates` | Qué documentos exige cada perfil                    | `companies` (o global), `areas`       |
+| `uploads`             | **Permiso de subida directa**, efímero (D-83)       | `employees` (quien lo pidió)          |
+| `records`             | **El expediente.** Uno por persona                  | `employees`, `checklist_templates`    |
+| `access_logs`         | Bitácora legal de accesos a documentos              | `employees`, `records`                |
 
 ### Lo que NO es una colección
 
 Esto es lo que más confunde: **hay cosas que parecen tablas y no lo son.** Se
 calculan al leer, en cada petición.
 
-| Concepto                    | Dónde se calcula                 | Por qué no se guarda                                                                      |
-| --------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------- |
-| **Alertas**                 | `utils/domain/alerts.js` (D-47)  | Se resuelven solas: un documento que se renueva deja de alertar sin que nadie marque nada |
-| **Estatus de un documento** | `utils/domain/documentStatus.js` | `vencido` depende de la fecha de hoy, no de un campo                                      |
-| **Avance del expediente**   | `utils/domain/progress.js`       | Se deriva de los documentos; guardarlo se desincroniza                                    |
-| **El checklist**            | `utils/domain/checklist.js`      | Es la **unión** de las plantillas de sus adscripciones                                    |
-| **El alcance del usuario**  | `middlewares/scopeMiddleware.js` | Se deriva de sus adscripciones activas. **No es un campo** (D-31)                         |
+| Concepto                    | Dónde se calcula                     | Por qué no se guarda                                                                      |
+| --------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------- |
+| **Alertas**                 | `utils/domain/alerts.js` (D-47)      | Se resuelven solas: un documento que se renueva deja de alertar sin que nadie marque nada |
+| **Estatus de un documento** | `utils/domain/documentStatus.js`     | `vencido` depende de la fecha de hoy, no de un campo                                      |
+| **Avance del expediente**   | `utils/domain/progress.js`           | Se deriva de los documentos; guardarlo se desincroniza                                    |
+| **El checklist**            | `utils/domain/checklist.js`          | Es la **unión** de las plantillas de sus adscripciones                                    |
+| **El alcance del usuario**  | `middlewares/scopeMiddleware.js`     | Se deriva de sus adscripciones activas. **No es un campo** (D-31)                         |
+| **Días con una máquina**    | `utils/domain/machineTime.js` (D-87) | El tramo vigente cuenta hasta hoy: guardarlo obligaría a recalcularlo cada día            |
+| **Dónde está una máquina**  | Su tramo vigente (D-87)              | La máquina no guarda `empleadoId` ni `proyectoId`: se resuelve al leer                    |
 
 > Regla del proyecto: **nada derivado se guarda en la base.** Si un dato se puede
 > calcular a partir de otros, se calcula al leer.
@@ -125,6 +128,11 @@ erDiagram
     PROJECTS   ||--o{ CONTRACTS    : "sus contratos (fases)"
 
     COMPANIES  ||--o{ MACHINES     : "su maquinaria (D-86)"
+
+    MACHINES   ||--o{ MACHINE_ASSIGNMENTS : "su historia (D-87)"
+    PROJECTS   ||--o{ MACHINE_ASSIGNMENTS : "la máquina está aquí"
+    EMPLOYEES  ||--o{ MACHINE_ASSIGNMENTS : "la tiene (o nadie)"
+    ASSIGNMENTS ||--o{ MACHINE_ASSIGNMENTS : "de aquí sale la obra"
 
     COMPANIES  ||--o{ REGISTROS_PATRONALES : "embebidos"
     CLIENTS    ||--o{ REGISTROS_OBRA       : "embebidos"
@@ -286,12 +294,47 @@ MAQUINA_DUPLICADA` con la que ya está.
   versiones (D-79)— con una restricción que los demás adjuntos no tienen: **sólo
   admite imágenes**. Un PDF ahí no es un papel raro, es un error, y responde 415. Entra por `multipart` o por subida directa (D-83, destino `maquina`).
 - **`activo: false` es la baja.** Se esconde del listado salvo que se pida, no
-  se borra, y desde la tarea #31 una máquina de baja no se podrá asignar.
+  se borra, y **una máquina de baja no se puede asignar**. Darla de baja además
+  cierra su tramo vigente (D-87): fuera de servicio no está en ninguna obra.
 
-**Lo que NO vive aquí:** quién la tiene y en qué obra está. Eso es la asignación
-de la máquina (tarea #31), que se resuelve al leer contra las asignaciones del
-trabajador; guardar aquí un `empleadoId` o un `proyectoId` sería un derivado y
-se desincronizaría.
+**Lo que NO vive aquí:** quién la tiene y en qué obra está. Eso es
+`machine_assignments`, y se resuelve **al leer**: la respuesta de cualquier ruta
+de máquinas trae `asignacion` —o `null` si está en el patio— sin que la máquina
+guarde un solo id. Guardar aquí un `empleadoId` o un `proyectoId` sería un
+derivado y se desincronizaría.
+
+### `machine_assignments` — dónde está la máquina y quién la tiene
+
+Un **tramo**: una máquina, en una obra, con una persona, entre dos fechas (D-87).
+La cadena de tramos de una máquina **es** su historia, y de ella salen los días
+que la tuvo cada quien, calculados al leer.
+
+Lo que hay que entender antes de tocarla:
+
+- **La obra y el trabajador viven en el mismo documento, y `empleadoId` es
+  anulable.** `empleadoId: null` no es un hueco: es el estado «en la obra, sin
+  trabajador», y es lo que permite que la máquina **pierda a la persona sin
+  salirse de la obra** cuando al operador lo dan de baja o sale de la obra. Una
+  excavadora no vuelve al patio porque su operador ya no esté.
+- **Tres estados de una máquina, y los tres se leen de aquí:** sin tramo vigente
+  = en el patio, disponible · tramo vigente con `empleadoId` = con esa persona en
+  esa obra · tramo vigente sin `empleadoId` = en la obra, sin operador.
+- **Índice único PARCIAL `{ maquinaId }` sobre `activo: true`**: una máquina está
+  con una sola persona a la vez, impuesto por la base y no sólo por el servicio.
+  Parcial —y no `unique` a secas— porque el histórico son muchos tramos cerrados
+  de la misma máquina. Es el mismo patrón de `assignments`.
+- **`proyectoId` nunca se captura.** Sale de la asignación del trabajador, cuyo
+  id queda en `asignacionId` como trazabilidad. Si la persona está en varias
+  obras, el cliente dice en cuál; si está en una, no se pregunta.
+- **`empresaId` está copiado** de la máquina a propósito: el alcance de «las
+  máquinas de un trabajador» —que puede estar adscrito a varias empresas— se
+  decide con esto sin cruzar la máquina en cada consulta.
+- **Cerrar no borra.** Un tramo cerrado lleva `fechaDevolucion` y `motivoCierre`
+  (`devolucion`, `reasignacion`, `baja_de_maquina`, `salida_de_obra`,
+  `baja_de_trabajador`), y el modelo se niega a guardar un tramo cerrado sin los
+  dos, o uno vigente que los traiga.
+- **Los días son inclusivos** y el día del cambio de manos lo cuentan los dos
+  trabajadores: ese día la tuvieron ambos.
 
 ### `contracts` — el contrato, que es la fase, y su SIROC
 
@@ -450,6 +493,10 @@ colección: `records.documentos[].tipo` apunta a `DOCUMENT_TYPES` en
 | **Reemplazar el archivo de un contrato**         | El anterior **se borra de R2** (D-81): uno solo, sin versiones. El tope de subida son 30 MB, salvo la nómina    |
 | **Reemplazar la imagen de una máquina**          | Lo mismo (D-86): la anterior se borra de R2. Y sólo entra una imagen: un PDF responde 415                       |
 | **`machines.identificador`**                     | Único por empresa sobre la forma normalizada: cambiarlo puede chocar con otra máquina (409)                     |
+| **Dar de baja una máquina asignada**             | Cierra su tramo vigente (D-87): sale de la obra y de las manos de quien la tenía, y queda en su historia        |
+| **Cerrar la asignación de alguien a una obra**   | Sus máquinas se quedan **en la obra, sin trabajador** (D-87). No vuelven al patio solas: hay que devolverlas    |
+| **Dar de baja a una persona**                    | Lo mismo con todas sus máquinas, en cualquier obra, dentro de la misma transacción de la baja                   |
+| **`machine_assignments.fechaAsignacion`**        | Es de dónde salen los días de ese tramo y el acumulado del trabajador: nada de eso está guardado                |
 | **`affiliations.registroPatronalId`**            | El aviso de coherencia al asignar y en el listado (D-71). Manda sobre el texto; no bloquea nada                 |
 | **`affiliations.condiciones.registroPatronal`**  | Lo mismo, pero **sólo mientras no haya vínculo**: es el respaldo de las que M3 no resolvió (D-72)               |
 | **`projects.registroPatronalId`**                | Lo mismo: el aviso se recalcula al leer, así que cambiarlo mueve toda la trazabilidad ya registrada             |

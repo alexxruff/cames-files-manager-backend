@@ -2,6 +2,7 @@ const express = require('express')
 const projectController = require('./projectController')
 const assignmentController = require('../assignments/assignmentController')
 const contractController = require('../contracts/contractController')
+const machineAssignmentController = require('../machineAssignments/machineAssignmentController')
 const asyncHandler = require('../../../utils/asyncHandler')
 const validateRequest = require('../../../middlewares/validateRequest')
 const { protect, requireCapability } = require('../../../middlewares/authMiddleware')
@@ -25,6 +26,9 @@ const {
   listContractsValidation,
   createContractValidation
 } = require('../../../validations/contractValidation')
+const {
+  machinesByProjectValidation
+} = require('../../../validations/machineAssignmentValidation')
 
 const router = express.Router()
 
@@ -121,5 +125,17 @@ router
     validateRequest,
     asyncHandler(contractController.create)
   )
+
+/*
+ * La maquinaria que hay HOY en la obra, con quién la tiene (D-87). Es de sólo
+ * lectura: la máquina se asigna desde su ficha, no desde la obra, porque la obra
+ * se deduce de la persona y no al revés.
+ */
+router.get(
+  '/:id/maquinas',
+  machinesByProjectValidation,
+  validateRequest,
+  asyncHandler(machineAssignmentController.deLaObra)
+)
 
 module.exports = router

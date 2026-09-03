@@ -1,6 +1,7 @@
 const express = require('express')
 const employeeController = require('./employeeController')
 const recordController = require('../records/recordController')
+const machineAssignmentController = require('../machineAssignments/machineAssignmentController')
 const asyncHandler = require('../../../utils/asyncHandler')
 const validateRequest = require('../../../middlewares/validateRequest')
 const { protect, requireCapability } = require('../../../middlewares/authMiddleware')
@@ -22,6 +23,9 @@ const {
   updateAccessValidation,
   resetPasswordValidation
 } = require('../../../validations/employeeValidation')
+const {
+  machinesByEmployeeValidation
+} = require('../../../validations/machineAssignmentValidation')
 
 const router = express.Router()
 
@@ -168,6 +172,18 @@ router.post(
   resetPasswordValidation,
   validateRequest,
   asyncHandler(employeeController.resetPassword)
+)
+
+/*
+ * Las máquinas que trae esa persona (D-87). Puede traer varias, y de más de una
+ * empresa si está adscrita a varias: el listado se recorta al alcance de quien
+ * pregunta, empresa por empresa.
+ */
+router.get(
+  '/:id/maquinas',
+  machinesByEmployeeValidation,
+  validateRequest,
+  asyncHandler(machineAssignmentController.delTrabajador)
 )
 
 module.exports = router

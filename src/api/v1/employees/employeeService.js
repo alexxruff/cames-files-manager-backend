@@ -3,6 +3,7 @@ const Employee = require('./employeeModel')
 const Affiliation = require('../affiliations/affiliationModel')
 const categoryService = require('../categories/categoryService')
 const areaService = require('../areas/areaService')
+const machineAssignmentService = require('../machineAssignments/machineAssignmentService')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { normalize, escapeRegex } = require('../../../utils/text')
 const { today } = require('../../../utils/dates')
@@ -520,6 +521,11 @@ class EmployeeService {
    *
    * No borra: el expediente y el histórico se conservan. Distinta de la baja de
    * una adscripción, que es sólo dejar una empresa.
+   *
+   * **Sus máquinas pierden al trabajador, no la obra** (D-87): al que se va se
+   * le quitan de las manos —no puede seguir apareciendo con una excavadora— pero
+   * se quedan en la obra donde estaban, «sin trabajador», hasta que alguien las
+   * reasigne o las devuelva. Va en la misma transacción que la baja.
    */
   async setEstado(id, { activo, motivo, fecha }, contexto = {}) {
     await this.getById(id, contexto)
@@ -535,9 +541,14 @@ class EmployeeService {
       }
     }
 
+    let maquinasLiberadas = []
+
     const sesion = await mongoose.startSession()
     try {
       await sesion.withTransaction(async () => {
+        // Cada intento parte de cero: `withTransaction` puede reintentar.
+        maquinasLiberadas = []
+
         if (activo === false) {
           empleado.activo = false
           empleado.motivoBaja = motivo
@@ -550,6 +561,15 @@ class EmployeeService {
            * acceso no debería obligarlo a que le repongan la contraseña.
            */
           if (empleado.acceso) empleado.acceso.activo = false
+
+          maquinasLiberadas = await machineAssignmentService.liberarDelTrabajador(
+            {
+              empleadoId: empleado._id,
+              fecha: empleado.fechaBaja,
+              motivo: 'baja_de_trabajador'
+            },
+            sesion
+          )
         } else {
           empleado.activo = true
           // `pre('validate')` limpia motivoBaja y fechaBaja.
@@ -562,7 +582,16 @@ class EmployeeService {
       await sesion.endSession()
     }
 
-    return this.getById(empleado._id, contexto)
+    /*
+     * `renglon` aparte de `maquinasLiberadas`: el renglón del empleado tiene la
+     * misma forma en el listado y aquí, y meterle un campo que sólo existe en la
+     * baja lo haría derivar. Las máquinas son de esta operación, no de la
+     * persona.
+     */
+    return {
+      renglon: await this.getById(empleado._id, contexto),
+      maquinasLiberadas
+    }
   }
 
   /** El sistema nunca puede quedarse sin administrador de plataforma. */

@@ -1,11 +1,21 @@
 const mongoose = require('mongoose')
 const Machine = require('./machineModel')
 const Company = require('../companies/companyModel')
+/*
+ * El MODELO de los tramos, no su servicio: `machineAssignmentService` ya
+ * requiere a éste —necesita `assertVisible` y `serializar`— y requerirlo de
+ * vuelta dejaría un ciclo en el que uno de los dos recibe un módulo a medio
+ * cargar. Aquí sólo se leen tramos y se cierra el vigente al dar de baja la
+ * máquina; lo demás vive en su servicio.
+ */
+const MachineAssignment = require('../machineAssignments/machineAssignmentModel')
 const storage = require('../../../services/storageService')
 const intake = require('../../../services/attachmentIntake')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { empresaEsVisible } = require('../../../middlewares/scopeMiddleware')
 const { normalize, escapeRegex } = require('../../../utils/text')
+const { today } = require('../../../utils/dates')
+const { stintToJson } = require('../../../utils/domain')
 
 /**
  * Catálogo de maquinaria por empresa (D-86).
@@ -45,16 +55,26 @@ class MachineService {
       .sort({ identificador: 1 })
       .collation({ locale: 'es', numericOrdering: true })
 
+    const asignaciones = await this.#asignacionesVigentes(maquinas.map((m) => m._id))
+
     return {
       total: maquinas.length,
-      maquinas: await Promise.all(maquinas.map((m) => this.#serializar(m)))
+      maquinas: await Promise.all(
+        maquinas.map((m) => this.serializar(m, asignaciones.get(String(m._id)) ?? null))
+      )
     }
   }
 
   /** GET /maquinas/:id */
   async getById(id, contexto = {}) {
     const maquina = await this.#buscarVisible(id, contexto)
-    return { maquina: await this.#serializar(maquina) }
+    const asignaciones = await this.#asignacionesVigentes([maquina._id])
+    return {
+      maquina: await this.serializar(
+        maquina,
+        asignaciones.get(String(maquina._id)) ?? null
+      )
+    }
   }
 
   /** POST /empresas/:id/maquinas */
@@ -85,7 +105,8 @@ class MachineService {
         modelo: datos.modelo,
         imagen
       })
-      return { maquina: await this.#serializar(maquina) }
+      // Recién dada de alta: todavía no está en ninguna obra.
+      return { maquina: await this.serializar(maquina, null) }
     } catch (error) {
       // Lo recién subido se limpia: si la base no lo guardó, nadie lo alcanza.
       if (imagen) await storage.borrar(imagen.claveAlmacenamiento)
@@ -137,10 +158,26 @@ class MachineService {
       await storage.borrar(anterior)
     }
 
-    return { maquina: await this.#serializar(maquina) }
+    const asignaciones = await this.#asignacionesVigentes([maquina._id])
+    return {
+      maquina: await this.serializar(
+        maquina,
+        asignaciones.get(String(maquina._id)) ?? null
+      )
+    }
   }
 
-  /** PATCH /maquinas/:id/estado — la baja y la reactivación. */
+  /**
+   * PATCH /maquinas/:id/estado — la baja y la reactivación.
+   *
+   * **La baja cierra el tramo vigente** (D-87), y aquí sí del todo: una máquina
+   * fuera de servicio no está en ninguna obra ni con nadie. Es lo contrario de
+   * lo que pasa cuando el que se va es el trabajador —ahí la máquina se queda en
+   * la obra sin operador—, y por eso el motivo del cierre lo distingue.
+   *
+   * Las dos escrituras van en transacción: una máquina de baja que siguiera
+   * apareciendo asignada sería justo la mentira que este cierre evita.
+   */
   async setEstado(id, { activo }, contexto = {}) {
     const maquina = await this.#buscarVisible(id, contexto)
 
@@ -151,9 +188,39 @@ class MachineService {
       )
     }
 
-    maquina.activo = activo
-    await maquina.save()
-    return { maquina: await this.#serializar(maquina) }
+    let liberada = null
+
+    const sesion = await mongoose.startSession()
+    try {
+      await sesion.withTransaction(async () => {
+        liberada = null
+
+        if (activo === false) {
+          const vigente = await MachineAssignment.findOne({
+            maquinaId: maquina._id,
+            activo: true
+          })
+            .populate({ path: 'empleadoId', select: 'nombre' })
+            .populate({ path: 'proyectoId', select: 'nombre' })
+            .session(sesion)
+
+          if (vigente) {
+            vigente.activo = false
+            vigente.fechaDevolucion = today()
+            vigente.motivoCierre = 'baja_de_maquina'
+            await vigente.save({ session: sesion })
+            liberada = stintToJson(vigente)
+          }
+        }
+
+        maquina.activo = activo
+        await maquina.save({ session: sesion })
+      })
+    } finally {
+      await sesion.endSession()
+    }
+
+    return { maquina: await this.serializar(maquina, null), liberada }
   }
 
   /**
@@ -187,15 +254,46 @@ class MachineService {
     return this.#buscarEmpresaVisible(empresaId, contexto)
   }
 
-  // ─── Interno ───────────────────────────────────────────────────────────────
-
-  /** La máquina con la URL firmada de su imagen. */
-  async #serializar(maquina) {
+  /**
+   * La máquina como viaja al front: con la URL firmada de su imagen y con
+   * **quién la tiene y en qué obra**, resuelto al leer.
+   *
+   * `asignacion` NO es un campo de la colección y no se guarda nunca (regla #6):
+   * la máquina no sabe dónde está, lo sabe su tramo vigente. `null` = en el
+   * patio, disponible.
+   *
+   * Es pública porque `machineAssignmentService` devuelve la misma forma después
+   * de asignar, devolver o listar las máquinas de una obra: una sola función
+   * evita que las dos deriven.
+   */
+  async serializar(maquina, asignacion = null) {
     const json = maquina.toJSON()
     return {
       ...json,
-      imagen: await storage.firmarAdjunto(maquina.imagen, json.identificador)
+      imagen: await storage.firmarAdjunto(maquina.imagen, json.identificador),
+      asignacion
     }
+  }
+
+  // ─── Interno ───────────────────────────────────────────────────────────────
+
+  /**
+   * El tramo vigente de cada máquina, por id de máquina. Una sola consulta para
+   * todo el catálogo: el listado no puede hacer una por renglón.
+   */
+  async #asignacionesVigentes(maquinaIds) {
+    if (maquinaIds.length === 0) return new Map()
+
+    const tramos = await MachineAssignment.find({
+      maquinaId: { $in: maquinaIds },
+      activo: true
+    })
+      .populate({ path: 'empleadoId', select: 'nombre' })
+      .populate({ path: 'proyectoId', select: 'nombre' })
+
+    return new Map(
+      tramos.map((t) => [String(t.maquinaId?._id ?? t.maquinaId), stintToJson(t)])
+    )
   }
 
   /**

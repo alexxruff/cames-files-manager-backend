@@ -13,7 +13,7 @@ vigencias, alertas y reportes de auditoría.
   la capa simulada la conserva para desarrollar. Donde su lógica y la nuestra
   difieran, **manda ésta**.
 - Documentos autoritativos, los tres en `docs/`:
-  - **`ARQUITECTURA-DATOS.md`** — el mapa de lo que HAY: las 16 colecciones, cómo
+  - **`ARQUITECTURA-DATOS.md`** — el mapa de lo que HAY: las 17 colecciones, cómo
     se relacionan y qué se rompe al tocar cada una. **Léelo antes de cambiar
     cualquier esquema, y actualízalo en el mismo cambio.**
   - **`modelo-datos.md`** — el diseño y su porqué. Ha derivado; donde discrepe
@@ -135,6 +135,7 @@ Mapa de nombres (modelo → colección → nombre en el spec):
 `Portfolio`/`portfolios`/carteras · `Assignment`/`assignments`/asignaciones ·
 `Project`/`projects`/proyectos · `Contract`/`contracts`/contratos ·
 `Record`/`records`/expedientes · `Machine`/`machines`/máquinas ·
+`MachineAssignment`/`machine_assignments`/asignaciones de máquina ·
 `ChecklistTemplate`/`checklist_templates`/plantillas ·
 `AccessLog`/`access_logs`/bitácora.
 
@@ -152,6 +153,8 @@ src/
                         su registro patronal vinculado (D-72)
     contracts/          contratos del proyecto (= fases) y su SIROC (D-70)
     machines/           catálogo de maquinaria por empresa, con su imagen (D-86)
+    machineAssignments/ la máquina en la obra: se asigna a un trabajador y toma
+                        SU obra; si él se va, se queda en la obra sin él (D-87)
     assignments/        proyecto ↔ empleado; avisa si el registro patronal no
                         coincide y resuelve la trazabilidad (D-71)
     alerts/             bandeja derivada: documentos y cumpleaños (D-47)
@@ -279,6 +282,13 @@ siempre registra el adjunto con `subidaId` en el cuerpo. Es para los cinco
 adjuntos —expediente, contrato, aviso del SIROC, acuse del refrendo y registro de
 obra—, **el `multipart` de siempre sigue funcionando**, y salió de que subir 12 MB
 a producción no terminaba nunca: el borde público de Fly va a 7 KB/s de subida.
+
+Y la **maquinaria en la obra** (D-87): la máquina se le asigna a un trabajador y
+toma **la obra de la asignación de él** —no se captura aparte—; está con una sola
+persona a la vez, y queda su historia con los días de cada tramo calculados al
+leer. Cuando el trabajador sale de la obra o lo dan de baja, la máquina **pierde
+al trabajador, no la obra**: se queda ahí, sin operador, hasta que alguien la
+reasigne o la devuelva.
 
 Y desde D-72 la adscripción **se vincula a su registro patronal** por id
 (`registroPatronalId`), que convive con el texto de la nómina en vez de
