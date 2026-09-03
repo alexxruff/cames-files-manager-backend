@@ -21,14 +21,16 @@ const {
 /**
  * Asignaciones — proyecto ↔ empleado (backend-spec §6.4, modelo-datos §5b.3).
  *
- * Tres reglas que el servidor impone:
+ * Dos reglas que el servidor impone:
  *
  * 1. El empleado necesita **adscripción activa a la empresa del proyecto**. No se
  *    pone en una obra de Empresa 1 a alguien que no trabaja para Empresa 1.
- * 2. Su categoría en el proyecto debe estar **habilitada en ese proyecto**.
- * 3. No se asigna a alguien dado de baja ni a un proyecto finalizado.
+ * 2. No se asigna a alguien dado de baja ni a un proyecto finalizado.
  *
- * Y una cuarta que **avisa en vez de bloquear** (G2, Fase 6): que la persona
+ * El puesto ya no es una de ellas (D-82): a la obra va quien haga falta, sin
+ * importar su categoría.
+ *
+ * Y una tercera que **avisa en vez de bloquear** (G2, Fase 6): que la persona
  * cotice en el registro patronal del proyecto. Maquinaria CAMES ya tiene 144
  * personas repartidas en cuatro registros, así que impedirlo frenaría trabajo
  * legítimo; el aviso deja el dato a la vista y quien lo lee decide.
@@ -171,9 +173,12 @@ class AssignmentService {
 
   /**
    * Quiénes se pueden asignar (modelo-datos §9.3): adscritos y activos en la
-   * empresa del proyecto, con una categoría habilitada en él, y que no estén ya
-   * asignados. Es el selector de la pantalla, y por eso se resuelve en el
-   * servidor: son tres cruces que el navegador no debería hacer.
+   * empresa del proyecto y que no estén ya asignados. Es el selector de la
+   * pantalla, y por eso se resuelve en el servidor: son cruces que el navegador
+   * no debería hacer.
+   *
+   * El puesto **no filtra** desde D-82: a una obra va quien haga falta, y quién
+   * es de la empresa lo dice la adscripción, no la categoría.
    */
   async asignables(proyectoId, contexto = {}) {
     const proyecto = await this.#buscarProyectoVisible(proyectoId, contexto)
@@ -205,12 +210,7 @@ class AssignmentService {
         }
       },
       { $unwind: '$e' },
-      {
-        $match: {
-          'e.activo': true,
-          'e.categoriaId': { $in: proyecto.categorias }
-        }
-      },
+      { $match: { 'e.activo': true } },
       {
         // Fuera los que ya están asignados a este proyecto.
         $lookup: {
@@ -280,7 +280,7 @@ class AssignmentService {
       throw new AppError(400, 'No se puede asignar a una persona dada de baja')
     }
 
-    // Regla 1: adscripción activa a la empresa del proyecto.
+    // La regla: adscripción activa a la empresa del proyecto.
     const adscripcion = await Affiliation.findOne({
       empresaId: proyecto.empresaId,
       empleadoId: empleado._id,
@@ -310,14 +310,6 @@ class AssignmentService {
       )
     }
 
-    // Regla 2: la categoría tiene que estar habilitada en el proyecto.
-    if (!proyecto.categorias.map(String).includes(String(datos.categoriaId))) {
-      throw AppError.validation(
-        'Esa categoría no está habilitada en el proyecto. Agrégala primero.',
-        [{ msg: 'La categoría no está habilitada en el proyecto', path: 'categoriaId' }]
-      )
-    }
-
     if (isBefore(datos.fechaAsignacion, proyecto.fechaInicio)) {
       throw AppError.validation(
         `La fecha de asignación no puede ser anterior al inicio del proyecto (${proyecto.fechaInicio})`,
@@ -342,7 +334,9 @@ class AssignmentService {
       const asignacion = await Assignment.create({
         proyectoId: proyecto._id,
         empleadoId: empleado._id,
-        categoriaId: datos.categoriaId,
+        // Su puesto en ESTA obra. El proyecto ya no restringe cuáles valen
+        // (D-82), así que si el front no lo manda vale el de la persona.
+        categoriaId: datos.categoriaId || empleado.categoriaId,
         fechaAsignacion: datos.fechaAsignacion
       })
       return {

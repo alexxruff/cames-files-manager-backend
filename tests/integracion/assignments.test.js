@@ -18,19 +18,18 @@ const {
 const RUTA = '/api/v1/proyectos'
 
 /**
- * Asignaciones: proyecto ↔ empleado. Las tres reglas que el servidor impone son
- * adscripción activa a la empresa del proyecto, categoría habilitada en él, y
- * nada de proyectos finalizados ni personas dadas de baja.
+ * Asignaciones: proyecto ↔ empleado. Las reglas que el servidor impone son
+ * adscripción activa a la empresa del proyecto, y nada de proyectos finalizados
+ * ni personas dadas de baja. **El puesto no es una de ellas** (D-82).
  */
 async function escenario(datos = {}) {
   const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin', ...datos })
   const categoria = await crearCategoria('Albañil', 'mano_de_obra')
   const { proyecto } = await crearProyecto(sesion.empresa, {
-    categorias: [categoria._id],
     fechaInicio: '2026-09-01'
   })
 
-  /** Alguien adscrito a la empresa con la categoría habilitada: asignable. */
+  /** Alguien adscrito y activo en la empresa: asignable. */
   const crearAsignable = async (extra = {}) => {
     const persona = await crearEmpleado({
       tipo: 'mano_de_obra',
@@ -49,7 +48,7 @@ async function escenario(datos = {}) {
 describe('POST /api/v1/proyectos/:id/asignaciones', () => {
   beforeAll(() => Assignment.init())
 
-  it('asigna a alguien adscrito y con la categoría habilitada', async () => {
+  it('asigna a cualquiera adscrito a la empresa del proyecto', async () => {
     const { token, proyecto, categoria, crearAsignable } = await escenario()
     const persona = await crearAsignable()
 
@@ -76,7 +75,7 @@ describe('POST /api/v1/proyectos/:id/asignaciones', () => {
 
   it('EXIGE adscripción activa a la empresa del proyecto', async () => {
     const { token, proyecto, categoria } = await escenario()
-    // Existe y su categoría está habilitada, pero trabaja en otra empresa.
+    // Existe y está activo, pero trabaja en otra empresa.
     const deOtraEmpresa = await crearEmpleado({
       tipo: 'mano_de_obra',
       categoriaId: categoria._id
@@ -123,23 +122,36 @@ describe('POST /api/v1/proyectos/:id/asignaciones', () => {
     expect(res.status).toBe(400)
   })
 
-  it('EXIGE que la categoría esté habilitada en el proyecto', async () => {
+  it('NO mira el puesto: asigna con cualquier categoría (D-82)', async () => {
     const { token, proyecto, crearAsignable } = await escenario()
     const persona = await crearAsignable()
-    const noHabilitada = await crearCategoria('Soldador', 'mano_de_obra')
+    const otra = await crearCategoria('Soldador', 'mano_de_obra')
 
     const res = await request(app)
       .post(`${RUTA}/${proyecto._id}/asignaciones`)
       .set(auth(token))
       .send({
         empleadoId: persona._id.toString(),
-        categoriaId: noHabilitada._id.toString(),
+        categoriaId: otra._id.toString(),
         fechaAsignacion: '2026-09-15'
       })
 
-    expect(res.status).toBe(400)
-    expect(res.body.message).toMatch(/no está habilitada en el proyecto/i)
-    expect(res.body.errors[0].path).toBe('categoriaId')
+    expect(res.status).toBe(201)
+    expect(res.body.data.asignacion.categoriaNombre).toBe('Soldador')
+  })
+
+  it('sin categoriaId guarda el puesto de la propia persona', async () => {
+    const { token, proyecto, crearAsignable } = await escenario()
+    const persona = await crearAsignable()
+
+    const res = await request(app)
+      .post(`${RUTA}/${proyecto._id}/asignaciones`)
+      .set(auth(token))
+      .send({ empleadoId: persona._id.toString(), fechaAsignacion: '2026-09-15' })
+
+    expect(res.status).toBe(201)
+    expect(res.body.data.asignacion.categoriaId).toBe(persona.categoriaId.toString())
+    expect(res.body.data.asignacion.categoriaNombre).toBe('Albañil')
   })
 
   it('no asigna a una persona dada de baja ni a un proyecto finalizado', async () => {
@@ -159,7 +171,6 @@ describe('POST /api/v1/proyectos/:id/asignaciones', () => {
 
     const cerrado = await crearProyecto(empresa, {
       nombre: 'Terminado',
-      categorias: [categoria._id],
       estado: 'finalizado',
       fechaFinReal: '2026-12-01'
     })
@@ -281,23 +292,44 @@ describe('POST /api/v1/proyectos/:id/asignaciones', () => {
 })
 
 describe('GET /api/v1/proyectos/:id/asignables — el selector', () => {
-  it('lista a los adscritos y activos con categoría habilitada', async () => {
-    const { token, proyecto, crearAsignable } = await escenario()
+  /*
+   * Quien tiene la sesión también está adscrito a la empresa, así que desde
+   * D-82 sale en su propia lista: es personal de la empresa como cualquiera.
+   * Estas pruebas miran a la gente que crean, no a quien consulta.
+   */
+  const sinQuienConsulta = (res, sesion) =>
+    res.body.data.asignables
+      .map((a) => a._id)
+      .filter((id) => id !== sesion.empleado._id.toString())
+
+  it('lista a los adscritos y activos, sea cual sea su puesto (D-82)', async () => {
+    const sesion = await escenario()
+    const { token, proyecto, crearAsignable } = sesion
     const uno = await crearAsignable()
-    await crearAsignable()
+    const otraCategoria = await crearCategoria('Soldador', 'mano_de_obra')
+    const soldador = await crearAsignable({ categoriaId: otraCategoria._id })
 
     const res = await request(app)
       .get(`${RUTA}/${proyecto._id}/asignables`)
       .set(auth(token))
 
     expect(res.status).toBe(200)
-    expect(res.body.data.asignables).toHaveLength(2)
-    expect(res.body.data.asignables.map((a) => a._id)).toContain(uno._id.toString())
-    expect(res.body.data.asignables[0]).toMatchObject({ categoriaNombre: 'Albañil' })
+    expect(sinQuienConsulta(res, sesion)).toEqual(
+      expect.arrayContaining([uno._id.toString(), soldador._id.toString()])
+    )
+    expect(sinQuienConsulta(res, sesion)).toHaveLength(2)
+    // El puesto sigue viajando: ya no filtra, pero la pantalla lo muestra.
+    expect(
+      res.body.data.asignables
+        .filter((a) => a._id !== sesion.empleado._id.toString())
+        .map((a) => a.categoriaNombre)
+        .sort()
+    ).toEqual(['Albañil', 'Soldador'])
   })
 
   it('deja fuera a los que ya están asignados', async () => {
-    const { token, proyecto, categoria, crearAsignable } = await escenario()
+    const sesion = await escenario()
+    const { token, proyecto, categoria, crearAsignable } = sesion
     const asignado = await crearAsignable()
     const libre = await crearAsignable()
     await asignar(proyecto, asignado, categoria._id)
@@ -306,11 +338,12 @@ describe('GET /api/v1/proyectos/:id/asignables — el selector', () => {
       .get(`${RUTA}/${proyecto._id}/asignables`)
       .set(auth(token))
 
-    expect(res.body.data.asignables.map((a) => a._id)).toEqual([libre._id.toString()])
+    expect(sinQuienConsulta(res, sesion)).toEqual([libre._id.toString()])
   })
 
   it('vuelve a incluirlo cuando su asignación se cierra', async () => {
-    const { token, proyecto, categoria, crearAsignable } = await escenario()
+    const sesion = await escenario()
+    const { token, proyecto, categoria, crearAsignable } = sesion
     const persona = await crearAsignable()
     await asignar(proyecto, persona, categoria._id, {
       activo: false,
@@ -320,12 +353,13 @@ describe('GET /api/v1/proyectos/:id/asignables — el selector', () => {
     const res = await request(app)
       .get(`${RUTA}/${proyecto._id}/asignables`)
       .set(auth(token))
-    expect(res.body.data.asignables.map((a) => a._id)).toEqual([persona._id.toString()])
+    expect(sinQuienConsulta(res, sesion)).toEqual([persona._id.toString()])
   })
 
-  it('deja fuera a los de otra empresa, a los dados de baja y a los de otra categoría', async () => {
-    const { token, empresa, proyecto, categoria, crearAsignable } = await escenario()
-    await crearAsignable() // el único que debe salir
+  it('deja fuera a los de otra empresa y a los dados de baja', async () => {
+    const sesion = await escenario()
+    const { token, empresa, proyecto, categoria, crearAsignable } = sesion
+    await crearAsignable() // uno de los dos que deben salir
 
     const deBaja = await crearEmpleado({
       tipo: 'mano_de_obra',
@@ -335,12 +369,13 @@ describe('GET /api/v1/proyectos/:id/asignables — el selector', () => {
     })
     await adscribir(empresa, deBaja, { areas: ['operaciones_urbanizadora'] })
 
+    // De otro puesto: desde D-82 SÍ sale, y por eso se esperan dos.
     const otraCategoria = await crearCategoria('Soldador', 'mano_de_obra')
-    const noHabilitado = await crearEmpleado({
+    const deOtroPuesto = await crearEmpleado({
       tipo: 'mano_de_obra',
       categoriaId: otraCategoria._id
     })
-    await adscribir(empresa, noHabilitado, { areas: ['operaciones_urbanizadora'] })
+    await adscribir(empresa, deOtroPuesto, { areas: ['operaciones_urbanizadora'] })
 
     const deOtraEmpresa = await crearEmpleado({
       tipo: 'mano_de_obra',
@@ -353,7 +388,10 @@ describe('GET /api/v1/proyectos/:id/asignables — el selector', () => {
     const res = await request(app)
       .get(`${RUTA}/${proyecto._id}/asignables`)
       .set(auth(token))
-    expect(res.body.data.asignables).toHaveLength(1)
+    // El del otro puesto y el que se creó asignable; el de baja y el de la otra
+    // empresa, fuera.
+    expect(sinQuienConsulta(res, sesion)).toHaveLength(2)
+    expect(sinQuienConsulta(res, sesion)).toContain(deOtroPuesto._id.toString())
   })
 
   it('para un jefe de área, sólo su gente', async () => {
@@ -368,7 +406,7 @@ describe('GET /api/v1/proyectos/:id/asignables — el selector', () => {
       .get(`${RUTA}/${jefe.proyecto._id}/asignables`)
       .set(auth(jefe.token))
 
-    expect(res.body.data.asignables.map((a) => a._id)).toEqual([suyo._id.toString()])
+    expect(sinQuienConsulta(res, jefe)).toEqual([suyo._id.toString()])
   })
 })
 
@@ -505,7 +543,6 @@ async function escenarioDeRegistros(datos = {}) {
   const categoria = await crearCategoria('Albañil', 'mano_de_obra')
   const registro = await crearRegistroPatronal(sesion.empresa, R13)
   const { proyecto, cliente, registroObra } = await crearProyecto(sesion.empresa, {
-    categorias: [categoria._id],
     registroPatronalId: registro._id,
     fechaInicio: '2026-09-01'
   })

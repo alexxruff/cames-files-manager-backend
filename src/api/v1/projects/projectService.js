@@ -3,7 +3,6 @@ const Project = require('./projectModel')
 const contractService = require('../contracts/contractService')
 const Client = require('../clients/clientModel')
 const companyService = require('../companies/companyService')
-const Category = require('../categories/categoryModel')
 const Assignment = require('../assignments/assignmentModel')
 const portfolioService = require('../portfolios/portfolioService')
 const storage = require('../../../services/storageService')
@@ -16,16 +15,14 @@ const { findRegistry } = require('../../../utils/domain')
 /**
  * Proyectos (backend-spec §6.4).
  *
- * Las cuatro reglas que el servidor impone y que no se pueden dejar al front:
+ * Las tres reglas que el servidor impone y que no se pueden dejar al front:
  *
  * 1. **No hay proyecto sin cliente**, y el cliente debe estar en la **cartera
  *    activa** de la empresa del proyecto.
- * 2. Al menos una categoría habilitada: sin eso no se puede asignar a nadie y el
- *    proyecto nace inservible.
- * 3. **La fecha de cierre sólo se mueve con `aplazar`**, con motivo y quedando en
+ * 2. **La fecha de cierre sólo se mueve con `aplazar`**, con motivo y quedando en
  *    el historial. `update` la rechaza en vez de permitirla en silencio: es
  *    auditoría, no un adorno.
- * 4. Un proyecto no se borra: se finaliza, y se puede reabrir.
+ * 3. Un proyecto no se borra: se finaliza, y se puede reabrir.
  */
 const POR_PAGINA_DEFECTO = 25
 const POR_PAGINA_MAXIMO = 100
@@ -92,7 +89,6 @@ class ProjectService {
     }
 
     await this.#assertClienteEnCartera(datos.empresaId, datos.clienteId)
-    await this.#assertCategoriasValidas(datos.categorias)
     await this.#assertNombreLibre(datos.empresaId, datos.nombre)
 
     // Obligatorios desde D-69, y cada uno tiene que ser de su dueño.
@@ -113,14 +109,13 @@ class ProjectService {
       registroObraId: datos.registroObraId,
       nombre: datos.nombre,
       fechaInicio: datos.fechaInicio,
-      fechaFinEstimada: datos.fechaFinEstimada,
-      categorias: datos.categorias
+      fechaFinEstimada: datos.fechaFinEstimada
     })
 
     return this.getById(proyecto._id, contexto)
   }
 
-  /** Nombre, cliente, fecha de inicio y categorías. **No** la fecha de cierre. */
+  /** Nombre, cliente, registros y fecha de inicio. **No** la fecha de cierre. */
   async update(id, datos, contexto = {}) {
     const proyecto = await this.#buscarVisible(id, contexto)
 
@@ -201,11 +196,6 @@ class ProjectService {
       // Contra el cliente que va a QUEDAR, no contra el que tenía.
       await this.#assertRegistroObraDelCliente(proyecto.clienteId, datos.registroObraId)
       proyecto.registroObraId = datos.registroObraId
-    }
-    if (datos.categorias) {
-      await this.#assertCategoriasValidas(datos.categorias)
-      await this.#assertCategoriasNoEnUso(proyecto, datos.categorias)
-      proyecto.categorias = datos.categorias
     }
     if (datos.nombre && normalize(datos.nombre) !== proyecto.nombreNormalizado) {
       await this.#assertNombreLibre(proyecto.empresaId, datos.nombre, proyecto._id)
@@ -316,24 +306,6 @@ class ProjectService {
     return this.getById(proyecto._id, contexto)
   }
 
-  /** Copia las categorías de otro proyecto: **suma sin quitar** y sin duplicar. */
-  async clonarCategorias(id, { origenId }, contexto = {}) {
-    const destino = await this.#buscarVisible(id, contexto)
-    const origen = await this.#buscarVisible(origenId, contexto)
-
-    if (String(origen._id) === String(destino._id)) {
-      throw new AppError(400, 'El proyecto de origen debe ser distinto')
-    }
-
-    const antes = destino.categorias.map(String)
-    const union = new Set([...antes, ...origen.categorias.map(String)])
-    destino.categorias = [...union].map((c) => new mongoose.Types.ObjectId(c))
-    await destino.save()
-
-    const { proyecto } = await this.getById(destino._id, contexto)
-    return { proyecto, agregadas: union.size - antes.length }
-  }
-
   // ─── Validaciones compartidas ──────────────────────────────────────────────
 
   /** La regla que hace válido a un proyecto (spec §6.4). */
@@ -392,45 +364,6 @@ class ProjectService {
       )
     }
     return registro
-  }
-
-  async #assertCategoriasValidas(categorias) {
-    const ids = [...new Set((categorias || []).map(String))]
-    if (ids.length === 0) {
-      throw AppError.validation('Habilita al menos una categoría en el proyecto', [
-        { msg: 'Habilita al menos una categoría', path: 'categorias' }
-      ])
-    }
-
-    const activas = await Category.countDocuments({ _id: { $in: ids }, activo: true })
-    if (activas !== ids.length) {
-      throw AppError.validation('Alguna de las categorías no existe o está desactivada', [
-        { msg: 'Categoría no válida', path: 'categorias' }
-      ])
-    }
-  }
-
-  /**
-   * Quitar una categoría que alguien ya está usando en el proyecto dejaría
-   * asignaciones inválidas: se avisa en vez de romper el historial.
-   */
-  async #assertCategoriasNoEnUso(proyecto, nuevas) {
-    const quitadas = proyecto.categorias
-      .map(String)
-      .filter((c) => !nuevas.map(String).includes(c))
-    if (quitadas.length === 0) return
-
-    const enUso = await Assignment.countDocuments({
-      proyectoId: proyecto._id,
-      activo: true,
-      categoriaId: { $in: quitadas }
-    })
-    if (enUso > 0) {
-      throw new AppError(
-        400,
-        `No se puede quitar esa categoría: ${enUso} ${enUso === 1 ? 'persona asignada la tiene' : 'personas asignadas la tienen'}`
-      )
-    }
   }
 
   async #assertNombreLibre(empresaId, nombre, exceptoId = null) {

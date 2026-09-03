@@ -58,19 +58,15 @@ describe('la llave `archivo` sólo cuelga del registro de OBRA', () => {
       .set(auth(token))
       .attach('archivo', PDF, 'escaneo.pdf')
 
-    const proyecto = await request(app)
-      .post('/api/v1/proyectos')
-      .set(auth(token))
-      .send({
-        empresaId: empresa._id.toString(),
-        clienteId: cliente._id.toString(),
-        nombre: 'Torre Sonda',
-        fechaInicio: '2026-09-01',
-        fechaFinEstimada: '2027-06-30',
-        categorias: [categoria._id.toString()],
-        registroPatronalId: registroPatronal._id.toString(),
-        registroObraId: registroObra._id.toString()
-      })
+    const proyecto = await request(app).post('/api/v1/proyectos').set(auth(token)).send({
+      empresaId: empresa._id.toString(),
+      clienteId: cliente._id.toString(),
+      nombre: 'Torre Sonda',
+      fechaInicio: '2026-09-01',
+      fechaFinEstimada: '2027-06-30',
+      registroPatronalId: registroPatronal._id.toString(),
+      registroObraId: registroObra._id.toString()
+    })
     const proyectoId = proyecto.body.data.proyecto._id
 
     const persona = await crearEmpleado({

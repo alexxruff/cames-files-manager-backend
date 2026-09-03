@@ -217,7 +217,6 @@ async function crearProyecto(empresa, datos = {}) {
     nombre: datos.nombre || `Proyecto ${siguiente()}`,
     fechaInicio: datos.fechaInicio || '2026-09-01',
     fechaFinEstimada: datos.fechaFinEstimada || '2027-03-01',
-    categorias: datos.categorias || [categoria._id],
     estado: datos.estado || 'en_curso',
     fechaFinReal: datos.fechaFinReal ?? null
   })
@@ -246,7 +245,9 @@ async function asignar(proyecto, empleado, categoriaId, datos = {}) {
   return Assignment.create({
     proyectoId: proyecto._id,
     empleadoId: empleado._id,
-    categoriaId: categoriaId || proyecto.categorias[0],
+    // El puesto de la asignación ya no sale del proyecto (D-82): es el de la
+    // persona, salvo que la prueba quiera otro.
+    categoriaId: categoriaId || empleado.categoriaId,
     fechaAsignacion: datos.fechaAsignacion || '2026-09-15',
     fechaSalida: datos.fechaSalida ?? null,
     activo: datos.activo ?? true

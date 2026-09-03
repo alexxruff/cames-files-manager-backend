@@ -12,7 +12,15 @@ exports.listAssignmentsValidation = [
 exports.createAssignmentValidation = [
   param('id').isMongoId().withMessage('El proyecto indicado no es válido'),
   body('empleadoId').isMongoId().withMessage('Selecciona un empleado válido'),
-  body('categoriaId').isMongoId().withMessage('Selecciona una categoría válida'),
+  /*
+   * Opcional desde D-82: el puesto ya no restringe quién entra a la obra, así
+   * que si no viene se guarda el de la propia persona. Sigue validándose cuando
+   * el front lo manda, que es lo que hace hoy.
+   */
+  body('categoriaId')
+    .optional()
+    .isMongoId()
+    .withMessage('Selecciona una categoría válida'),
   body('fechaAsignacion').custom((valor) => {
     if (!isCalendarDate(valor)) {
       throw new Error('La fecha de asignación debe tener el formato AAAA-MM-DD')

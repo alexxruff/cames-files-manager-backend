@@ -55,7 +55,6 @@ async function escenario(datos = {}) {
   const categoria = await crearCategoria('Albañil', 'mano_de_obra')
   const { proyecto } = await crearProyecto(sesion.empresa, {
     nombre: 'Torre Poniente',
-    categorias: [categoria._id],
     fechaInicio: '2026-01-01'
   })
 
@@ -213,8 +212,7 @@ describe('El SIROC de su obra, en el expediente', () => {
     // Otra empresa, con su obra y su gente: la misma persona, adscrita también allá.
     const otra = await crearEmpresa({ nombre: 'Constructora Ajena' })
     const { proyecto: ajeno } = await crearProyecto(otra, {
-      nombre: 'Obra Ajena',
-      categorias: [e.categoria._id]
+      nombre: 'Obra Ajena'
     })
     await crearContrato(ajeno, { siroc: { numero: 'SIR-AJENO' } })
     await adscribir(otra, e.persona, { areas: ['operaciones_urbanizadora'] })

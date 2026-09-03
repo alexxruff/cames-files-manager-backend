@@ -493,7 +493,7 @@ del final devuelve lista vacía y el `total` real, no un `404`.
 | `GET` `PATCH` | `/clientes/:id` | |
 | `PATCH` | `/clientes/:id/estado` | Falla si tiene proyectos en curso |
 | `GET` `POST` | `/categorias` | `POST` **idempotente por nombre**: si ya existe, devuelve la existente en vez de fallar. Lleva `tipo`, y `GET` acepta `?tipo=` |
-| `PATCH` | `/categorias/:id/estado` | Falla si hay empleados o proyectos usándola |
+| `PATCH` | `/categorias/:id/estado` | Falla si hay empleados con ese puesto. Los proyectos ya no habilitan puestos (D-82) |
 
 > ⚠️ **`categorias.tipo` está de salida (D-73).** Hoy es obligatorio al crear un
 > puesto —es el selector «Aplica a» del front— y filtra el desplegable del alta.
@@ -739,10 +739,9 @@ Sacar un cliente de la cartera falla si la empresa tiene proyectos con él.
 | `POST` | `/proyectos/:id/aplazar` | `{ fechaNueva, motivo }` |
 | `POST` | `/proyectos/:id/finalizar` | `{ fechaFinReal }` |
 | `POST` | `/proyectos/:id/reabrir` | |
-| `POST` | `/proyectos/:id/categorias/clonar` | `{ origenId }` |
 | `GET` | `/proyectos/:id/asignaciones` | `?activo=` |
 | `GET` | `/proyectos/:id/asignables` | Quiénes se pueden asignar. Ver [`modelo-datos.md` §9.3](./modelo-datos.md) |
-| `POST` | `/proyectos/:id/asignaciones` | `{ empleadoId, categoriaId, fechaAsignacion }` → `{ asignacion, avisos[] }` |
+| `POST` | `/proyectos/:id/asignaciones` | `{ empleadoId, categoriaId?, fechaAsignacion }` → `{ asignacion, avisos[] }`. Sin `categoriaId` se guarda el puesto de la persona (D-82) |
 | `GET` | `/asignaciones/:id` | El detalle con la cadena completa en `trazabilidad` |
 | `PATCH` | `/asignaciones/:id/salida` | `{ fechaSalida }` — cierra, no borra |
 | `GET` `POST` | `/proyectos/:id/contratos` | `?incluirInactivos=`; el alta es `{ nombre?, fase?, fechaInicio, fechaFin }` |

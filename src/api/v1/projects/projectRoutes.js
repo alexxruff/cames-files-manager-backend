@@ -15,8 +15,7 @@ const {
   createProjectValidation,
   updateProjectValidation,
   postponeValidation,
-  finishValidation,
-  cloneCategoriesValidation
+  finishValidation
 } = require('../../../validations/projectValidation')
 const {
   listAssignmentsValidation,
@@ -79,13 +78,6 @@ router.post(
   projectIdValidation,
   validateRequest,
   asyncHandler(projectController.reabrir)
-)
-router.post(
-  '/:id/categorias/clonar',
-  gestionarProyectos,
-  cloneCategoriesValidation,
-  validateRequest,
-  asyncHandler(projectController.clonarCategorias)
 )
 
 // ─── Personal del proyecto ───────────────────────────────────────────────────

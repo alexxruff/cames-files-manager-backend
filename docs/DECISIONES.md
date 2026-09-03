@@ -783,6 +783,10 @@ una decisión, no un efecto secundario — el mensaje de la respuesta lo dice.
 personas la tienen), en vez de dejar asignaciones apuntando a una categoría que el
 proyecto ya no habilita.
 
+> Ese último párrafo **ya no aplica desde D-82**: el proyecto dejó de habilitar
+> puestos, así que no hay lista de la que quitar nada. Lo demás de esta decisión
+> —el cierre como auditoría— sigue vigente.
+
 ---
 
 ## D-39 · `idAString`: las referencias populadas no se serializan con `.toString()`
@@ -3628,3 +3632,56 @@ alcance, 404.
 **Qué NO se hizo.** No hay forma de **quitar** el archivo dejando el contrato sin
 él —no se pidió, y reemplazarlo cubre el error de captura—. Tampoco se versiona,
 por lo mismo que en D-79.
+
+---
+
+## D-82 · El proyecto ya no habilita puestos, y a la obra va quien haga falta
+
+**Contexto.** Tarea #20. Un proyecto guardaba `categorias`: el subconjunto del
+catálogo de puestos con el que se podía trabajar en esa obra. Era obligatorio
+—sin al menos uno el proyecto no nacía— y el alta lo pedía como una parrilla de
+23 casillas, que es lo primero que se ve al crear un proyecto.
+
+**Qué hacía de verdad.** Dos cosas, y sólo dos: `GET /proyectos/:id/asignables`
+filtraba a la gente cuya categoría base estuviera habilitada, y `POST
+/proyectos/:id/asignaciones` devolvía `400` cuando no lo estaba. Nada más colgaba
+de ahí: ni el expediente, ni el checklist, ni las alertas, ni los contratos.
+
+**Decisión.** El campo desaparece del proyecto: del esquema, del alta, de la
+edición y de la respuesta. Con él se van las dos reglas y la ruta `POST
+/proyectos/:id/categorias/clonar`, que existía sólo para copiar esa lista de un
+proyecto a otro.
+
+**Por qué.** La lista prometía un control que la operación no quiere: a una obra
+va quien haga falta el día que hace falta, y quién pertenece a la empresa lo dice
+la **adscripción**, que es el dato que sí se mantiene al día porque sale de la
+nómina. El puesto habilitado era una segunda lista que había que recordar
+actualizar para poder asignar a alguien, y cuando estorbaba se agregaba la
+categoría al vuelo, así que no filtraba nada: sólo añadía un paso. La regla que
+importa —no poner en una obra de Empresa 1 a alguien que no trabaja para Empresa
+1— la impone la adscripción y se queda intacta, igual que el alcance del jefe de
+área, que sigue viendo sólo a su gente.
+
+**La asignación conserva su `categoriaId`.** Es cosa distinta: el puesto con el
+que esa persona figura **en esa obra**, y es lo que la tabla de personal muestra.
+Lo que cambia es que ya no se valida contra una lista del proyecto, y que el
+campo pasa a ser **opcional en el alta**: si no viene, se guarda el de la propia
+persona, que en `empleados` es obligatorio. El front actual lo manda —lo saca del
+mismo selector de asignables— y sigue funcionando sin tocar nada.
+
+**Consecuencia visible.** El selector de asignables ahora incluye a **todo** el
+personal adscrito y activo de la empresa, administrativos incluidos, y también a
+quien consulta si está adscrito ahí. Es lo pedido: cualquier empleado de la
+empresa se puede asignar al proyecto.
+
+**Migración.** `npm run migrate:categorias-proyecto` hace `$unset` del campo en
+los proyectos que ya existen. No es urgente —el esquema ya no lo lee, así que un
+proyecto viejo con la lista guardada se edita y se finaliza igual—, pero sin
+correrla el campo se queda de basura en la colección y reaparece el día que
+alguien mire la base cruda. Las asignaciones **no se tocan**.
+
+**Qué NO se hizo.** No se tocó el catálogo de `categorias`, que sigue siendo el
+puesto de cada persona en `empleados` y en cada asignación. Y no se dejó la ruta
+de clonar respondiendo `410`, como se hizo con `/usuarios`: aquella la llamaba un
+front en producción que no podía migrar de inmediato; ésta la limpia la tarea #21
+en la misma entrega, así que un `410` habría sido código muerto desde el día uno.

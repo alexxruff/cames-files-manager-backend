@@ -96,22 +96,6 @@ class ProjectController {
       'Proyecto reabierto. Vuelve a asignar al personal que necesites.'
     )
   }
-
-  /** POST /proyectos/:id/categorias/clonar */
-  clonarCategorias = async (req, res) => {
-    const datos = await projectService.clonarCategorias(
-      req.params.id,
-      req.body,
-      this.#contexto(req)
-    )
-    return ok(
-      res,
-      datos,
-      datos.agregadas === 0
-        ? 'Ese proyecto no tenía categorías nuevas que agregar'
-        : `Se agregaron ${datos.agregadas} ${datos.agregadas === 1 ? 'categoría' : 'categorías'}`
-    )
-  }
 }
 
 module.exports = new ProjectController()

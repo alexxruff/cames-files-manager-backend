@@ -8,7 +8,6 @@ const CAMPOS_EDITABLES = [
   'nombre',
   'clienteId',
   'fechaInicio',
-  'categorias',
   'registroPatronalId',
   'registroObraId'
 ]
@@ -18,16 +17,6 @@ const fechaObligatoria = (campo, etiqueta) =>
     if (!isCalendarDate(valor)) {
       throw new Error(`${etiqueta} debe tener el formato AAAA-MM-DD`)
     }
-    return true
-  })
-
-const reglaCategorias = body('categorias')
-  .isArray({ min: 1 })
-  .withMessage('Habilita al menos una categoría en el proyecto')
-  .bail()
-  .custom((categorias) => {
-    const malos = categorias.filter((c) => !/^[a-f\d]{24}$/i.test(String(c)))
-    if (malos.length > 0) throw new Error('Alguna categoría no es válida')
     return true
   })
 
@@ -71,7 +60,6 @@ exports.createProjectValidation = [
     .withMessage('El nombre debe tener entre 3 y 160 caracteres'),
   fechaObligatoria('fechaInicio', 'La fecha de inicio'),
   fechaObligatoria('fechaFinEstimada', 'La fecha de fin estimada'),
-  reglaCategorias,
   /*
    * Obligatorios desde D-69. Que EXISTAN y pertenezcan a la empresa y al cliente
    * correctos se comprueba en el servicio, que es donde se puede consultar la
@@ -100,6 +88,9 @@ exports.updateProjectValidation = [
     const invalidos = campos.filter((c) => !CAMPOS_EDITABLES.includes(c))
     if (invalidos.length > 0) {
       const pistas = {
+        // El proyecto dejó de habilitar puestos (D-82); el front viejo todavía
+        // lo manda, y un 400 pelado no le dice por qué.
+        categorias: 'el proyecto ya no habilita puestos',
         // La fecha de cierre es auditoría: sólo se mueve con motivo y queda en
         // el historial. Por eso se rechaza aquí en vez de aceptarla en silencio.
         fechaFinEstimada: 'usa POST /proyectos/:id/aplazar, que exige motivo',
@@ -141,17 +132,6 @@ exports.updateProjectValidation = [
         throw new Error('La fecha de inicio debe tener el formato AAAA-MM-DD')
       }
       return true
-    }),
-  body('categorias')
-    .optional()
-    .custom((categorias) => {
-      if (!Array.isArray(categorias) || categorias.length === 0) {
-        throw new Error('Habilita al menos una categoría en el proyecto')
-      }
-      if (categorias.some((c) => !/^[a-f\d]{24}$/i.test(String(c)))) {
-        throw new Error('Alguna categoría no es válida')
-      }
-      return true
     })
 ]
 
@@ -170,11 +150,6 @@ exports.postponeValidation = [
 exports.finishValidation = [
   param('id').isMongoId().withMessage('El proyecto indicado no es válido'),
   fechaObligatoria('fechaFinReal', 'La fecha de cierre')
-]
-
-exports.cloneCategoriesValidation = [
-  param('id').isMongoId().withMessage('El proyecto indicado no es válido'),
-  body('origenId').isMongoId().withMessage('Selecciona el proyecto de origen')
 ]
 
 exports.ESTADOS = ESTADOS

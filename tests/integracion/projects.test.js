@@ -1,5 +1,4 @@
 const request = require('supertest')
-const mongoose = require('mongoose')
 const app = require('../../src/app')
 const Project = require('../../src/api/v1/projects/projectModel')
 const Assignment = require('../../src/api/v1/assignments/assignmentModel')
@@ -35,20 +34,12 @@ async function escenario(datos = {}) {
   return { ...sesion, cliente, categoria, registroPatronal, registroObra }
 }
 
-const cuerpo = ({
-  empresa,
-  cliente,
-  categoria,
-  registroPatronal,
-  registroObra,
-  ...extra
-}) => ({
+const cuerpo = ({ empresa, cliente, registroPatronal, registroObra, ...extra }) => ({
   empresaId: empresa._id.toString(),
   clienteId: cliente._id.toString(),
   nombre: 'Torre Andares — Etapa 2',
   fechaInicio: '2026-09-01',
   fechaFinEstimada: '2027-06-30',
-  categorias: [categoria._id.toString()],
   registroPatronalId: registroPatronal?._id?.toString(),
   registroObraId: registroObra?._id?.toString(),
   ...extra
@@ -57,14 +48,13 @@ const cuerpo = ({
 describe('POST /api/v1/proyectos', () => {
   beforeAll(() => Project.init())
 
-  it('crea el proyecto con su cliente y categorías', async () => {
-    const { token, empresa, cliente, categoria, registroPatronal, registroObra } =
-      await escenario()
+  it('crea el proyecto con su cliente', async () => {
+    const { token, empresa, cliente, registroPatronal, registroObra } = await escenario()
 
     const res = await request(app)
       .post(RUTA)
       .set(auth(token))
-      .send(cuerpo({ empresa, cliente, categoria, registroPatronal, registroObra }))
+      .send(cuerpo({ empresa, cliente, registroPatronal, registroObra }))
 
     expect(res.status).toBe(201)
     expect(res.body.data.proyecto).toMatchObject({
@@ -77,22 +67,21 @@ describe('POST /api/v1/proyectos', () => {
       fechaFinReal: null,
       aplazamientos: []
     })
-    expect(res.body.data.proyecto.categorias).toEqual([categoria._id.toString()])
+    // El proyecto ya no habilita puestos (D-82): ni los pide ni los devuelve.
+    expect(res.body.data.proyecto).not.toHaveProperty('categorias')
     // Derivado, nunca almacenado.
     expect(typeof res.body.data.proyecto.diasParaCierre).toBe('number')
   })
 
   it('EXIGE que el cliente esté en la cartera activa de la empresa', async () => {
-    const { token, empresa, categoria, registroPatronal } = await escenario()
+    const { token, empresa, registroPatronal } = await escenario()
     const fuera = await crearCliente({ nombre: 'Cliente sin cartera' })
     const registroObra = await crearRegistroObra(fuera)
 
     const res = await request(app)
       .post(RUTA)
       .set(auth(token))
-      .send(
-        cuerpo({ empresa, cliente: fuera, categoria, registroPatronal, registroObra })
-      )
+      .send(cuerpo({ empresa, cliente: fuera, registroPatronal, registroObra }))
 
     expect(res.status).toBe(400)
     expect(res.body.message).toMatch(/no está en la cartera activa/i)
@@ -100,21 +89,20 @@ describe('POST /api/v1/proyectos', () => {
   })
 
   it('tampoco vale un cliente que fue sacado de la cartera', async () => {
-    const { token, empresa, categoria } = await escenario()
+    const { token, empresa } = await escenario()
     const sacado = await crearCliente()
     await agregarACartera(empresa, sacado, { activo: false })
 
     const res = await request(app)
       .post(RUTA)
       .set(auth(token))
-      .send(cuerpo({ empresa, cliente: sacado, categoria }))
+      .send(cuerpo({ empresa, cliente: sacado }))
 
     expect(res.status).toBe(400)
   })
 
-  it('exige al menos una categoría, y que exista y esté activa', async () => {
-    const { token, empresa, cliente, categoria, registroPatronal, registroObra } =
-      await escenario()
+  it('NO pide categorías, y las ignora si el front todavía las manda (D-82)', async () => {
+    const { token, empresa, cliente, registroPatronal, registroObra } = await escenario()
     const desactivada = await crearCategoria('Desactivada', 'mano_de_obra')
     desactivada.activo = false
     await desactivada.save()
@@ -122,38 +110,37 @@ describe('POST /api/v1/proyectos', () => {
     const sinCategorias = await request(app)
       .post(RUTA)
       .set(auth(token))
-      .send(
-        cuerpo({
-          empresa,
-          cliente,
-          categoria,
-          registroPatronal,
-          registroObra,
-          categorias: []
-        })
-      )
-    const inactiva = await request(app)
+      .send(cuerpo({ empresa, cliente, registroPatronal, registroObra }))
+
+    expect(sinCategorias.status).toBe(201)
+    expect(sinCategorias.body.data.proyecto).not.toHaveProperty('categorias')
+
+    /*
+     * El front viejo manda `categorias` hasta que quite los chips. No se
+     * rechaza: el campo sobra, no estorba, y ni se guarda ni se devuelve.
+     */
+    const conCategoriaMuerta = await request(app)
       .post(RUTA)
       .set(auth(token))
       .send(
         cuerpo({
           empresa,
           cliente,
-          categoria,
           registroPatronal,
           registroObra,
+          nombre: 'Torre Andares — Etapa 3',
           categorias: [desactivada._id.toString()]
         })
       )
 
-    expect(sinCategorias.status).toBe(400)
-    expect(inactiva.status).toBe(400)
-    expect(inactiva.body.errors[0].path).toBe('categorias')
+    expect(conCategoriaMuerta.status).toBe(201)
+    expect(conCategoriaMuerta.body.data.proyecto).not.toHaveProperty('categorias')
+    const guardado = await Project.findById(conCategoriaMuerta.body.data.proyecto._id)
+    expect(guardado.get('categorias')).toBeUndefined()
   })
 
   it('la fecha de fin estimada debe ser posterior al inicio', async () => {
-    const { token, empresa, cliente, categoria, registroPatronal, registroObra } =
-      await escenario()
+    const { token, empresa, cliente, registroPatronal, registroObra } = await escenario()
 
     const res = await request(app)
       .post(RUTA)
@@ -162,7 +149,6 @@ describe('POST /api/v1/proyectos', () => {
         cuerpo({
           empresa,
           cliente,
-          categoria,
           registroPatronal,
           registroObra,
           fechaInicio: '2026-09-01',
@@ -227,13 +213,12 @@ describe('POST /api/v1/proyectos', () => {
   })
 
   it('400 con mensajes por campo', async () => {
-    const { token, empresa, cliente, categoria, registroPatronal, registroObra } =
-      await escenario()
+    const { token, empresa, cliente, registroPatronal, registroObra } = await escenario()
     const casos = [
       [{ nombre: 'ab' }, 'nombre'],
       [{ fechaInicio: '01/09/2026' }, 'fechaInicio'],
       [{ clienteId: 'no-es-id' }, 'clienteId'],
-      [{ categorias: 'no-es-lista' }, 'categorias']
+      [{ registroPatronalId: 'no-es-id' }, 'registroPatronalId']
     ]
 
     for (const [extra, campo] of casos) {
@@ -244,7 +229,6 @@ describe('POST /api/v1/proyectos', () => {
           cuerpo({
             empresa,
             cliente,
-            categoria,
             registroPatronal,
             registroObra,
             ...extra
@@ -334,7 +318,6 @@ describe('PATCH /api/v1/proyectos/:id', () => {
     await agregarACartera(empresa, otroCliente)
     // Cambiar de cliente exige su registro de obra en la misma petición (D-69).
     const otroRegistroObra = await crearRegistroObra(otroCliente)
-    const otraCategoria = await crearCategoria('Otra', 'mano_de_obra')
 
     const res = await request(app)
       .patch(`${RUTA}/${proyecto._id}`)
@@ -342,8 +325,7 @@ describe('PATCH /api/v1/proyectos/:id', () => {
       .send({
         nombre: 'Torre Andares — Etapa 3',
         clienteId: otroCliente._id.toString(),
-        registroObraId: otroRegistroObra._id.toString(),
-        categorias: [otraCategoria._id.toString()]
+        registroObraId: otroRegistroObra._id.toString()
       })
 
     expect(res.status).toBe(200)
@@ -396,25 +378,18 @@ describe('PATCH /api/v1/proyectos/:id', () => {
     expect(res.body.message).toMatch(/cartera activa/i)
   })
 
-  it('no deja quitar una categoría que alguien asignado está usando', async () => {
+  it('el PATCH ya no acepta categorías: es un campo que no existe (D-82)', async () => {
     const { token, empresa } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
     const { proyecto, categoria } = await crearProyecto(empresa)
-    const persona = await crearEmpleado({
-      tipo: 'mano_de_obra',
-      categoriaId: categoria._id
-    })
-    await adscribir(empresa, persona, { areas: ['operaciones_urbanizadora'] })
-    await asignar(proyecto, persona, categoria._id)
 
-    const otra = await crearCategoria('Otra', 'mano_de_obra')
     const res = await request(app)
       .patch(`${RUTA}/${proyecto._id}`)
       .set(auth(token))
-      .send({ categorias: [otra._id.toString()] })
+      .send({ categorias: [categoria._id.toString()] })
 
     expect(res.status).toBe(400)
-    expect(res.body.message).toMatch(/1 persona asignada la tiene/i)
-    expect(await Assignment.countDocuments({ activo: true })).toBe(1)
+    expect(res.body.message).toMatch(/no se pueden actualizar/i)
+    expect(res.body.message).toMatch(/categorias \(el proyecto ya no habilita puestos\)/)
   })
 })
 
@@ -598,78 +573,6 @@ describe('Ciclo de vida del proyecto', () => {
     })
   })
 
-  describe('POST /:id/categorias/clonar', () => {
-    it('suma las del origen sin quitar ni duplicar', async () => {
-      const { token, empresa } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
-      const comun = await crearCategoria('Albañil', 'mano_de_obra')
-      const soloOrigen = await crearCategoria('Soldador', 'mano_de_obra')
-      const soloDestino = await crearCategoria('Plomero', 'mano_de_obra')
-
-      const origen = await crearProyecto(empresa, {
-        nombre: 'Origen',
-        categorias: [comun._id, soloOrigen._id]
-      })
-      const destino = await crearProyecto(empresa, {
-        nombre: 'Destino',
-        categorias: [comun._id, soloDestino._id]
-      })
-
-      const res = await request(app)
-        .post(`${RUTA}/${destino.proyecto._id}/categorias/clonar`)
-        .set(auth(token))
-        .send({ origenId: origen.proyecto._id.toString() })
-
-      expect(res.status).toBe(200)
-      expect(res.body.data.agregadas).toBe(1)
-      expect(res.body.data.proyecto.categorias.sort()).toEqual(
-        [
-          comun._id.toString(),
-          soloDestino._id.toString(),
-          soloOrigen._id.toString()
-        ].sort()
-      )
-    })
-
-    it('avisa cuando no había nada nuevo que agregar', async () => {
-      const { token, empresa } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
-      const categoria = await crearCategoria('Albañil', 'mano_de_obra')
-      const origen = await crearProyecto(empresa, {
-        nombre: 'Origen',
-        categorias: [categoria._id]
-      })
-      const destino = await crearProyecto(empresa, {
-        nombre: 'Destino',
-        categorias: [categoria._id]
-      })
-
-      const res = await request(app)
-        .post(`${RUTA}/${destino.proyecto._id}/categorias/clonar`)
-        .set(auth(token))
-        .send({ origenId: origen.proyecto._id.toString() })
-
-      expect(res.body.data.agregadas).toBe(0)
-      expect(res.body.message).toMatch(/no tenía categorías nuevas/i)
-    })
-
-    it('400 si el origen es el mismo proyecto; 404 si es de otra empresa', async () => {
-      const { token, empresa } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
-      const { proyecto } = await crearProyecto(empresa)
-      const ajeno = await crearProyecto(await crearEmpresa())
-
-      const mismo = await request(app)
-        .post(`${RUTA}/${proyecto._id}/categorias/clonar`)
-        .set(auth(token))
-        .send({ origenId: proyecto._id.toString() })
-      const otraEmpresa = await request(app)
-        .post(`${RUTA}/${proyecto._id}/categorias/clonar`)
-        .set(auth(token))
-        .send({ origenId: ajeno.proyecto._id.toString() })
-
-      expect(mismo.status).toBe(400)
-      expect(otraEmpresa.status).toBe(404)
-    })
-  })
-
   it('todas las operaciones del ciclo de vida exigen gestionar proyectos', async () => {
     const { empresa } = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
     const { proyecto } = await crearProyecto(empresa)
@@ -683,10 +586,7 @@ describe('Ciclo de vida del proyecto', () => {
       request(app)
         .post(`${RUTA}/${proyecto._id}/finalizar`)
         .send({ fechaFinReal: '2027-01-01' }),
-      request(app).post(`${RUTA}/${proyecto._id}/reabrir`).send({}),
-      request(app)
-        .post(`${RUTA}/${proyecto._id}/categorias/clonar`)
-        .send({ origenId: new mongoose.Types.ObjectId().toString() })
+      request(app).post(`${RUTA}/${proyecto._id}/reabrir`).send({})
     ]
 
     for (const peticion of peticiones) {
@@ -742,7 +642,6 @@ describe('registro patronal y registro de obra del proyecto (D-67)', () => {
     nombre: 'Torre Andares',
     fechaInicio: '2026-09-01',
     fechaFinEstimada: '2027-06-30',
-    categorias: [e.categoria._id.toString()],
     // Obligatorios desde D-69; las pruebas que prueban su ausencia los quitan.
     registroPatronalId: e.registroPatronalId,
     registroObraId: e.registroObraId,
@@ -958,6 +857,8 @@ describe('registro patronal y registro de obra del proyecto (D-67)', () => {
       fechaFinEstimada: '2025-12-31',
       fechaFinReal: null,
       estado: 'en_curso',
+      // Los proyectos anteriores a D-82 traen el campo; el esquema ya no lo
+      // conoce y editarlos tiene que seguir funcionando igual.
       categorias: [e.categoria._id],
       aplazamientos: [],
       createdAt: new Date(),
@@ -990,6 +891,8 @@ describe('registro patronal y registro de obra del proyecto (D-67)', () => {
       fechaFinEstimada: '2025-12-31',
       fechaFinReal: null,
       estado: 'en_curso',
+      // Los proyectos anteriores a D-82 traen el campo; el esquema ya no lo
+      // conoce y editarlos tiene que seguir funcionando igual.
       categorias: [e.categoria._id],
       aplazamientos: [],
       createdAt: new Date(),

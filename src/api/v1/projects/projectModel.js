@@ -1,7 +1,7 @@
 const mongoose = require('mongoose')
 const { isCalendarDate, isAfter } = require('../../../utils/dates')
 const { normalize } = require('../../../utils/text')
-const { idAString, idsAString } = require('../../../utils/ids')
+const { idAString } = require('../../../utils/ids')
 
 /**
  * Proyecto (modelo-datos §5.5). **La única entidad que sí pertenece a una
@@ -119,9 +119,6 @@ const projectSchema = new mongoose.Schema(
       default: 'en_curso'
     },
 
-    /** Subconjunto del catálogo global habilitado en este proyecto. */
-    categorias: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Category' }],
-
     /** De la más reciente a la más antigua. */
     aplazamientos: { type: [postponementSchema], default: [] },
 
@@ -145,7 +142,6 @@ const projectSchema = new mongoose.Schema(
           fechaFinEstimada: ret.fechaFinEstimada,
           fechaFinReal: ret.fechaFinReal ?? null,
           estado: ret.estado,
-          categorias: idsAString(ret.categorias),
           aplazamientos: (ret.aplazamientos || []).map((a) => ({
             fechaAnterior: a.fechaAnterior,
             fechaNueva: a.fechaNueva,
@@ -184,12 +180,6 @@ projectSchema.pre('validate', function forzarInvariantes(next) {
       'fechaFinEstimada',
       'La fecha de fin estimada debe ser posterior a la de inicio'
     )
-  }
-
-  if (!this.categorias || this.categorias.length === 0) {
-    // Sin categorías habilitadas no se puede asignar a nadie: el proyecto
-    // nacería inservible.
-    this.invalidate('categorias', 'Habilita al menos una categoría en el proyecto')
   }
 
   next()

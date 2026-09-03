@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-81)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-82)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -75,7 +75,7 @@ lo dejaría con un puesto o un área ambiguos (D-32).
 | `credentials`         | La contraseña, aislada (D-27)                  | `employees` (1 a 1)                   |
 | `affiliations`        | **La relación laboral** empresa ↔ persona      | `companies`, `employees`, `areas`     |
 | `portfolios`          | Qué clientes usa cada empresa                  | `companies`, `clients`                |
-| `projects`            | Obras y proyectos                              | `companies`, `clients`, `categories`  |
+| `projects`            | Obras y proyectos                              | `companies`, `clients`                |
 | `assignments`         | Quién está en qué proyecto                     | `projects`, `employees`, `categories` |
 | `contracts`           | **El contrato/fase** de una obra, con su SIROC | `projects`                            |
 | `checklist_templates` | Qué documentos exige cada perfil               | `companies` (o global), `areas`       |
@@ -115,7 +115,6 @@ erDiagram
 
     COMPANIES  ||--o{ PROJECTS     : "sus obras"
     CLIENTS    ||--o{ PROJECTS     : "cliente de"
-    CATEGORIES ||--o{ PROJECTS     : "puestos que pide"
 
     PROJECTS   ||--o{ ASSIGNMENTS  : "su gente"
     EMPLOYEES  ||--o{ ASSIGNMENTS  : "asignado a"
@@ -227,9 +226,17 @@ obligatorias en los proyectos nuevos, **no en los que ya existían** —
 `required: () => this.isNew` — porque un cambio de forma deja el sistema en dos
 estados y los dos tienen que funcionar.
 
+**El proyecto no habilita puestos** (D-82). Tuvo un `categorias[]` —el
+subconjunto del catálogo con el que se podía trabajar en esa obra—, y se quitó:
+sólo servía para filtrar el selector de asignables y rechazar altas, y a una obra
+va quien haga falta. Quién pertenece a la empresa lo dice la **adscripción**, que
+es el dato que se mantiene al día porque sale de la nómina.
+
 `assignments` es único por `(proyectoId, empleadoId)` **sólo mientras está
 activa** — índice parcial, para que alguien pueda volver al mismo proyecto
-después.
+después. Conserva su propio `categoriaId`: el puesto con el que esa persona
+figura **en esa obra**, que ya no se valida contra nada del proyecto y, si el
+alta no lo manda, se toma del propio empleado (D-82).
 
 ### `contracts` — el contrato, que es la fase, y su SIROC
 

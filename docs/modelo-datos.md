@@ -431,8 +431,11 @@ const proyectoSchema = new mongoose.Schema({
   registroPatronalId: { type: ObjectId, default: null },
   registroObraId:     { type: ObjectId, default: null },
 
-  // Subconjunto del catálogo global habilitado en este proyecto.
-  categorias: [{ type: ObjectId, ref: 'Categoria' }],
+  // AQUÍ HUBO un `categorias: [ObjectId]` —el subconjunto del catálogo
+  // habilitado en la obra—. Se quitó (D-82): sólo servía para filtrar el
+  // selector de asignables y rechazar altas, y a una obra va quien haga falta.
+  // Los proyectos anteriores lo traen guardado; el esquema ya no lo lee y
+  // `npm run migrate:categorias-proyecto` lo limpia.
 
   // De la más reciente a la más antigua.
   aplazamientos: { type: [aplazamientoSchema], default: [] }
@@ -775,8 +778,9 @@ asignacionSchema.index(
 
 Reglas:
 
-- La `categoriaId` de la asignación **debe estar habilitada en el proyecto**
-  (`proyecto.categorias`). Si no, `400` diciendo que hay que agregarla primero.
+- La `categoriaId` de la asignación es **su puesto en esa obra**, y no se valida
+  contra nada del proyecto (D-82). Es opcional al asignar: sin ella se guarda el
+  puesto de la propia persona.
 - El empleado debe tener **adscripción activa** a la empresa del proyecto. No se
   puede poner en una obra de Empresa 1 a alguien que no trabaja para Empresa 1.
 - No se asigna a un empleado dado de baja ni a un proyecto finalizado.
@@ -1186,18 +1190,15 @@ proyecto. Mezclarlos es justo la confusión que este modelo corrige.
 
 ### 9.3 Empleados asignables a un proyecto
 
-Para el selector al asignar personal. Tiene que cruzar tres condiciones:
+Para el selector al asignar personal. Tiene que cruzar dos condiciones —eran
+tres hasta D-82, que quitó la del puesto—:
 
 ```js
 Adscripcion.aggregate([
   { $match: { empresaId: proyecto.empresaId, activo: true } },
   { $lookup: { from: 'empleados', localField: 'empleadoId', foreignField: '_id', as: 'e' } },
   { $unwind: '$e' },
-  { $match: {
-      'e.activo': true,
-      // Su categoría tiene que estar habilitada en el proyecto.
-      'e.categoriaId': { $in: proyecto.categorias }
-  } },
+  { $match: { 'e.activo': true } },
   // Fuera los que ya están asignados.
   { $lookup: { from: 'asignaciones',
       let: { emp: '$empleadoId' },

@@ -109,6 +109,35 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
+### 2026-09-02 16:58:04 · backend · El proyecto ya no habilita puestos
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 2 sept 14:40:00 (tarea #18).
+Gracias por el dato de los 30 s de axios; queda anotado.
+
+**Tarea #20, y les cambia el modal de proyecto.** `categorias` **desaparece**:
+del `POST /proyectos`, del `PATCH` y de la respuesta. La parrilla de 23 casillas
+del alta se queda sin dato al que apuntar — eso es la #21.
+
+**Se cae una ruta**: `POST /proyectos/:id/categorias/clonar` ya no existe, así
+que hay que quitar la llamada de `proyectos-service.ts` y su hook. **Van 86 rutas
+en pie**, no 87.
+
+**Mandar `categorias` en el `POST` no rompe**: sobra y se ignora, para que su
+despliegue no tenga que ir al minuto con el nuestro. En el `PATCH` **sí da
+`400`**: ahí la lista de campos editables siempre ha sido cerrada.
+
+**Lo que van a notar sin tocar nada:** `GET /proyectos/:id/asignables` ahora
+devuelve a **todo** el personal adscrito y activo de la empresa —administrativos
+incluidos, y también a quien consulta si está adscrito ahí—, no sólo a los del
+puesto habilitado. Si esa lista se les hace larga, un buscador de su lado.
+
+**`categoriaId` al asignar pasa a opcional** y cae en el puesto de la persona.
+Lo que mandan hoy sigue valiendo igual: no hay que tocarlo.
+
+Detalle completo en `plan/handoff/20.md`; el porqué, en D-82.
+
+**Qué necesita el front**: la tarea #21. Nada bloquea de nuestro lado.
+
 ### 2026-09-02 13:58:17 · backend · El contrato lleva su papel, y el tope de subida sube a 30 MB
 
 **Leído de ustedes**: `HANDOFF-FRONTEND.md` del 2 sept 11:34:56 (tarea #16, con

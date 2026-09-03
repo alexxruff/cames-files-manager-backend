@@ -1,8 +1,14 @@
 # Carteras, proyectos y asignaciones
 
-Referencia de los **31 endpoints** de este dominio para el equipo de front.
+Referencia de los **30 endpoints** de este dominio para el equipo de front.
 
-> **Actualizado hasta D-81.** Lo último es el **contrato escaneado** (§4.3): un
+> **Actualizado hasta D-82.** Lo último: **el proyecto ya no habilita puestos**
+> (§2). `categorias` desaparece del alta, de la edición y de la respuesta; la
+> ruta `POST /proyectos/:id/categorias/clonar` **ya no existe**; y el selector de
+> asignables devuelve a todo el personal adscrito y activo de la empresa, sea
+> cual sea su puesto. `categoriaId` del alta de asignaciones pasa a **opcional**:
+> si no se manda, se guarda el puesto de la propia persona. Antes de eso, el
+> **contrato escaneado** (§4.3): un
 > endpoint nuevo para pedir su enlace, `archivo` dentro de `Contrato`, y el
 > **tope de subida arriba, de 10 a 30 MB** —lo que pidieron: un contrato de obra
 > pasa de 20—. `POST /proyectos/:id/contratos` y `PATCH /contratos/:id` aceptan
@@ -39,33 +45,34 @@ Base: `/api/v1`. Envelope, códigos y convenciones generales: ver
 | 9   | `POST /proyectos/:id/aplazar`                              | `rh_admin` · `jefe_area` |
 | 10  | `POST /proyectos/:id/finalizar`                            | `rh_admin` · `jefe_area` |
 | 11  | `POST /proyectos/:id/reabrir`                              | `rh_admin` · `jefe_area` |
-| 12  | `POST /proyectos/:id/categorias/clonar`                    | `rh_admin` · `jefe_area` |
-| 13  | `GET /proyectos/:id/asignables`                            | sesión                   |
-| 14  | `GET /proyectos/:id/asignaciones`                          | sesión                   |
-| 15  | `POST /proyectos/:id/asignaciones`                         | asignar a proyectos      |
-| 16  | `GET /asignaciones/:id`                                    | sesión                   |
-| 17  | `PATCH /asignaciones/:id/salida`                           | asignar a proyectos      |
-| 18  | `GET /proyectos/:id/contratos`                             | sesión                   |
-| 19  | `POST /proyectos/:id/contratos`                            | `rh_admin` · `jefe_area` |
-| 20  | `PATCH /contratos/:id`                                     | `rh_admin` · `jefe_area` |
-| 21  | `PUT /contratos/:id/siroc`                                 | `rh_admin` · `jefe_area` |
-| 22  | `DELETE /contratos/:id/siroc`                              | `rh_admin` · `jefe_area` |
-| 23  | `POST /contratos/:id/siroc/actualizaciones`                | `rh_admin` · `jefe_area` |
-| 24  | `DELETE /contratos/:id/siroc/actualizaciones/ultima`       | `rh_admin` · `jefe_area` |
-| 25  | `GET /contratos/:id/siroc/archivo`                         | sesión                   |
-| 26  | `GET /contratos/:id/siroc/actualizaciones/:indice/archivo` | sesión                   |
-| 27  | `PUT /contratos/:id/siroc/actualizaciones/:indice/archivo` | `rh_admin` · `jefe_area` |
-| 28  | `POST /contratos/:id/finalizar`                            | `rh_admin` · `jefe_area` |
-| 29  | `POST /contratos/:id/reabrir`                              | `rh_admin` · `jefe_area` |
-| 30  | `PATCH /contratos/:id/estado`                              | `rh_admin` · `jefe_area` |
-| 31  | `GET /contratos/:id/archivo`                               | sesión                   |
+| 12  | `GET /proyectos/:id/asignables`                            | sesión                   |
+| 13  | `GET /proyectos/:id/asignaciones`                          | sesión                   |
+| 14  | `POST /proyectos/:id/asignaciones`                         | asignar a proyectos      |
+| 15  | `GET /asignaciones/:id`                                    | sesión                   |
+| 16  | `PATCH /asignaciones/:id/salida`                           | asignar a proyectos      |
+| 17  | `GET /proyectos/:id/contratos`                             | sesión                   |
+| 18  | `POST /proyectos/:id/contratos`                            | `rh_admin` · `jefe_area` |
+| 19  | `PATCH /contratos/:id`                                     | `rh_admin` · `jefe_area` |
+| 20  | `PUT /contratos/:id/siroc`                                 | `rh_admin` · `jefe_area` |
+| 21  | `DELETE /contratos/:id/siroc`                              | `rh_admin` · `jefe_area` |
+| 22  | `POST /contratos/:id/siroc/actualizaciones`                | `rh_admin` · `jefe_area` |
+| 23  | `DELETE /contratos/:id/siroc/actualizaciones/ultima`       | `rh_admin` · `jefe_area` |
+| 24  | `GET /contratos/:id/siroc/archivo`                         | sesión                   |
+| 25  | `GET /contratos/:id/siroc/actualizaciones/:indice/archivo` | sesión                   |
+| 26  | `PUT /contratos/:id/siroc/actualizaciones/:indice/archivo` | `rh_admin` · `jefe_area` |
+| 27  | `POST /contratos/:id/finalizar`                            | `rh_admin` · `jefe_area` |
+| 28  | `POST /contratos/:id/reabrir`                              | `rh_admin` · `jefe_area` |
+| 29  | `PATCH /contratos/:id/estado`                              | `rh_admin` · `jefe_area` |
+| 30  | `GET /contratos/:id/archivo`                               | sesión                   |
 
 > **Orden obligado para probar.** Un proyecto no se puede crear si su cliente no
 > está antes en la cartera de la empresa:
 >
-> `POST /empresas` → `POST /categorias` → `POST /clientes` →
-> **`POST /empresas/:id/clientes`** → `POST /proyectos` → `POST /empleados` →
+> `POST /empresas` → `POST /clientes` → **`POST /empresas/:id/clientes`** →
+> `POST /proyectos` → `POST /categorias` → `POST /empleados` →
 > `GET /proyectos/:id/asignables` → `POST /proyectos/:id/asignaciones`
+>
+> La categoría ya no la pide el proyecto (D-82), pero **sí cada empleado**.
 
 ---
 
@@ -181,7 +188,6 @@ interface Proyecto {
   fechaFinEstimada: string // 'YYYY-MM-DD'
   fechaFinReal: string | null
   estado: 'en_curso' | 'finalizado'
-  categorias: string[] // ids de categoría habilitados en el proyecto
   aplazamientos: {
     fechaAnterior: string
     fechaNueva: string
@@ -271,8 +277,7 @@ Orden: **en curso primero, y dentro de ellos el que cierra más pronto.**
   "registroObraId": "…",
   "nombre": "Torre Andares — Etapa 2",
   "fechaInicio": "2026-09-01",
-  "fechaFinEstimada": "2027-06-30",
-  "categorias": ["…", "…"]
+  "fechaFinEstimada": "2027-06-30"
 }
 // data: { "proyecto": { … } }
 ```
@@ -280,7 +285,6 @@ Orden: **en curso primero, y dentro de ellos el que cierra más pronto.**
 | Código | Cuándo                                                                                                                                                                       |
 | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `400`  | **El cliente no está en la cartera activa de esa empresa** (`path: clienteId`)                                                                                               |
-| `400`  | Sin categorías, o alguna no existe o está desactivada (`path: categorias`)                                                                                                   |
 | `400`  | El registro patronal **no es de esa empresa**, o está dado de baja (`path: registroPatronalId`)                                                                              |
 | `400`  | El registro de obra **no es de ese cliente**, o está dado de baja (`path: registroObraId`)                                                                                   |
 | `400`  | `fechaFinEstimada` no es posterior a `fechaInicio`                                                                                                                           |
@@ -290,8 +294,9 @@ Orden: **en curso primero, y dentro de ellos el que cierra más pronto.**
 
 ### `PATCH /proyectos/:id`
 
-Acepta **sólo** `nombre`, `clienteId`, `fechaInicio`, `categorias`,
-`registroPatronalId` y `registroObraId`.
+Acepta **sólo** `nombre`, `clienteId`, `fechaInicio`, `registroPatronalId` y
+`registroObraId`. Mandar `categorias` da `400`: es un campo que ya no existe
+(D-82).
 
 ```jsonc
 { "nombre": "Torre Andares — Etapa 3" }
@@ -351,17 +356,6 @@ Cuerpo vacío. Deja `estado: 'en_curso'` y `fechaFinReal: null`.
 **No reabre las asignaciones**: hay que volver a asignar al personal. `400` si el
 proyecto no está finalizado.
 
-### `POST /proyectos/:id/categorias/clonar`
-
-```jsonc
-{ "origenId": "…" }
-// data: { "proyecto": { … }, "agregadas": 2 }
-```
-
-Suma las categorías del origen **sin quitar ni duplicar**. `agregadas: 0` cuando no
-había ninguna nueva. `400` si el origen es el mismo proyecto; `404` si es de otra
-empresa.
-
 ---
 
 ## 3. Asignaciones — el personal del proyecto
@@ -414,12 +408,15 @@ El selector de personal. Requiere permiso de asignar (`rh_admin` · `jefe_area`)
 }
 ```
 
-Devuelve **sólo** a quien cumple las cuatro condiciones a la vez:
+Devuelve **sólo** a quien cumple las tres condiciones a la vez:
 
 1. Adscripción **activa** a la empresa del proyecto.
 2. Persona activa (no dada de baja).
-3. Su categoría base está **habilitada en el proyecto**.
-4. No está ya asignado a ese proyecto.
+3. No está ya asignado a ese proyecto.
+
+**El puesto ya no filtra** (D-82): salen administrativos y mano de obra por
+igual, y también quien consulta si está adscrito a esa empresa. `categoriaId` y
+`categoriaNombre` siguen viajando en cada renglón, para pintarlos en la lista.
 
 Un `jefe_area` sólo ve a su gente **de sus áreas**.
 
@@ -441,6 +438,8 @@ uno. Los tres estados están en «Coherencia del registro patronal», abajo.
 ### `POST /proyectos/:id/asignaciones` → `201`
 
 ```jsonc
+// `categoriaId` es OPCIONAL desde D-82: sin él se guarda el puesto de la
+// persona, el mismo que trae el selector de asignables.
 { "empleadoId": "…", "categoriaId": "…", "fechaAsignacion": "2026-09-15" }
 // data: { "asignacion": { … }, "avisos": string[] }
 ```
@@ -453,7 +452,6 @@ patronal», abajo. El primer aviso se repite en `message`, así que si ya pintas
 | Código | Cuándo                                                                            |
 | ------ | --------------------------------------------------------------------------------- |
 | `400`  | El empleado **no está adscrito** a la empresa del proyecto (`path: empleadoId`)   |
-| `400`  | La categoría **no está habilitada** en el proyecto (`path: categoriaId`)          |
 | `400`  | La persona está dada de baja                                                      |
 | `400`  | El proyecto está finalizado                                                       |
 | `400`  | `fechaAsignacion` anterior al inicio del proyecto                                 |
