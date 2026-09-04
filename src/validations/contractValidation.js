@@ -26,14 +26,27 @@ const fecha = (campo, etiqueta, { obligatoria = true } = {}) => {
  * cadena en `multipart`, así que se convierte antes de mirarlo. `0` es una cifra
  * válida —alguien la tecleó— y por eso `exists` no usa `falsy`: lo que no se
  * acepta es que falte.
+ *
+ * Con `{ obligatorio: false }` es el del reporte bimestral (D-91), que puede no
+ * capturarse todavía. Lo que NO cambia es qué se considera un número: mandarlo
+ * mal sigue siendo 400 aunque el campo sea opcional, porque omitirlo y teclearlo
+ * mal no son la misma cosa.
  */
-const monto = (etiqueta) =>
-  body('monto')
-    .exists({ values: 'null' })
-    .withMessage(`${etiqueta} es requerido`)
-    .bail()
+const monto = (etiqueta, { obligatorio = true } = {}) => {
+  const regla = body('monto')
+  const base = obligatorio
+    ? regla.exists({ values: 'null' }).withMessage(`${etiqueta} es requerido`).bail()
+    : regla.optional({ values: 'null' })
+
+  return base
     .customSanitizer((v) => (v === '' ? null : Number(v)))
     .custom((valor) => {
+      // El vacío del formulario llega como `''` y aquí ya es `null`: para el
+      // reporte bimestral es «no se capturó»; para el contrato, un dato que falta.
+      if (valor === null || valor === undefined) {
+        if (!obligatorio) return true
+        throw new Error(`${etiqueta} debe ser un número en pesos`)
+      }
       if (!Number.isFinite(valor)) {
         throw new Error(`${etiqueta} debe ser un número en pesos`)
       }
@@ -43,6 +56,7 @@ const monto = (etiqueta) =>
       }
       return true
     })
+}
 
 /**
  * `nombre` y `fase` se validan igual: opcionales, se recortan, y el vacío es una
@@ -225,13 +239,17 @@ exports.setSirocValidation = [
  * asume hoy, que es como se captura al volver del IMSS. El número NO se acepta
  * aquí: actualizar el SIROC conserva el mismo, y dejar mandarlo invitaría a
  * cambiarlo por error.
+ *
+ * `monto` y `bimestre` (D-91) también son opcionales, y **sólo se capturan al
+ * registrar**: no hay ruta para corregirlos, se deshace el reporte y se vuelve a
+ * capturar, que es lo que ya se hacía con una fecha mal tecleada.
  */
 exports.sirocRenovacionValidation = [
   param('id').isMongoId().withMessage('El contrato indicado no es válido'),
   body().custom((cuerpo) => {
     const invalidos = Object.keys(cuerpo || {}).filter(
       // `subidaId` no es un dato de la renovación: dice dónde está su acuse.
-      (c) => !['fecha', 'nota', 'subidaId'].includes(c)
+      (c) => !['fecha', 'nota', 'monto', 'bimestre', 'subidaId'].includes(c)
     )
     if (invalidos.length > 0) {
       const pistas = {
@@ -255,6 +273,29 @@ exports.sirocRenovacionValidation = [
       if (valor === null || valor === undefined || valor === '') return true
       if (String(valor).length > 200) {
         throw new Error('La nota no puede exceder 200 caracteres')
+      }
+      return true
+    }),
+  monto('El monto del reporte bimestral', { obligatorio: false }),
+  /*
+   * El bimestre se guarda **tal como se teclea** (D-91), así que lo único que se
+   * comprueba es que sea algo que se pueda teclear: un número —'3'— o un texto
+   * corto —'2026-3', 'mayo-junio'—. El número se pasa a cadena aquí para que la
+   * respuesta tenga una sola forma y el front no tenga que mirar el tipo.
+   */
+  body('bimestre')
+    .optional({ values: 'null' })
+    .customSanitizer((v) => {
+      if (typeof v === 'number') return Number.isFinite(v) ? String(v) : v
+      return typeof v === 'string' ? v.trim() : v
+    })
+    .custom((valor) => {
+      if (valor === null || valor === undefined || valor === '') return true
+      if (typeof valor !== 'string') {
+        throw new Error('El bimestre debe ser un número o un texto corto')
+      }
+      if (valor.length > 40) {
+        throw new Error('El bimestre no puede exceder 40 caracteres')
       }
       return true
     })

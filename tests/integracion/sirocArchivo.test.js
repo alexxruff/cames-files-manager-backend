@@ -283,6 +283,8 @@ describe('El archivo del SIROC', () => {
       expect(res.body.data.contrato.siroc.actualizaciones[0]).toEqual({
         fecha: '2026-03-05',
         nota: null,
+        monto: null,
+        bimestre: null,
         archivo: null
       })
     })

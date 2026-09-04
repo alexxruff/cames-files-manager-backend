@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-90)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-91)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -439,6 +439,17 @@ dos opcionales y ninguno derivado del otro (D-75).
   ninguna puede ser **posterior a `fechaFin`**, que es el techo del cálculo
   (D-84): pasada esa fecha el contrato no acumula refrendos, y lo que le falta
   —que alguien lo cierre— se dice en `seguimientoContrato`, también derivado.
+- **Cada refrendo dice cuánto y de qué bimestre** (D-91): `monto` es lo reportado
+  en esos dos meses —**no el del contrato**, que es el total de la obra— y
+  `bimestre` es a cuál corresponde, guardado **tal como se teclea**: `'3'`,
+  `'2026-3'`, `'mayo-junio'`. Texto y no número a propósito, porque cada quien lo
+  nombra distinto, así que sale siempre como cadena o `null` aunque llegue un
+  número. Los dos son **opcionales**, por la misma razón que el acuse: del IMSS se
+  vuelve con la fecha y el papel con la cifra llega después. `null` es «no se
+  capturó» y **no es lo mismo que `0`**, que sería un bimestre reportado en ceros;
+  los refrendos anteriores a D-91 salen todos en `null`, y no hay migración que
+  los rellene porque no hay cifra que inventarles. **No se editan**: un reporte
+  mal capturado se deshace y se vuelve a registrar, como con una fecha.
 - **El aviso y cada refrendo llevan su propio archivo** (D-80): `siroc.archivo`
   es el aviso escaneado y `siroc.actualizaciones[].archivo` el acuse de esa
   renovación, los dos con el `attachmentSchema` de D-79 y los dos opcionales. Son
@@ -566,6 +577,7 @@ colección: `records.documentos[].tipo` apunta a `DOCUMENT_TYPES` en
 | **Registrar un SIROC**                           | Traba además el `registroObraId`. Quitarlo lo libera                                                            |
 | **Reemplazar el archivo de un registro de obra** | El anterior **se borra de R2** (D-79): no hay versiones a las que volver                                        |
 | **`siroc.actualizaciones`**                      | Mueve la ventana de dos meses y con ella todo `seguimientoSiroc`: quitar una hace reaparecer el aviso (D-76)    |
+| **Deshacer el último refrendo**                  | Se lleva también su monto y su bimestre (D-91): no se editan, se recaptura. Sólo se puede deshacer el último    |
 | **`contracts.fechaFin`**                         | Es el techo del SIROC (D-84): moverla recalcula al leer cuántos refrendos pide, y decide `seguimientoContrato`  |
 | **Quitar el SIROC o su última renovación**       | Sus archivos **se borran de R2** (D-80): el del aviso y el acuse de cada refrendo. No hay versiones             |
 | **Reemplazar el archivo de un contrato**         | El anterior **se borra de R2** (D-81): uno solo, sin versiones. El tope de subida son 30 MB, salvo la nómina    |

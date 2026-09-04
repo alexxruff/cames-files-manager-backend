@@ -645,6 +645,8 @@ interface Siroc {
 interface SirocActualizacion {
   fecha: string // 'YYYY-MM-DD'
   nota: string | null // folio del acuse, quién fue… máximo 200 caracteres
+  monto: number | null // lo reportado ESE bimestre (D-91); null ≠ 0
+  bimestre: string | null // SIEMPRE cadena: '3', '2026-3', 'mayo-junio'
   archivo: Archivo | null // el acuse de ESTE refrendo, ver §4.2
 }
 
@@ -1075,15 +1077,32 @@ que cerrar.
 
 ### `POST /contratos/:id/siroc/actualizaciones` → `201`
 
-Registra que el SIROC se refrendó. **Los dos campos son opcionales:**
+Registra que el SIROC se refrendó. **Los cuatro campos son opcionales:**
 
 ```jsonc
 {
   "fecha": "2026-11-12", // opcional; sin ella se asume HOY, que es el caso normal
-  "nota": "Acuse 4471" // opcional; máximo 200 caracteres
+  "nota": "Acuse 4471", // opcional; máximo 200 caracteres
+  "monto": 320450.75, // opcional; lo reportado ESE bimestre, en pesos (D-91)
+  "bimestre": "mayo-junio" // opcional; tal como se teclea, máximo 40 caracteres
 }
 // data: { "contrato": { … } }   // con seguimientoSiroc ya recalculado
 ```
+
+**El monto y el bimestre son del reporte, no del contrato** (D-91).
+`contrato.monto` es el total de la obra (D-90); éste es la cifra de esos dos
+meses, y no se cuadran entre sí.
+
+- Los dos **se capturan sólo aquí**. No hay ruta para corregirlos: un reporte mal
+  capturado se deshace con `DELETE …/ultima` y se vuelve a registrar, igual que
+  con una fecha. Y sólo se deshace **el último**, así que corregir uno de en medio
+  obliga a deshacer los que vinieron después y recapturarlos con sus acuses —eso
+  hay que decirlo en la pantalla antes de que lo intenten—.
+- `monto` **`null` es «no se capturó» y `0` es un bimestre reportado en ceros**:
+  no los pinten igual. Los refrendos anteriores a D-91 salen todos en `null`.
+- `bimestre` sale **siempre como cadena o `null`**, aunque manden el número `3`
+  —lo reciben como `"3"`—. Se guarda tal como se teclea.
+- Los dos viajan también por `multipart`, junto al acuse, como el resto.
 
 **Un refrendo espera un mes y 25 días desde el movimiento anterior** (D-85): el
 registro del aviso o la última actualización, con la aritmética de la vigencia
@@ -1110,6 +1129,8 @@ existe en ninguna de las dos: la vigencia se deriva.
 | `400`  | `fecha` anterior al registro o a la actualización anterior       | `El reporte bimestral no puede ser anterior al registro del SIROC (…)`                                                                               |
 | `400`  | `fecha` antes de un mes y 25 días del movimiento anterior (D-85) | `El SIROC se registró el AAAA-MM-DD: el siguiente reporte bimestral no puede fecharse antes del AAAA-MM-DD` (o «se reportó el»)                      |
 | `400`  | `fecha` posterior a `fechaFin` del contrato (D-84)               | `El contrato terminó el AAAA-MM-DD y su SIROC ya no requiere reportes bimestrales: finaliza el contrato, o corrige su fecha de fin si la obra sigue` |
+| `400`  | `monto` negativo o que no es un número (D-91)                    | `El monto del reporte bimestral no puede ser negativo` · `… debe ser un número en pesos` (en `errors[0].msg`)                                        |
+| `400`  | `bimestre` de más de 40 caracteres (D-91)                        | `El bimestre no puede exceder 40 caracteres` (en `errors[0].msg`)                                                                                    |
 | `400`  | Campos que no van aquí (`numero`, `fechaRegistro`…)              | Lista los campos y dice por dónde va cada uno (en `errors[0].msg`)                                                                                   |
 | `404`  | Contrato inexistente o de otra empresa                           | `El contrato no existe`                                                                                                                              |
 
@@ -1119,7 +1140,8 @@ de campos traen `errors[0].msg`. Es la misma convención del resto del recurso.
 ### `DELETE /contratos/:id/siroc/actualizaciones/ultima`
 
 Deshace **la última** actualización, para cuando se capturó con la fecha
-equivocada. Sólo la última: borrar una de en medio reescribiría la historia, y una
+equivocada — o con el monto o el bimestre equivocados (D-91), que se van con
+ella, como su acuse. Sólo la última: borrar una de en medio reescribiría la historia, y una
 fecha mal tecleada corre la ventana y hace que el contrato **calle avisos que
 debería dar**.
 

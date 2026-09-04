@@ -710,7 +710,8 @@ important_fields:
   nombre: String|null               # la etiqueta de la fase
   siroc: { numero, fechaRegistro, actualizaciones[], archivo } | null  # sin fecha final: se deriva
                                     # archivo = el aviso escaneado (D-80); cada
-                                    # actualizacion lleva ADEMAS el suyo
+                                    # actualizacion lleva ADEMAS el suyo, y su
+                                    # monto y su bimestre, opcionales (D-91)
   estado: en_curso|finalizado       # ≠ activo
   activo: Boolean
 indexes: ["{proyectoId, numero} unique", "{proyectoId, estado}", "{'siroc.numero'} unique parcial GLOBAL"]

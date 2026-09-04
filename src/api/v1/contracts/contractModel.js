@@ -28,6 +28,13 @@ const validadorFecha = (etiqueta) => ({
   message: `${etiqueta} debe tener el formato AAAA-MM-DD y ser una fecha real`
 })
 
+const campoMonto = (etiqueta, { requerido = false } = {}) => ({
+  type: Number,
+  ...(requerido ? { required: [true, `${etiqueta} es requerido`] } : { default: null }),
+  min: [0, `${etiqueta} no puede ser negativo`],
+  max: [MONTO_MAXIMO_CONTRATO, `${etiqueta} no puede exceder ${MONTO_MAXIMO_CONTRATO}`]
+})
+
 /**
  * Una renovación del aviso ante el IMSS (D-76).
  *
@@ -49,6 +56,29 @@ const sirocRenovacionSchema = new mongoose.Schema(
       default: null,
       trim: true,
       maxlength: [200, 'La nota no puede exceder 200 caracteres']
+    },
+
+    /**
+     * Lo que se reportó ese bimestre, en pesos (D-91). **No es el monto del
+     * contrato**: aquél es el total de la obra y éste la cifra de dos meses, y
+     * conviven sin mirarse. Opcional por la misma razón que el acuse (D-80): del
+     * IMSS se vuelve con la fecha y el papel con la cifra llega después, así que
+     * `null` es «todavía no se capturó» y **no se confunde con `0`**, que sería
+     * un bimestre que alguien reportó en ceros.
+     */
+    monto: campoMonto('El monto del reporte bimestral'),
+
+    /**
+     * A qué bimestre corresponde, **tal como lo teclea quien captura** (D-91):
+     * '3', '2026-3', 'mayo-junio'. Texto y no número a propósito —cada quien lo
+     * nombra distinto y el papel no obliga a una forma—, así que siempre sale
+     * como cadena o `null`, aunque llegue un número en el JSON.
+     */
+    bimestre: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: [40, 'El bimestre no puede exceder 40 caracteres']
     },
 
     /**
@@ -111,13 +141,6 @@ const sirocSchema = new mongoose.Schema(
   },
   { _id: false }
 )
-
-const campoMonto = (etiqueta, { requerido = false } = {}) => ({
-  type: Number,
-  ...(requerido ? { required: [true, `${etiqueta} es requerido`] } : { default: null }),
-  min: [0, `${etiqueta} no puede ser negativo`],
-  max: [MONTO_MAXIMO_CONTRATO, `${etiqueta} no puede exceder ${MONTO_MAXIMO_CONTRATO}`]
-})
 
 /**
  * Una modificación del contrato (D-90).
@@ -371,6 +394,10 @@ const contractSchema = new mongoose.Schema(
                 actualizaciones: (ret.siroc.actualizaciones ?? []).map((a) => ({
                   fecha: a.fecha,
                   nota: a.nota ?? null,
+                  // `null` y no `0` en los reportes de antes de D-91: nadie los
+                  // capturó, y una cifra inventada es peor que ninguna.
+                  monto: a.monto ?? null,
+                  bimestre: a.bimestre ?? null,
                   // Sin `url`: firmarla es asíncrono, y la agrega el servicio.
                   archivo: attachmentToJson(a.archivo)
                 })),

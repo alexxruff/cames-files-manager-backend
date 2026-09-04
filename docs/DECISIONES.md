@@ -4345,3 +4345,69 @@ eliminar la explica la pantalla; aquí son dos rutas distintas a propósito, com
 **Sin migración.** Los contratos que ya existen leen `monto: null`,
 `modificaciones: []` e `historia: { modificado: false, entradas: [] }` sin tocar
 un solo documento.
+
+## D-91 · El reporte bimestral dice cuánto y de qué bimestre, y sigue sin editarse
+
+**Contexto.** Tarea #42, 3 sept 2026, a pedido de Urbacames
+(`cames-ops/plan/propuestas/2026-09-03-reporte-bimestral-con-monto-y-bimestre.md`).
+Un reporte bimestral del SIROC guardaba tres cosas —la fecha en que se presentó,
+una nota libre y el acuse escaneado (D-76, D-80)— y le faltaban dos que sí están
+en el papel: **el monto al que hace referencia ese bimestre** y **de qué bimestre
+es**.
+
+### Dos montos que conviven y no se miran
+
+`contrato.monto` es el total de la obra, IVA incluido (D-90);
+`siroc.actualizaciones[n].monto` es la cifra de esos dos meses. Son números
+distintos, en el mismo documento, y ninguno se deriva del otro: nadie dijo que la
+suma de los bimestres tenga que dar el total del contrato —una obra se repacta
+(D-90), se aplaza, se recorta—, así que **no se cuadran ni se comparan**. Se
+guardan los dos y se enseñan los dos.
+
+El del reporte **no es obligatorio**, al revés que el del contrato, y por la
+misma razón que el acuse es opcional (D-80): del IMSS se vuelve con la fecha en
+el momento y el papel con la cifra llega después. Exigirlo obligaría a no
+capturar nada mientras tanto, que es justo lo que se quiso evitar entonces.
+
+`null` es «no se capturó» y **no es lo mismo que `0`**, que sería un bimestre
+reportado en ceros — la misma distinción de D-90 y por lo mismo. En el servicio
+eso es un `??` y no un `||`: con `||`, un cero tecleado se habría guardado como
+«sin dato». Los reportes anteriores a esto salen todos en `null` y **no hay
+migración**: no hay cifra que inventarles, y una inventada sería peor que ninguna.
+
+### El bimestre es texto, aunque a veces sea un número
+
+Se guarda **tal como se teclea**: `'3'`, `'2026-3'`, `'mayo-junio'`. Quien
+captura lo nombra como venga en el papel y el papel no obliga a una forma.
+
+Podría haber sido un número —el bimestre del año, de 1 a 6— y se descartó: se
+habría perdido el año en `'2026-3'` y habría que rechazar `'mayo-junio'`, que es
+como lo dice media oficina. Un tipo mixto tampoco: obligaría al front a mirar de
+qué tipo llegó cada uno. Así que **es `String` siempre**, y un número que llegue
+en el JSON se convierte a cadena en la validación, para que la respuesta tenga
+una sola forma. El único límite es que quepa en 40 caracteres.
+
+### Se sigue sin poder editar un reporte
+
+**No se agregó ninguna ruta para corregirlos** — decisión del usuario, 3 sept. Un
+reporte mal capturado se deshace con `DELETE …/siroc/actualizaciones/ultima` y se
+vuelve a registrar, que es exactamente lo que ya se hacía con una fecha
+equivocada. Una ruta de edición habría sido la cuarta forma de tocar un refrendo
+—capturarlo, deshacerlo, ponerle el acuse— y la única que puede cambiar una fecha
+sin que se note que la ventana de dos meses se movió.
+
+Lo que sí implica, y la pantalla tiene que decirlo (tarea #43): **sólo se deshace
+el último**, así que corregir uno de en medio obliga a deshacer los que vinieron
+después y recapturarlos con sus acuses. Deshacer y recapturar mueve la ventana
+mientras tanto, pero al volver a poner la misma fecha vuelve a donde estaba.
+
+Como corolario, `PUT …/siroc/actualizaciones/:indice/archivo` sigue tocando
+**sólo el archivo**: ni la fecha, ni la nota, ni el monto, ni el bimestre.
+
+### Lo que había que no romper
+
+Corregir el número del aviso con `PUT /siroc` reconstruye a mano el arreglo de
+refrendos —es la forma de conservarlos cuando cambia el número (D-76)— y copiaba
+sólo fecha, nota y archivo. Sin tocar eso, **corregir un dedazo del número habría
+borrado el monto y el bimestre de todos sus reportes**, en silencio. Ahora los
+copia también, y hay una prueba que lo fija.

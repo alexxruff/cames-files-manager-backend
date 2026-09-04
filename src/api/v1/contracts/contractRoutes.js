@@ -199,7 +199,7 @@ router.get(
  * El archivo de una renovación se LEE con sesión y alcance, y se REEMPLAZA con
  * la misma capacidad que capturarla. El `PUT` está aquí y no en un `POST` nuevo
  * porque el recurso es el archivo de esa posición y esto lo reemplaza entero: no
- * toca la fecha, la nota ni el orden (D-80).
+ * toca la fecha, la nota, el monto, el bimestre ni el orden (D-80, D-91).
  */
 router
   .route('/:id/siroc/actualizaciones/:indice/archivo')

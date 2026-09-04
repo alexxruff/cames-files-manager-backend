@@ -383,6 +383,10 @@ class ContractService {
     const actualizaciones = (contrato.siroc?.actualizaciones ?? []).map((a) => ({
       fecha: a.fecha,
       nota: a.nota ?? null,
+      // El monto y el bimestre también son de la renovación (D-91): corregir el
+      // número del aviso no puede borrar lo que se reportó cada dos meses.
+      monto: a.monto ?? null,
+      bimestre: a.bimestre ?? null,
       archivo: this.#planoAdjunto(a.archivo)
     }))
 
@@ -564,7 +568,18 @@ class ContractService {
       ? await this.#guardarAdjunto(contrato, entrada, 'actualizacion', contexto)
       : null
 
-    contrato.siroc.actualizaciones.push({ fecha, nota: datos.nota || null, archivo })
+    contrato.siroc.actualizaciones.push({
+      fecha,
+      nota: datos.nota || null,
+      /*
+       * `??` y no `||` (D-91): `0` es un bimestre que alguien reportó en ceros y
+       * tiene que sobrevivir, mientras que no capturarlo es `null`. La misma
+       * distinción que pide la pantalla para no pintar «$0.00» donde no hay dato.
+       */
+      monto: datos.monto ?? null,
+      bimestre: datos.bimestre || null,
+      archivo
+    })
     contrato.markModified('siroc.actualizaciones')
 
     try {

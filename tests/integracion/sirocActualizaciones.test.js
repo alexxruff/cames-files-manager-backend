@@ -20,6 +20,9 @@ const CONTRATOS = '/api/v1/contratos'
  */
 const HOY = today()
 
+/** Un PDF de verdad —firma incluida— para el acuse que viaja por multipart. */
+const PDF = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(64, 0x20)])
+
 async function escenario() {
   const sesion = await crearEmpleadoConSesion({ nivelAcceso: 'rh_admin' })
   // Un proyecto ancho: las fechas de los contratos van relativas a hoy y tienen
@@ -309,8 +312,9 @@ describe('Actualización del SIROC cada dos meses', () => {
       // El número es el mismo: se actualiza el aviso, no se saca otro.
       expect(actualizado.siroc.numero).toBe('SIR-2026-9001')
       expect(actualizado.siroc.actualizaciones).toEqual([
-        // `archivo: null` porque esta renovación se capturó sin acuse (D-80).
-        { fecha: HOY, nota: 'Acuse 4471', archivo: null }
+        // `archivo: null` porque esta renovación se capturó sin acuse (D-80), y
+        // `monto`/`bimestre` en null porque tampoco se capturaron (D-91).
+        { fecha: HOY, nota: 'Acuse 4471', monto: null, bimestre: null, archivo: null }
       ])
       expect(actualizado.seguimientoSiroc).toMatchObject({
         estado: 'al_dia',
@@ -329,7 +333,7 @@ describe('Actualización del SIROC cada dos meses', () => {
 
       expect(res.status).toBe(201)
       expect(res.body.data.contrato.siroc.actualizaciones).toEqual([
-        { fecha: HOY, nota: null, archivo: null }
+        { fecha: HOY, nota: null, monto: null, bimestre: null, archivo: null }
       ])
     })
 
@@ -376,6 +380,154 @@ describe('Actualización del SIROC cada dos meses', () => {
       expect(res.status).toBe(200)
       expect(res.body.data.contrato.siroc.numero).toBe('SIR-CORREGIDO')
       expect(res.body.data.contrato.siroc.actualizaciones).toHaveLength(1)
+    })
+  })
+
+  /*
+   * Lo que se reportó ese bimestre y de qué bimestre es (D-91). Los dos se
+   * capturan al registrar y **sólo ahí**: no hay ruta para corregirlos, se
+   * deshace el reporte y se vuelve a capturar.
+   *
+   * El monto de aquí no es el del contrato: aquél es el total de la obra (D-90)
+   * y éste la cifra de dos meses. Conviven en la misma respuesta sin mirarse.
+   */
+  describe('el monto y el bimestre del reporte', () => {
+    it('se capturan al registrar y salen en el contrato', async () => {
+      const e = await escenario()
+      const contrato = await conSiroc(e, 3)
+
+      const res = await actualizar(e, contrato._id, {
+        monto: 320450.75,
+        bimestre: 'mayo-junio'
+      })
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.contrato.siroc.actualizaciones).toEqual([
+        {
+          fecha: HOY,
+          nota: null,
+          monto: 320450.75,
+          bimestre: 'mayo-junio',
+          archivo: null
+        }
+      ])
+      // El del contrato sigue siendo el suyo: son dos cifras distintas.
+      expect(res.body.data.contrato.monto).toBe(1500000)
+    })
+
+    it('el bimestre se guarda tal como se teclea, y un número sale como texto', async () => {
+      const e = await escenario()
+      const contrato = await conSiroc(e, 3)
+
+      const res = await actualizar(e, contrato._id, { bimestre: 3 })
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.contrato.siroc.actualizaciones[0].bimestre).toBe('3')
+    })
+
+    it('los dos son opcionales: se puede registrar sólo con la fecha', async () => {
+      const e = await escenario()
+      const contrato = await conSiroc(e, 3)
+
+      const res = await actualizar(e, contrato._id)
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.contrato.siroc.actualizaciones[0]).toMatchObject({
+        monto: null,
+        bimestre: null
+      })
+    })
+
+    it('un bimestre reportado en ceros no es lo mismo que no capturarlo', async () => {
+      const e = await escenario()
+      const contrato = await conSiroc(e, 5)
+
+      await actualizar(e, contrato._id, { fecha: addMonths(HOY, -3), monto: 0 })
+      const res = await actualizar(e, contrato._id)
+
+      const reportes = res.body.data.contrato.siroc.actualizaciones
+      expect(reportes[0].monto).toBe(0)
+      expect(reportes[1].monto).toBeNull()
+    })
+
+    it('llegan también por multipart, con el acuse', async () => {
+      const e = await escenario()
+      const contrato = await conSiroc(e, 3)
+
+      const res = await request(app)
+        .post(`${CONTRATOS}/${contrato._id}/siroc/actualizaciones`)
+        .set(auth(e.token))
+        .field('monto', '98000.5')
+        .field('bimestre', '2026-3')
+        .attach('archivo', PDF, 'acuse.pdf')
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.contrato.siroc.actualizaciones[0]).toMatchObject({
+        monto: 98000.5,
+        bimestre: '2026-3'
+      })
+    })
+
+    it('deshacer el último se lleva su monto y su bimestre, y deja los del anterior', async () => {
+      const e = await escenario()
+      const contrato = await conSiroc(e, 5)
+      await actualizar(e, contrato._id, {
+        fecha: addMonths(HOY, -3),
+        monto: 100,
+        bimestre: '1'
+      })
+      await actualizar(e, contrato._id, { monto: 200, bimestre: '2' })
+
+      const res = await request(app)
+        .delete(`${CONTRATOS}/${contrato._id}/siroc/actualizaciones/ultima`)
+        .set(auth(e.token))
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.contrato.siroc.actualizaciones).toEqual([
+        {
+          fecha: addMonths(HOY, -3),
+          nota: null,
+          monto: 100,
+          bimestre: '1',
+          archivo: null
+        }
+      ])
+    })
+
+    it('corregir el número del aviso no borra lo que se reportó cada bimestre', async () => {
+      const e = await escenario()
+      const contrato = await conSiroc(e, 3)
+      await actualizar(e, contrato._id, { monto: 77000, bimestre: 'marzo-abril' })
+
+      const res = await registrarSiroc(
+        e,
+        contrato._id,
+        addMonths(HOY, -3),
+        'SIR-CON-MONTO'
+      )
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.contrato.siroc.actualizaciones[0]).toMatchObject({
+        monto: 77000,
+        bimestre: 'marzo-abril'
+      })
+    })
+
+    /*
+     * No hay ruta para corregirlos (D-91): un reporte mal capturado se deshace y
+     * se vuelve a registrar, que es lo que ya se hacía con una fecha equivocada.
+     */
+    it('no hay forma de editar un reporte ya capturado', async () => {
+      const e = await escenario()
+      const contrato = await conSiroc(e, 3)
+      await actualizar(e, contrato._id, { monto: 100 })
+
+      const res = await request(app)
+        .patch(`${CONTRATOS}/${contrato._id}/siroc/actualizaciones/0`)
+        .set(auth(e.token))
+        .send({ monto: 200 })
+
+      expect(res.status).toBe(404)
     })
   })
 
@@ -607,6 +759,33 @@ describe('Actualización del SIROC cada dos meses', () => {
 
       expect(res.status).toBe(400)
       expect(res.body.errors[0].msg).toMatch(/conserva el mismo número/)
+    })
+
+    it('400 con un monto negativo, y con uno que no es número', async () => {
+      const e = await escenario()
+      const contrato = await conSiroc(e, 3)
+
+      const negativo = await actualizar(e, contrato._id, { monto: -1 })
+      const texto = await actualizar(e, contrato._id, { monto: 'trescientos' })
+
+      expect(negativo.status).toBe(400)
+      expect(negativo.body.errors[0].msg).toBe(
+        'El monto del reporte bimestral no puede ser negativo'
+      )
+      expect(texto.status).toBe(400)
+      expect(texto.body.errors[0].msg).toBe(
+        'El monto del reporte bimestral debe ser un número en pesos'
+      )
+    })
+
+    it('400 con un bimestre más largo que lo que cabe en el papel', async () => {
+      const e = await escenario()
+      const contrato = await conSiroc(e, 3)
+
+      const res = await actualizar(e, contrato._id, { bimestre: 'x'.repeat(41) })
+
+      expect(res.status).toBe(400)
+      expect(res.body.errors[0].msg).toBe('El bimestre no puede exceder 40 caracteres')
     })
 
     it('400 si no hay actualizaciones que deshacer', async () => {

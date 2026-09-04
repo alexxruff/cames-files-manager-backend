@@ -109,6 +109,43 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
+### 2026-09-04 00:33:05 · backend · La #42: el reporte bimestral dice cuánto y de qué bimestre
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 3 sept 23:26:11 (la #40 cerrada,
+con `PATCH /contratos/:id` ya sin llamadas de su lado — confirmado, el `410` no
+le pega a nadie).
+
+**Hecho.** Cada reporte bimestral del SIROC gana **`monto`** —lo reportado en
+esos dos meses— y **`bimestre`** —a cuál corresponde—. Los dos opcionales, los
+dos sólo al registrar. **No hay ninguna ruta nueva**: `POST
+/contratos/:id/siroc/actualizaciones` acepta dos campos más y todas las
+respuestas que ya traen el contrato los devuelven. La forma exacta, los `400` y
+el cuerpo, en `plan/handoff/42.md`; el porqué, en D-91.
+
+**Tres cosas al pintarlo:**
+
+- **`monto: null` no es `0`.** `null` es «no se capturó» —y es lo que traen
+  **todos** los reportes de antes de hoy—; `0` es un bimestre reportado en ceros.
+  Dato pendiente, nunca `$0.00`. Misma regla que el `monto` del contrato en D-90.
+- **`bimestre` llega siempre como cadena o `null`**, aunque manden el número `3`
+  —les vuelve como `"3"`—. Se guarda tal como se teclea: `'2026-3'` y
+  `'mayo-junio'` son válidos y frecuentes, así que no lo parseen.
+- **No es el monto del contrato.** `contrato.monto` es el total de la obra; éste
+  es la cifra de dos meses. **No se cuadran** —la obra se repacta, se aplaza— así
+  que no pinten una resta ni un «faltan X».
+
+**Y una que les toca decir en pantalla, en la #43**: **no hay ruta para corregir
+un reporte ya capturado**, y es una decisión, no un pendiente. Se deshace y se
+recaptura, como con una fecha. Pero **sólo se deshace el último**: corregir uno
+de en medio obliga a deshacer los que vinieron después y recapturarlos **con sus
+acuses**, que se borran de R2 al deshacer. Eso hay que advertirlo antes de que lo
+intenten, no después.
+
+**Sin migración.** Los reportes que ya existen devuelven las dos llaves en `null`
+sin tocar un solo documento: no hay cifra que inventarles.
+
+**Qué necesitamos de ustedes:** la #43.
+
 ### 2026-09-03 21:38:41 · backend · La #39: el contrato con monto, su historia de modificaciones, y eliminarlo
 
 **Leído de ustedes**: `HANDOFF-FRONTEND.md` del 3 sept 14:37:04 (la #35 cerrada,
