@@ -302,7 +302,34 @@ const reglaPassword = (campo = 'password') =>
     )
 
 /** Campos que acepta conceder o editar un acceso. */
-const CAMPOS_ACCESO = ['email', 'password', 'nivelAcceso', 'alcanceGlobal', 'activo']
+const CAMPOS_ACCESO = [
+  'email',
+  'password',
+  'nivelAcceso',
+  'alcanceGlobal',
+  'activo',
+  // De dónde salen sus permisos (D-93). `nivelAcceso` sigue siendo obligatorio
+  // mientras el front migra: es el respaldo de quien todavía no tiene rol.
+  'rolId',
+  'permisosExtra'
+]
+
+/** El rol de la persona. `null` explícito la deja sin rol, a propósito. */
+const reglaRol = (regla) =>
+  regla.optional({ nullable: true }).custom((valor) => {
+    if (valor === null || valor === '') return true
+    if (!/^[0-9a-fA-F]{24}$/.test(String(valor))) {
+      throw new Error('El rol indicado no es válido')
+    }
+    return true
+  })
+
+/** Las excepciones: permisos ADEMÁS de los del rol. Nunca en lugar de. */
+const reglaPermisosExtra = (regla) =>
+  regla
+    .optional({ nullable: true })
+    .isArray()
+    .withMessage('Los permisos extra deben venir como una lista')
 
 exports.grantAccessValidation = [
   param('id').isMongoId().withMessage('El empleado indicado no es válido'),
@@ -328,7 +355,9 @@ exports.grantAccessValidation = [
         throw new Error('El alcance global sólo se puede dar a un administrador de RH')
       }
       return true
-    })
+    }),
+  reglaRol(body('rolId')),
+  reglaPermisosExtra(body('permisosExtra'))
 ]
 
 exports.updateAccessValidation = [
@@ -358,7 +387,9 @@ exports.updateAccessValidation = [
     .optional()
     .isBoolean()
     .withMessage('alcanceGlobal debe ser verdadero o falso'),
-  body('activo').optional().isBoolean().withMessage('activo debe ser verdadero o falso')
+  body('activo').optional().isBoolean().withMessage('activo debe ser verdadero o falso'),
+  reglaRol(body('rolId')),
+  reglaPermisosExtra(body('permisosExtra'))
 ]
 
 exports.resetPasswordValidation = [

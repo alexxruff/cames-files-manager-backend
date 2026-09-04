@@ -10,9 +10,10 @@ const Employee = require('../api/v1/employees/employeeModel')
  * El usuario de la plataforma **es un empleado con `acceso`** (modelo-datos §5.2):
  * no hay colección de usuarios. El token lleva el id del empleado.
  *
- * `protect` relee al empleado en cada petición —una sola consulta, por `_id`—
- * para que quitar el acceso, bajar el nivel o dar de baja a la persona surta
- * efecto de inmediato y no al expirar el token. Y comprueba que el token no sea
+ * `protect` relee al empleado en cada petición —una sola consulta, por `_id`,
+ * con su rol resuelto— para que quitar el acceso, cambiarle el rol, bajarle los
+ * permisos a su perfil o dar de baja a la persona surta efecto de inmediato y no
+ * al expirar el token. Y comprueba que el token no sea
  * anterior al último cambio de contraseña.
  */
 
@@ -32,7 +33,21 @@ async function protect(req, res, next) {
     }
 
     const payload = jwt.verify(token, env.JWT_SECRET)
-    const empleado = await Employee.findById(payload.sub)
+    /*
+     * El rol viene POBLADO, en la misma consulta (D-93). Dos motivos:
+     *
+     * - `can` es síncrona y se llama desde rutas, servicios y controladores; si
+     *   el rol hubiera que leerlo aparte, habría que volver asíncrono medio
+     *   código para una consulta que cabe aquí.
+     * - Cambiar un rol le cambia los permisos a su gente **sin que vuelva a
+     *   entrar**, porque se resuelve en cada petición y el token nunca guardó
+     *   permisos. Es lo que hace que quitarle algo a un perfil surta efecto de
+     *   inmediato, como ya pasaba al bajarle el nivel a alguien.
+     */
+    const empleado = await Employee.findById(payload.sub).populate({
+      path: 'acceso.rolId',
+      select: 'nombre permisos todosLosPermisos soloSusAreas activo'
+    })
 
     const sesionInvalida = new AppError(
       401,

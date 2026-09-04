@@ -22,6 +22,7 @@ const modelos = {
   Client: require('../api/v1/clients/clientModel'),
   Category: require('../api/v1/categories/categoryModel'),
   Area: require('../api/v1/areas/areaModel'),
+  Role: require('../api/v1/roles/roleModel'),
   Affiliation: require('../api/v1/affiliations/affiliationModel'),
   Portfolio: require('../api/v1/portfolios/portfolioModel'),
   Project: require('../api/v1/projects/projectModel'),

@@ -28,7 +28,7 @@ tiempo de ejecución**, así que no puede mentir:
 curl -s http://localhost:8080/api/v1 | jq '.data.implementados, .data.pendientes'
 ```
 
-`GET /api/v1` es público. Hoy son **112 rutas** en pie y 6 anunciadas como
+`GET /api/v1` es público. Hoy son **118 rutas** en pie y 6 anunciadas como
 pendientes. Dónde está el detalle de cada familia:
 
 | Familia                                               | Detalle en                                             |
@@ -81,7 +81,9 @@ expedienteId }`), en el alta, la edición, el estado y las tres rutas de acceso.
 | `POST /auth/register`             | No existe                                                                                                                                                           |
 | `/usuarios`                       | **410**, con las rutas nuevas en el mensaje                                                                                                                         |
 | `PATCH /contratos/:id`            | **410** desde D-90: se repartió en `POST /contratos/:id/modificaciones`, `PUT /contratos/:id/archivo` y `DELETE /contratos/:id` — ver `ENDPOINTS-PROYECTOS.md` §4.4 |
-| Su copia de la matriz de permisos | `GET /permisos` la manda: 40 casillas con sección, etiqueta y qué exigen, más `tengo` con las de quien entró (D-92) |
+| Su copia de la matriz de permisos | `GET /permisos` la manda: 41 casillas con sección, etiqueta y qué exigen, más `tengo` con las de quien entró (D-92) |
+| Los tres niveles de acceso escritos en el código | Son **roles**, y se arman en `/roles` sin desplegar nada (D-93). `nivelAcceso` sigue viajando mientras migran |
+| Deducir permisos de `nivelAcceso` | `AuthUser` trae `permisos[]` ya resueltos y `rol` (D-93) |
 | Leer proyectos, contratos, maquinaria, clientes o empresas era gratis con sesión | Cada sección pide su casilla de **ver**. Hoy los tres niveles la tienen, pero esas rutas **ya pueden responder 403** |
 
 **Archivos del front que hay que tocar:**

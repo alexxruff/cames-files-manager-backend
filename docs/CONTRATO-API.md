@@ -1261,6 +1261,117 @@ GET /api/v1/permisos            → 200 (sólo sesión)
   difieren en un caso.
 - Es un catálogo **estático**: sale del código. No hay alta, edición ni baja.
 
+#### Los roles (D-93)
+
+Un rol es **un nombre y las casillas que trae marcadas**. Los tres de siempre
+—Administrador de RH, Consulta de RH, Jefe de área— se siembran al arrancar
+derivándolos de la matriz, así que dicen exactamente lo que decían los tres
+niveles de acceso.
+
+```
+GET    /api/v1/roles          → 200   (manageAccess)
+GET    /api/v1/roles/:id      → 200   (manageAccess)
+POST   /api/v1/roles          → 201   (manageRoles = administrador de plataforma)
+PATCH  /api/v1/roles/:id      → 200   (manageRoles)
+DELETE /api/v1/roles/:id      → 204   (manageRoles)
+```
+
+**Leer y escribir piden cosas distintas a propósito:** quien da de alta un
+usuario necesita la lista para elegirle rol (`manageAccess`), pero decidir qué
+puede un perfil exige ser administrador de plataforma.
+
+```jsonc
+{
+  "status": "success",
+  "data": {
+    "roles": [
+      {
+        "_id": "…",
+        "nombre": "Contador",
+        "descripcion": "Ve la maquinaria, no levanta incidencias",
+        "permisos": ["viewMachines", "viewContracts"],
+        "empresaId": null,          // null = del grupo. Hoy todos lo son
+        "esSistema": false,         // los tres de siempre: no se renombran ni se dan de baja
+        "todosLosPermisos": false,  // true sólo en el del administrador de plataforma
+        "soloSusAreas": false,      // el jefe de área lo trae en true
+        "activo": true,
+        "personas": 3               // cuántos lo tienen: sólo en el listado
+      }
+    ]
+  }
+}
+```
+
+Errores propios:
+
+| Código | `message` | Qué lo dispara |
+| ------ | --------- | -------------- |
+| 400 | `«Dar de alta y editar máquinas» necesita también «Ver la maquinaria»` | Un permiso marcado sin el que exige. `data.faltantes` los trae todos |
+| 400 | `Ese permiso no existe: …` | Una clave que no está en el catálogo |
+| 400 | `Los roles del sistema no se pueden renombrar. Duplícalo para armar uno propio.` | Renombrar uno de los tres |
+| 400 | `Los roles del sistema no se pueden dar de baja` / `…eliminar` | Desactivar o borrar uno de los tres |
+| 409 | `Ya existe un rol con ese nombre` | Nombre repetido, comparado sin acentos ni mayúsculas |
+| 409 | `Hay N personas con este rol. Cámbiales el rol antes de eliminarlo.` | Borrar uno en uso. `data.personas` dice cuántos |
+
+#### El rol de una persona, y sus excepciones
+
+`POST` y `PATCH /empleados/:id/acceso` aceptan dos campos más:
+
+- **`rolId`** — el rol. `null` explícito lo deja sin rol, y entonces se resuelve
+  por su `nivelAcceso`, que **sigue viajando y sigue siendo obligatorio**.
+- **`permisosExtra`** — casillas **además** de las de su rol. **Sólo suman**: no
+  hay forma de quitarle a alguien algo que su rol le da. Un permiso que exige
+  administrador de plataforma no se acepta aquí (400).
+
+Y hay una ruta nueva para leerlo:
+
+```
+GET /api/v1/empleados/:id/acceso   → 200   (manageAccess)
+```
+
+```jsonc
+{
+  "status": "success",
+  "data": {
+    "acceso": {
+      "email": "contador@urbacames.com",
+      "nivelAcceso": "rh_consulta",
+      "alcanceGlobal": false,
+      "activo": true,
+      "passwordTemporal": false,
+      "rol": { "_id": "…", "nombre": "Contador" },
+      "permisosExtra": ["viewMachines"],
+      "permisos": [
+        { "clave": "viewEmployees", "origen": "rol" },
+        { "clave": "viewMachines", "origen": "excepcion" }
+      ]
+    }
+  }
+}
+```
+
+`origen` sólo puede ser `'rol'` o `'excepcion'`, y no hay un tercer caso: como
+las excepciones son aditivas, **siempre** hay una respuesta a «¿por qué ve
+esto?».
+
+#### La sesión dice qué permisos trae
+
+`AuthUser` —el de `POST /auth/login` y `GET /auth/me`— gana dos llaves:
+
+```jsonc
+{
+  "rol": { "_id": "…", "nombre": "Contador" },  // null si todavía no tiene
+  "permisos": ["viewEmployees", "viewMachines"] // ya resueltas, con el alcance global aplicado
+}
+```
+
+**`permisos` es lo que debe apagar el menú y los botones.** `nivelAcceso` y
+`alcanceGlobal` siguen viajando sin cambios mientras el front migra.
+
+Y una consecuencia que conviene tener presente: **cambiar un rol le cambia los
+permisos a su gente en la siguiente petición**, sin que vuelva a entrar. El token
+no guarda permisos.
+
 ## Pendiente
 
 Ver la tabla de `ESTADO.md` y `backend-spec.md` §6. Las rutas están reservadas:

@@ -156,6 +156,19 @@ const COMPUESTOS = Object.freeze({
   importEmployees: ['manageAffiliations', 'manageAdminEmployees']
 })
 
+/**
+ * Casillas que **no existían**, así que nadie las tenía y nadie las pierde.
+ *
+ * Van aparte de todo lo demás porque la pregunta que hay que hacerse al agregar
+ * una es distinta: no «¿heredó bien?» sino «¿de verdad no había forma de hacer
+ * esto antes?». Si la había, la casilla nueva le está quitando algo a alguien y
+ * pertenece a `HEREDEROS`, no aquí.
+ */
+const NACIERON_NEGADAS = Object.freeze({
+  // Los roles no existían: eran tres valores cerrados en el código (D-93).
+  manageRoles: 'exige administrador de plataforma'
+})
+
 const accesoDe = (nivelAcceso) => ({ nivelAcceso, alcanceGlobal: false })
 const accesoGlobalDe = (nivelAcceso) => ({ nivelAcceso, alcanceGlobal: true })
 
@@ -191,6 +204,14 @@ describe('el reparto de permisos no le cambió nada a ningún nivel', () => {
       }
     )
 
+    it.each(Object.keys(NACIERON_NEGADAS))(
+      '%s no existía antes: nadie la tenía y nadie la pierde',
+      (clave) => {
+        // Sin alcance global no la tiene nadie, ni siquiera `rh_admin`.
+        expect(can(accesoDe(nivel), clave)).toBe(false)
+      }
+    )
+
     it('lo que exigía administrador de plataforma lo sigue exigiendo', () => {
       const globales = Object.entries(anterior)
         .filter(([, valor]) => valor === 'global')
@@ -209,13 +230,14 @@ describe('el reparto de permisos no le cambió nada a ningún nivel', () => {
     const explicadas = new Set([
       ...Object.values(HEREDEROS).flat(),
       ...LECTURA_ERA_LIBRE,
-      ...Object.keys(COMPUESTOS)
+      ...Object.keys(COMPUESTOS),
+      ...Object.keys(NACIERON_NEGADAS)
     ])
     const huerfanas = PERMISSION_KEYS.filter((clave) => !explicadas.has(clave))
 
     // Una casilla nueva sin renglón aquí es una que nadie comprobó si le cambia
-    // los permisos a alguien. Agrégala a HEREDEROS, a LECTURA_ERA_LIBRE o a
-    // COMPUESTOS según de dónde venga.
+    // los permisos a alguien. Agrégala a HEREDEROS, a LECTURA_ERA_LIBRE, a
+    // COMPUESTOS o a NACIERON_NEGADAS según de dónde venga.
     expect(huerfanas).toEqual([])
   })
 

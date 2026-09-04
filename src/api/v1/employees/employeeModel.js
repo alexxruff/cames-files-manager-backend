@@ -38,6 +38,29 @@ const accessSchema = new mongoose.Schema(
     },
     /** Administrador de plataforma: ve todas las empresas y los catálogos. */
     alcanceGlobal: { type: Boolean, default: false },
+
+    /**
+     * El rol de la persona: de dónde salen sus permisos (D-93).
+     *
+     * `null` significa «todavía sin rol», y **no significa sin permisos**: quien
+     * no lo tiene se resuelve por `nivelAcceso` contra la matriz de siempre. Eso
+     * es lo que hace que la migración no sea un despliegue bloqueante.
+     *
+     * `protect` lo trae **poblado** en la misma consulta con la que ya releía al
+     * empleado, así que cambiar un rol le cambia los permisos a su gente sin que
+     * nadie vuelva a entrar: el token no guarda permisos, nunca los guardó.
+     */
+    rolId: { type: mongoose.Schema.Types.ObjectId, ref: 'Role', default: null },
+
+    /**
+     * Las excepciones de esta persona: permisos **además** de los de su rol.
+     *
+     * **Sólo aditivas, a propósito.** No hay campo para quitar, y no lo va a
+     * haber: sin «el rol menos algo», la pregunta «¿por qué ve esto?» siempre
+     * tiene una respuesta corta —su rol, o esta lista—. La flexibilidad que se
+     * pidió es dar algo más a alguien, no recortarle su perfil.
+     */
+    permisosExtra: { type: [String], default: [] },
     /** Se puede quitar el acceso sin dar de baja a la persona. */
     activo: { type: Boolean, default: true },
 
@@ -174,6 +197,15 @@ const employeeSchema = new mongoose.Schema(
                 email: ret.acceso.email,
                 nivelAcceso: ret.acceso.nivelAcceso,
                 alcanceGlobal: ret.acceso.alcanceGlobal,
+                /*
+                 * El rol puede venir poblado (`protect`) o como id: se serializa
+                 * igual en los dos casos, para que el renglón del listado no
+                 * dependa de cómo se leyó al empleado.
+                 */
+                rolId: ret.acceso.rolId
+                  ? (ret.acceso.rolId._id || ret.acceso.rolId).toString()
+                  : null,
+                permisosExtra: ret.acceso.permisosExtra || [],
                 activo: ret.acceso.activo,
                 passwordActualizadaEn: ret.acceso.passwordActualizadaEn ?? null,
                 passwordTemporal: Boolean(ret.acceso.passwordTemporal)

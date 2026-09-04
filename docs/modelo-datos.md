@@ -135,9 +135,9 @@ quien administra los catálogos compartidos. Detalle en la sección 8.
 
 ## 3. Mapa de colecciones
 
-Las **19 que existen hoy**. Las tres que van antes de `machines` llegaron
-después de escribir este documento y no tienen sección propia en §5: su detalle
-está en [`ARQUITECTURA-DATOS.md`](./ARQUITECTURA-DATOS.md).
+Las **20 que existen hoy**. Las que no tienen sección propia en §5 llegaron
+después de escribir este documento: su detalle está en
+[`ARQUITECTURA-DATOS.md`](./ARQUITECTURA-DATOS.md).
 
 | Colección | Naturaleza | Pertenece a | Esquema |
 | --- | --- | --- | --- |
@@ -160,6 +160,7 @@ está en [`ARQUITECTURA-DATOS.md`](./ARQUITECTURA-DATOS.md).
 | `machine_assignments` | **Vínculo** máquina ↔ obra ↔ trabajador (D-87) | Máquina | §5.5d |
 | `incident_types` | **Catálogo compartido**: tipos de incidencia (D-88) | — | — |
 | `machine_incidents` | Las incidencias de una máquina (D-88) | Máquina | — |
+| `roles` | **Catálogo compartido**: los perfiles de permisos (D-93) | — | — |
 
 > **Los nombres de arriba son los de MongoDB, en inglés**; en el contrato HTTP
 > las rutas y las llaves van en español (`/empresas`, `/expedientes`). La tabla
@@ -1198,10 +1199,17 @@ Reglas que no se negocian:
 ### 8.2 Matriz de permisos
 
 **Ésta es la única tabla de permisos del proyecto.** Sale de
-`src/utils/permissions.js` (`PERMISSION_MATRIX`), que es lo que el servidor
-aplica de verdad, y una prueba la compara **celda por celda** contra el código:
-si las dos dejan de coincidir, `npm test` falla y **la que está mal es esta
-tabla**, no el código.
+`src/utils/permissions.js` (`PERMISSION_MATRIX`) y una prueba la compara **celda
+por celda** contra el código: si las dos dejan de coincidir, `npm test` falla y
+**la que está mal es esta tabla**, no el código.
+
+> **Desde D-93 esta tabla ya no es lo que el servidor aplica en cada petición.**
+> Los roles son datos: quien tiene rol se resuelve contra **su rol** más sus
+> excepciones. La tabla cambió de trabajo y ahora es dos cosas: **la semilla** de
+> los tres roles de sistema —que se derivan de aquí al arrancar, para que nazcan
+> diciendo exactamente esto— y **el respaldo** de quien todavía no tiene rol.
+> Sigue siendo obligatorio que coincida con el código, por eso mismo: si miente,
+> los roles nacen mintiendo.
 
 Antes hubo dos —ésta y la de D-32— y no decían lo mismo: ésta dejaba la edición
 de personal sólo en `rh_admin` diez días después de que Urbacames confirmara lo
@@ -1215,6 +1223,12 @@ Cómo se lee cada celda:
 | —                   | No permitido                                                                                           |
 | sus áreas           | Permitido, pero acotado a las áreas que dirige en cada empresa (`req.areasPorEmpresa`)                 |
 | + alcance global    | Permitido **sólo** si además tiene `acceso.alcanceGlobal` (administrador de plataforma)                |
+
+Los dos últimos símbolos dejaron de vivir en esta tabla al volverse datos los
+roles (D-93): «+ alcance global» es ahora `exigeAlcanceGlobal` del **permiso**
+—la acción afecta al grupo, la haga quien la haga— y «sus áreas» es
+`soloSusAreas` del **rol**, que es lo que ya era en la práctica. Aquí se siguen
+escribiendo así porque esta tabla es la semilla y tiene que decir lo de siempre.
 
 **Son 40 casillas en diez secciones desde D-92.** Antes eran veinte capacidades
 sueltas, y ocho secciones —obras, contratos, SIROC, maquinaria, incidencias,
@@ -1276,6 +1290,7 @@ falla si alguna respuesta se movió.
 | `manageCategories` | Crear categorías y darlas de baja | + alcance global | — | — |
 | **Plataforma** | | | | |
 | `manageAccess` | Conceder, editar y quitar el acceso a la plataforma | ✓ | — | — |
+| `manageRoles` | Crear y editar roles, y decir qué casillas trae cada uno (D-93) | + alcance global | — | — |
 | `manageTemplates` | Configurar las plantillas de checklist | ✓ | — | — |
 | `generateReports` | Generar reportes | ✓ | ✓ | — |
 

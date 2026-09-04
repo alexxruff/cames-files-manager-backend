@@ -150,6 +150,12 @@ const administrarAccesos = requireCapability(CAPABILITIES.MANAGE_ACCESS)
 
 router
   .route('/:id/acceso')
+  .get(
+    administrarAccesos,
+    employeeIdValidation,
+    validateRequest,
+    asyncHandler(employeeController.getAccess)
+  )
   .post(
     administrarAccesos,
     grantAccessValidation,

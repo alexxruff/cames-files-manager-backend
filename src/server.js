@@ -6,6 +6,7 @@ const { ensureBootstrapAdmin } = require('./services/bootstrapAdmin')
 const { ensureBaseChecklistTemplates } = require('./services/seedChecklistTemplates')
 const { ensureBaseAreas } = require('./services/seedAreas')
 const { ensureBaseIncidentTypes } = require('./services/seedIncidentTypes')
+const { ensureSystemRoles } = require('./services/seedRoles')
 const { advertirSiNoHayBucket } = require('./services/storageService')
 
 /**
@@ -60,6 +61,17 @@ async function iniciar() {
     await ensureBaseIncidentTypes()
   } catch (error) {
     logger.error('No se pudieron sembrar los tipos de incidencia', {
+      error: error.message
+    })
+  }
+
+  // Los tres roles de siempre, derivados de la matriz (D-93). Van DESPUÉS de los
+  // demás catálogos y antes de escuchar: sin ellos no se puede elegir el rol de
+  // un usuario nuevo. Idempotente, y no toca los que ya existan.
+  try {
+    await ensureSystemRoles()
+  } catch (error) {
+    logger.error('No se pudieron sembrar los roles de sistema', {
       error: error.message
     })
   }

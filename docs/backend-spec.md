@@ -180,7 +180,7 @@ src/
   services/                    Almacenamiento, semillas, arranque
   utils/
     domain/                    ← Lógica de expedientes (modelo-datos.md §6)
-    permissions.js             El catálogo de 40 permisos y la matriz por nivel
+    permissions.js             El catálogo de 41 permisos, la matriz y el `can`
 ```
 
 **Cuatro capas por recurso, sin excepciones**, y **los controladores no llevan
@@ -313,7 +313,7 @@ desincronizadas. Índice rápido:
 | Necesitas | Sección |
 | --- | --- |
 | La jerarquía y por qué los catálogos son compartidos | §1, §2 |
-| El mapa de las 19 colecciones que existen hoy | §3 |
+| El mapa de las 20 colecciones que existen hoy | §3 |
 | Esquemas de Mongoose, ocho de ellas | §5 |
 | Las tres colecciones de vínculo: adscripciones, carteras, asignaciones | §5b |
 | Estatus efectivo, avance, semáforo, checklist por unión, alertas | §6 |
@@ -324,9 +324,12 @@ desincronizadas. Índice rápido:
 
 **Lo mínimo que hay que retener antes de leer las rutas:**
 
-- **Cada sección tiene su permiso de VER** (D-92). Son 40 casillas en diez
+- **Cada sección tiene su permiso de VER** (D-92). Son 41 casillas en diez
   secciones, y `GET /permisos` las publica con su etiqueta, su sección y qué
   otras exigen. Sin la casilla: **403**; fuera de alcance: **404**.
+- **Los roles son datos, no código** (D-93). `/roles` los administra, y quien
+  tiene rol se resuelve contra él; quien no, contra `PERMISSION_MATRIX` por su
+  `nivelAcceso`, que sigue viajando en la sesión.
 - **Empleados, clientes y categorías son catálogos compartidos.** No llevan
   `empresaId`. La pertenencia se expresa con vínculos.
 - **`adscripciones`** lleva la relación laboral: contrato, fecha de ingreso,

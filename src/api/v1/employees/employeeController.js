@@ -219,6 +219,19 @@ class EmployeeController {
     return created(res, { empleado: renglon }, 'Acceso concedido correctamente')
   }
 
+  /**
+   * GET /empleados/:id/acceso
+   *
+   * El acceso con sus permisos resueltos y **de dónde le viene cada uno**: de su
+   * rol o de una excepción suya (D-93). Es lo que pinta la ficha de la persona
+   * para poder contestar «¿por qué ve esto?» sin cruzar dos listas a mano.
+   */
+  getAccess = async (req, res) => {
+    await employeeService.getById(req.params.id, this.#contexto(req))
+    const acceso = await accessService.detalle(req.params.id)
+    return ok(res, { acceso })
+  }
+
   /** PATCH /empleados/:id/acceso */
   updateAccess = async (req, res) => {
     await employeeService.getById(req.params.id, this.#contexto(req))

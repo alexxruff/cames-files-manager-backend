@@ -2,6 +2,12 @@ const mongoose = require('mongoose')
 const { AppError } = require('../../../middlewares/errorHandler')
 const Employee = require('./employeeModel')
 const Credential = require('../credentials/credentialModel')
+const Role = require('../roles/roleModel')
+const {
+  PERMISSION_KEYS,
+  PERMISSION_BY_KEY,
+  permissionsOf
+} = require('../../../utils/permissions')
 
 /**
  * Administración de accesos a la plataforma.
@@ -16,6 +22,37 @@ const Credential = require('../credentials/credentialModel')
  * credencial sin acceso sería un secreto huérfano.
  */
 class AccessService {
+  /**
+   * El acceso de una persona con **de dónde le viene cada permiso** (D-93).
+   *
+   * Es la pregunta que sólo se puede contestar porque las excepciones son
+   * aditivas: cada casilla encendida viene de su rol o de una excepción suya, y
+   * no hay un tercer caso. Con negaciones habría que explicar además por qué NO
+   * ve algo, y eso ya no cabe en una lista.
+   */
+  async detalle(empleadoId) {
+    const empleado = await Employee.findById(empleadoId).populate({
+      path: 'acceso.rolId',
+      select: 'nombre permisos todosLosPermisos soloSusAreas activo'
+    })
+    if (!empleado) throw AppError.notFound('Ese empleado no existe')
+    if (!empleado.acceso) {
+      throw AppError.notFound('Esta persona no tiene acceso a la plataforma')
+    }
+
+    const rol = empleado.acceso.rolId
+    return {
+      email: empleado.acceso.email,
+      nivelAcceso: empleado.acceso.nivelAcceso,
+      alcanceGlobal: Boolean(empleado.acceso.alcanceGlobal),
+      activo: Boolean(empleado.acceso.activo),
+      passwordTemporal: Boolean(empleado.acceso.passwordTemporal),
+      rol: rol ? { _id: rol._id.toString(), nombre: rol.nombre } : null,
+      permisosExtra: empleado.acceso.permisosExtra || [],
+      permisos: permissionsOf(empleado.acceso)
+    }
+  }
+
   /** Concede acceso a un empleado que ya existe. */
   async grant(empleadoId, datos, { actor } = {}) {
     const empleado = await this.#buscarEmpleado(empleadoId)
@@ -33,6 +70,8 @@ class AccessService {
     const email = String(datos.email).toLowerCase().trim()
     await this.#assertEmailLibre(email)
     this.#assertAlcanceGlobalPermitido(datos, actor)
+    const rolId = await this.#resolverRol(datos.rolId)
+    const permisosExtra = this.#validarExtras(datos.permisosExtra)
 
     const passwordHash = await Credential.hashPassword(datos.password)
     const sesion = await mongoose.startSession()
@@ -44,6 +83,8 @@ class AccessService {
           nivelAcceso: datos.nivelAcceso,
           alcanceGlobal: Boolean(datos.alcanceGlobal),
           activo: true,
+          rolId,
+          permisosExtra,
           passwordActualizadaEn: new Date(),
           /*
            * La contraseña inicial la escribe el administrador, así que **él la
@@ -88,6 +129,16 @@ class AccessService {
     }
 
     if (datos.nivelAcceso !== undefined) empleado.acceso.nivelAcceso = datos.nivelAcceso
+    /*
+     * `null` explícito le quita el rol y lo devuelve a resolverse por su nivel de
+     * acceso, que es el respaldo de siempre. No es lo mismo que no mandar nada.
+     */
+    if (datos.rolId !== undefined) {
+      empleado.acceso.rolId = await this.#resolverRol(datos.rolId)
+    }
+    if (datos.permisosExtra !== undefined) {
+      empleado.acceso.permisosExtra = this.#validarExtras(datos.permisosExtra)
+    }
     if (datos.alcanceGlobal !== undefined) {
       this.#assertAlcanceGlobalPermitido(datos, actor)
       empleado.acceso.alcanceGlobal = Boolean(datos.alcanceGlobal)
@@ -103,6 +154,57 @@ class AccessService {
 
     await empleado.save()
     return empleado
+  }
+
+  /**
+   * El rol al que apunta un `rolId`, comprobando que exista y esté activo.
+   *
+   * `null` y `undefined` son cosas distintas y las dos válidas: `null` es
+   * «déjalo sin rol» —se resolverá por su nivel de acceso— y `undefined` es «no
+   * toques lo que tenga», que es quien lo llama el que distingue.
+   */
+  async #resolverRol(rolId) {
+    if (!rolId) return null
+
+    const rol = await Role.findById(rolId)
+    if (!rol) throw AppError.notFound('Ese rol no existe')
+    if (!rol.activo) {
+      throw new AppError(400, 'Ese rol está dado de baja: elige otro')
+    }
+
+    return rol._id
+  }
+
+  /**
+   * Las excepciones de la persona. Se comprueba que existan y **no** que sean
+   * coherentes entre sí: son un añadido sobre un rol que ya lo es, y exigirle
+   * aquí sus dependencias obligaría a repetir en la excepción lo que el rol ya
+   * da.
+   */
+  #validarExtras(permisosExtra) {
+    if (permisosExtra === undefined || permisosExtra === null) return []
+
+    const claves = [...new Set(permisosExtra)]
+    const inventadas = claves.filter((c) => !PERMISSION_KEYS.includes(c))
+    if (inventadas.length > 0) {
+      throw new AppError(400, `Ese permiso no existe: ${inventadas[0]}`)
+    }
+
+    /*
+     * Un permiso que exige ser administrador de plataforma no se da como
+     * excepción: no serviría de nada —el catálogo lo seguiría exigiendo— y
+     * dejaría en la ficha de la persona un permiso que no tiene. Se dice claro en
+     * vez de guardarlo mudo.
+     */
+    const global = claves.find((c) => PERMISSION_BY_KEY[c].exigeAlcanceGlobal)
+    if (global) {
+      throw new AppError(
+        400,
+        `«${PERMISSION_BY_KEY[global].etiqueta}» sólo la puede tener un administrador de plataforma, no se da como excepción`
+      )
+    }
+
+    return claves
   }
 
   /**

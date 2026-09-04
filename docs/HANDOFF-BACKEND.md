@@ -67,6 +67,10 @@ un documento y aquí queda el enlace.
       lado no queda rastro y nadie se entera. No es una corrección de
       documentación: es revisar si la interfaz está tirando altas buenas. La
       regla, en [`INTEGRACION-FRONTEND.md`](./INTEGRACION-FRONTEND.md) §7.
+- [ ] **Apaguen el menú con `AuthUser.permisos`, no con `nivelAcceso`.** Desde la
+      #45 la sesión trae las casillas ya resueltas y el rol de quien entró.
+      Deducirlas del nivel deja de funcionar en cuanto exista el primer rol que
+      no sea uno de los tres de siempre, y ése es justo el punto del cambio.
 - [ ] **Tiren su copia de la matriz de permisos y lean `GET /permisos`.** Desde
       la #44 el servidor la manda entera —40 casillas con su sección, su etiqueta
       y qué exigen, más las que trae quien entró—. Mantenerla a mano ya les costó
@@ -113,6 +117,56 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 ---
 
 ## Bitácora
+
+### 2026-09-04 16:26:22 · backend · La #45: los roles son datos, y se eligen al crear un usuario
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 4 sept (sin entradas nuevas
+desde la #43).
+
+**Hecho.** Un rol dejó de estar escrito en el código y pasó a ser **un dato**: un
+nombre y las casillas que trae marcadas. Los tres de siempre siguen ahí —se
+siembran al arrancar **derivándolos de la matriz**, así que dicen exactamente lo
+que decían— y a partir de ahora se pueden crear los que hagan falta sin
+programar ni desplegar. Rutas, forma exacta y errores en `plan/handoff/45.md`;
+el porqué, en D-93.
+
+**Lo que pueden usar hoy, aunque su tarea sea la #47:**
+
+- **`AuthUser` trae `permisos[]` y `rol`.** Los permisos vienen **ya resueltos**
+  —el efecto de `alcanceGlobal` aplicado—, así que es lo que debe apagar el menú
+  y los botones, en lugar de deducirlos de `nivelAcceso`. `nivelAcceso` y
+  `alcanceGlobal` **siguen viajando sin cambios**.
+- **`GET /roles`** ya responde, y cada renglón trae `personas`: cuánta gente lo
+  tiene. Es para avisar **antes** de que alguien intente borrar uno en uso, que
+  responde 409.
+- **`GET /empleados/:id/acceso`** (ruta nueva) dice **de dónde le viene cada
+  permiso** a alguien: `origen` es `'rol'` o `'excepcion'`, y no hay tercer caso.
+
+**Tres cosas al pintarlo:**
+
+- **Un rol de sistema no se renombra ni se da de baja, pero SÍ se le cambian los
+  permisos.** Escondan el botón de renombrar, no el de editar: son el punto de
+  partida, no una jaula.
+- **`todosLosPermisos: true`** lo trae sólo el de Administrador de RH. Con esa
+  bandera las casillas individuales no significan nada — muéstrenlo como «todo»,
+  y no como 41 palomitas.
+- **Cambiar un rol le cambia los permisos a su gente en la siguiente petición**,
+  sin que vuelva a entrar. El token no guarda permisos. Si su pantalla cachea lo
+  que trae la sesión, conviene refrescarla al volver del editor de roles.
+
+**Y una que les toca decidir en la #47:** las excepciones por persona **sólo
+suman**. No hay «el rol menos algo» y no lo va a haber, para que «¿por qué ve
+esto?» siempre tenga respuesta. Si alguien pide quitarle una casilla a una
+persona concreta, la respuesta es un rol nuevo — vale la pena que la pantalla lo
+diga en vez de dejar buscar el interruptor.
+
+**Con migración**, y **no bloquea el despliegue**: quien no tenga rol sigue
+resolviéndose por su `nivelAcceso`, así que nadie se queda sin permisos mientras
+tanto.
+
+**Qué necesitamos de ustedes:** la #47, después de la #46 (rol distinto por
+empresa). Ojo con esto al diseñar: **`permisos` es hoy una lista plana y en la
+#46 pasa a depender de la empresa**. No la aten a una sola forma todavía.
 
 ### 2026-09-04 15:14:23 · backend · La #44: ver es un permiso, y son 40 casillas
 

@@ -40,6 +40,7 @@
     "migrate:vinculo-rp": "node scripts/linkAffiliationRegistrations.js",
     "migrate:siroc-vigencia": "node scripts/migrateSirocValidity.js",
     "migrate:categorias-proyecto": "node scripts/migrateProjectCategories.js",
+    "migrate:roles": "node scripts/migrateRolesDeAcceso.js",
     "migrate:revisar-respaldos": "node scripts/checkMigrationBackups.js",
     "limpiar:subidas": "node scripts/cleanOrphanUploads.js",
     "proyectos:incompletos": "node scripts/resolveLegacyProjects.js"

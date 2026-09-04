@@ -89,7 +89,10 @@ describe('Aislamiento del material secreto', () => {
       /*
        * La lista es exhaustiva a propósito: si algún día alguien vuelve a meter
        * el hash en `empleados.acceso`, esta prueba falla. `passwordTemporal` es
-       * una marca, no material secreto (D-49).
+       * una marca, no material secreto (D-49), y `rolId` y `permisosExtra` son
+       * de dónde salen sus permisos (D-93) — tampoco lo son. Agregar un campo
+       * aquí es una decisión: si lo que se agrega es un secreto, va en
+       * `credentials`, no en esta lista.
        */
       expect(Object.keys(crudo.acceso).sort()).toEqual([
         'activo',
@@ -97,7 +100,9 @@ describe('Aislamiento del material secreto', () => {
         'email',
         'nivelAcceso',
         'passwordActualizadaEn',
-        'passwordTemporal'
+        'passwordTemporal',
+        'permisosExtra',
+        'rolId'
       ])
       expect(JSON.stringify(crudo)).not.toMatch(/\$2[aby]\$/)
     })

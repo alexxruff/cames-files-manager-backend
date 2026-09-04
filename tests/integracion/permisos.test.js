@@ -27,7 +27,7 @@ describe('GET /permisos', () => {
 
   const pedir = (sesion) => request(app).get(PERMISOS).set(auth(sesion.token))
 
-  it('devuelve las 40 casillas con su sección y lo que exigen', async () => {
+  it('devuelve el catálogo completo con su sección y lo que exigen', async () => {
     const res = await pedir(admin)
 
     expect(res.status).toBe(200)
@@ -40,8 +40,21 @@ describe('GET /permisos', () => {
       etiqueta: 'Ver la maquinaria',
       seccion: 'maquinaria',
       subseccion: null,
-      requiere: []
+      requiere: [],
+      exigeAlcanceGlobal: false,
+      acotableAAreas: false
     })
+
+    /*
+     * Las dos banderas que antes eran valores de la matriz por nivel (D-93).
+     * Vienen resueltas para que la pantalla que arma un rol pueda avisar «esto
+     * además exige ser administrador de plataforma» sin cruzar otra lista.
+     */
+    const empresas = res.body.data.permisos.find((p) => p.clave === 'manageCompanies')
+    expect(empresas.exigeAlcanceGlobal).toBe(true)
+
+    const verEmpleados = res.body.data.permisos.find((p) => p.clave === 'viewEmployees')
+    expect(verEmpleados.acotableAAreas).toBe(true)
 
     // Modificar exige ver: es lo que la pantalla necesita para avisar sin
     // adivinarlo.

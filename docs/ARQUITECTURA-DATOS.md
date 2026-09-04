@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-92)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-93)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -24,7 +24,7 @@ cambiar cualquier esquema.
 
 ---
 
-## 1. Panorama: 19 colecciones en tres grupos
+## 1. Panorama: 20 colecciones en tres grupos
 
 Lo primero que hay que entender es que **no todas son iguales**. Se comportan
 distinto y se rompen distinto.
@@ -41,6 +41,7 @@ de baja, **nunca se borran**.
 | `categories`     | Puestos                                  | nombre normalizado          | `activo: false`, bloqueada si en uso              |
 | `areas`          | Áreas de la organización                 | `clave`, nombre normalizado | `activa: false`, bloqueada si en uso              |
 | `incident_types` | Tipos de incidencia de maquinaria (D-88) | nombre normalizado          | `activo: false`, **permitida aunque esté en uso** |
+| `roles`          | Perfiles de permisos (D-93)              | nombre normalizado + dueño  | `activo: false`; **borrado real si nadie lo usa**, bloqueado si alguien lo tiene |
 
 **Dentro de dos de ellos viven subdocumentos con identidad propia** (D-65, D-66),
 y esto importa más de lo que parece:
@@ -64,7 +65,13 @@ sin empresa no significa nada. Pero **sí tienen `_id`**, porque hay que apuntar
 ambigüedad. La alternativa que se descartó era guardarlos como cadenas: corregir
 un dígito habría roto en silencio cada proyecto que lo apuntaba.
 
-Los cinco catálogos son **globales**, no por empresa. La razón es siempre la misma: el
+`roles` es la excepción entre los seis: **se borra de verdad** cuando nadie lo
+usa. No deja historia que respetar —a diferencia de un tipo de incidencia, que
+las viejas siguen citando— y un catálogo de perfiles lleno de intentos
+abandonados es peor que uno corto. Si alguien lo tiene, el borrado responde `409`
+diciendo cuántas personas son.
+
+Los seis catálogos son **globales**, no por empresa. La razón es siempre la misma: el
 empleado es global y puede estar en dos empresas, así que un catálogo por empresa
 lo dejaría con un puesto o un área ambiguos (D-32). `incident_types` es global por
 una razón distinta pero del mismo orden: una «falla hidráulica» es la misma en
@@ -157,6 +164,8 @@ erDiagram
     COMPANIES  ||--o{ CHECKLIST_TEMPLATES : "sus plantillas"
     CHECKLIST_TEMPLATES ||--o{ RECORDS    : "genera el checklist"
 
+    ROLES      ||--o{ EMPLOYEES    : "sus permisos (acceso.rolId, D-93)"
+
     EMPLOYEES  ||--o{ ACCESS_LOGS  : "quién consultó"
     RECORDS    ||--o{ ACCESS_LOGS  : "qué se consultó"
 
@@ -174,6 +183,11 @@ D-72, también la adscripción— les apuntan.
 
 Las líneas de `AREAS` y las de los registros son distintas de todas las demás y
 están explicadas en la sección 4: **Mongoose no las resuelve sola**.
+
+La flecha de `ROLES` a `EMPLOYEES` apunta a `acceso.rolId`, dentro del
+subdocumento de acceso. **Es opcional y `null` no significa «sin permisos»**:
+quien no tiene rol se resuelve por su `nivelAcceso` contra la matriz del código
+(D-93), que es lo que hace que la migración no bloquee un despliegue.
 
 La línea punteada entre `MACHINE_ASSIGNMENTS` y `MACHINE_INCIDENTS` es de otra
 naturaleza todavía: **no hay ninguna referencia guardada entre las dos**. La
@@ -479,6 +493,39 @@ dos opcionales y ninguno derivado del otro (D-75).
 de cliente ni de registro patronal; en cuanto uno tiene SIROC, tampoco de
 registro de obra. La razón es que el aviso ante el IMSS ya salió con esa obra.
 
+### `roles` — de dónde salen los permisos de cada quien
+
+Un nombre y las casillas del catálogo que trae marcadas (D-93). Hasta la tarea
+#45 los perfiles eran **tres valores cerrados en el código** y su tabla vivía en
+`utils/permissions.js`; agregar «contador» era desplegar.
+
+| Campo              | Qué es                                                                          |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `permisos[]`       | Claves del catálogo, validadas contra él. Una clave inventada no se guarda      |
+| `todosLosPermisos` | Alcanza también **los que se agreguen después**. Es el del admin de plataforma  |
+| `soloSusAreas`     | El rol ve sólo las áreas que la persona dirige. Era el `'own_area'` de la matriz |
+| `empresaId`        | De quién es. **Hoy siempre `null`** = del grupo                                 |
+| `esSistema`        | Los tres sembrados: no se renombran ni se dan de baja                           |
+
+**Lo que se rompe al tocarla:**
+
+- **Borrar un rol que alguien tiene** dejaría a esa gente con `rolId` colgando.
+  Por eso el borrado responde `409` si hay alguien, y por eso el listado trae
+  `personas` en cada renglón.
+- **Editar sus permisos afecta a su gente en la siguiente petición**, no al
+  volver a entrar: `protect` lo resuelve en cada una. Es deliberado, pero
+  significa que un dedazo aquí cierra rutas de inmediato.
+- **`acceso.rolId` es la única referencia que le entra**, y es opcional. Un rol
+  sin gente se puede borrar sin más; uno con gente, no.
+- **Lo que exige alcance global no se puede dar por rol.** El catálogo lo exige
+  encima (`exigeAlcanceGlobal`), así que marcar `manageCompanies` en un rol no
+  se lo da a quien no es administrador de plataforma.
+
+**Y una que no es de esta colección pero se decide aquí:** `PERMISSION_MATRIX`
+ya no es la autoridad de cada petición —pasó a ser **la semilla** de estos tres
+roles y el respaldo de quien no tiene ninguno—. Cambiarla ya no cambia lo que
+puede la gente que ya tiene rol; para eso hay que editar el rol.
+
 ### `access_logs` — bitácora
 
 **Requisito legal, no un extra**: un expediente trae CURP, NSS y examen médico.
@@ -565,6 +612,11 @@ colección: `records.documentos[].tipo` apunta a `DOCUMENT_TYPES` en
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
 | **`employees.categoriaId`**                      | `tipo` se deriva de ahí (D-59) → cambia **quién puede gestionar a esa persona**                                 |
 | **`employees.tipo`**                             | `utils/permissions.js` (`canManageEmployeeType`), el desplegable de puestos                                     |
+| **`employees.acceso.rolId`**                     | **Todo lo que puede esa persona**, desde la siguiente petición. `null` la devuelve a resolverse por su `nivelAcceso` |
+| **`roles.permisos`**                             | Lo que puede **toda la gente con ese rol**, desde la siguiente petición: no esperan a volver a entrar (D-93)   |
+| **Borrar un rol**                                | Bloqueado (`409`) si alguien lo tiene. Los de sistema no se borran nunca                                        |
+| **`PERMISSION_MATRIX`**                          | Ya NO manda sobre quien tiene rol: es la **semilla** de los tres de sistema y el respaldo de quien no tiene (D-93) |
+| **Agregar un permiso al catálogo**               | Nace negado para todos salvo el rol con `todosLosPermisos`. Y `routeGuards.test.js` exige que su ruta lo pida   |
 | **`affiliations.areas`**                         | El checklist (se resuelve por área) → puede cambiar **qué documentos se le exigen**                             |
 | **`affiliations.dirigeAreas`**                   | `scopeMiddleware` → **qué gente ve un jefe de área**                                                            |
 | **`affiliations.activo`**                        | El alcance del usuario, el checklist, las alertas, y si se queda sin ninguna activa, su baja del sistema (D-55) |

@@ -4539,3 +4539,123 @@ nueva de cada uno —`contrato` a `manageContracts`, los dos del SIROC a
 subida es la misma que pide la ruta que después registra el adjunto**. Si dijera
 menos, pedir el permiso de subida sería el rodeo para saltarse la casilla del
 recurso.
+
+## D-93 · Los roles son datos, y las excepciones sólo suman
+
+**Contexto.** Tarea #45, 4 sept 2026, a pedido de Urbacames
+(`cames-ops/plan/propuestas/2026-09-04-usuarios-con-permisos-por-seccion.md`).
+D-92 partió los permisos en 40 casillas por sección, pero **los tres perfiles
+seguían escritos en el código**: `nivelAcceso` era un enum cerrado y su tabla
+vivía en un archivo del servidor. Agregar «contador» era tocar código y
+desplegar. Esta decisión los vuelve datos.
+
+### La colección `roles`, y lo que deliberadamente NO lleva
+
+Un rol es un nombre y las casillas que trae marcadas. **No hay lista de permisos
+negados**, y no la va a haber: la persona puede tener excepciones que **sólo
+agregan** (`acceso.permisosExtra`). Con eso, «¿por qué ve esto?» siempre tiene
+respuesta corta —su rol, o una excepción suya— y `GET /empleados/:id/acceso` la
+contesta con el origen de cada casilla. Si existieran negaciones habría que
+explicar además por qué **no** ve algo, y esa cadena no termina: el rol menos la
+excepción menos la regla de la empresa menos… Fue decisión explícita del usuario
+el 4 sept, y es lo que mantiene el modelo explicable.
+
+### Los tres de siempre se DERIVAN de la matriz, no se escriben a mano
+
+`services/seedRoles.js` los siembra en cada arranque leyendo `PERMISSION_MATRIX`.
+Escribir aquí las listas a mano habría sido una **cuarta copia** de la misma
+tabla —después de la matriz, la de §8.2 y la del front— y justo la que se
+desincroniza en silencio, porque nadie revisa una semilla.
+
+Por eso `PERMISSION_MATRIX` no desapareció. **Cambió de trabajo**: dejó de ser la
+autoridad de cada petición y pasó a ser la semilla, y el respaldo de quien
+todavía no tiene rol.
+
+### Dos valores de la matriz que dejaron de ser valores
+
+Un rol es una **lista de casillas marcadas**, y una lista no puede llevar tres
+valores por casilla. Así que `'global'` y `'own_area'` salieron de la matriz y se
+convirtieron en propiedades de otra cosa:
+
+- **`exigeAlcanceGlobal` es del PERMISO**, en el catálogo. Que crear una empresa
+  afecte a todo el grupo es una propiedad de la acción, no de quien la tiene:
+  afecta al grupo lo haga quien lo haga. Son cinco casillas —empresas, registros
+  patronales, áreas, puestos y los roles mismos—.
+- **`soloSusAreas` es del ROL.** Antes era el valor `'own_area'`, y ya era del
+  jefe de área y no de un permiso suyo: `isLimitedToOwnArea` se consultaba en
+  **todo** el código con una sola capacidad, `viewEmployees`. Qué casillas se
+  pueden acotar lo dice el catálogo (`acotableAAreas`), para que marcar un rol
+  como «sólo sus áreas» no acote de pronto `manageProjects`, que nunca lo estuvo.
+
+Ninguna de las dos cambia lo que puede nadie, y la prueba de paridad lo sostiene:
+las cuatro celdas `'global'` eran `'global'` sólo en `rh_admin` y `false` en los
+otros dos, así que el rol sembrado de `rh_admin` trae la clave y el catálogo le
+sigue exigiendo el alcance encima.
+
+### El respaldo por `nivelAcceso` no es deuda
+
+`can()` tiene dos caminos: con rol resuelto, la respuesta sale del rol más las
+excepciones; **sin rol, sale de la matriz por `nivelAcceso`, exactamente como
+antes**.
+
+Ese segundo camino se queda. Es lo que hace que la migración **no sea un
+despliegue bloqueante** —si tarda un día, nadie se queda sin permisos— y que un
+acceso creado por un script viejo, o un `acceso` armado a mano en una prueba,
+nunca conteste `403` por un campo que nadie llenó. Como los tres roles se derivan
+de esa misma matriz, los dos caminos contestan lo mismo, y hay una prueba que lo
+comprueba casilla por casilla para los tres.
+
+### El rol se resuelve en cada petición, no en el token
+
+`protect` lo trae **poblado en la misma consulta** con la que ya releía al
+empleado. Dos consecuencias:
+
+1. **Cambiar un rol le cambia los permisos a su gente sin que vuelva a entrar.**
+   El token nunca guardó permisos, y ahora tampoco: quitarle una casilla a un
+   perfil cierra la ruta en la siguiente petición.
+2. **`can()` sigue siendo síncrona**, que es lo que permite llamarla desde rutas,
+   servicios y controladores sin volver asíncrono medio código.
+
+### Quién arma roles
+
+`manageRoles`, la casilla 41, y **exige ser administrador de plataforma**.
+Administrar accesos **no alcanza** —decisión del usuario, 4 sept—: repartir
+accesos y decidir qué puede un perfil no son el mismo trabajo, y quien hace lo
+primero no debería poder inventarse permisos para sí mismo. Leer la lista sí pide
+sólo `manageAccess`, porque quien da de alta a alguien necesita elegirle rol.
+
+Nadie tenía `manageRoles` antes, porque los roles no existían: no le quita nada a
+nadie. En la prueba de paridad va en su propio grupo, `NACIERON_NEGADAS`, para
+que la pregunta al agregar una casilla sea la correcta —«¿de verdad no había
+forma de hacer esto antes?»— y no se cuele como heredera de nada.
+
+### Lo demás que se decidió
+
+- **`todosLosPermisos`**, y no 41 casillas marcadas, para el rol del
+  administrador de plataforma: tiene que alcanzar también los permisos que se
+  agreguen después. Marcarle 41 y olvidar la 42 es exactamente el error que esto
+  evita. «Todos» no significa «sin condiciones»: lo que exige alcance global se
+  lo sigue exigiendo el catálogo.
+- **`empresaId` existe y hoy siempre es `null`**, que significa «del grupo». Los
+  perfiles que se pidieron son los mismos en las cuatro empresas. El campo está
+  desde ahora para que el día que una empresa necesite uno propio no haya que
+  migrar a nadie.
+- **Un rol de sistema no se renombra ni se da de baja, pero sí se le cambian los
+  permisos**: son el punto de partida, no una jaula.
+- **Un rol en uso no se borra**, y el error dice **cuántas personas** lo tienen,
+  para que se sepa el tamaño del trabajo antes de empezarlo. El listado trae ese
+  conteo en cada renglón, así que la pantalla puede avisar antes de que alguien
+  lo intente.
+- **Un permiso que exige alcance global no se da como excepción.** No serviría de
+  nada —el catálogo lo seguiría exigiendo— y dejaría en la ficha de la persona un
+  permiso que no tiene. Se dice claro en vez de guardarlo mudo.
+- **`nivelAcceso` sigue viajando y sigue siendo obligatorio** mientras el front
+  migra: es el respaldo, y quitarlo hoy rompería a quien todavía lo lee.
+
+### La migración
+
+`scripts/migrateRolesDeAcceso.js` le pone a cada acceso el rol de sistema que
+corresponde a su nivel. Idempotente, con `--dry-run`, y **no toca a quien ya
+tenga `rolId`**: si alguien ya recibió un rol a mano, volver a correrla no se lo
+pisa. Siembra los roles ella misma antes de empezar, para que sirva también en
+una base donde el servidor nunca arrancó con esto.

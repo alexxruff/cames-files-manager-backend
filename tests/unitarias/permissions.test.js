@@ -19,7 +19,10 @@ describe('utils/permissions — matriz de modelo-datos §8.2', () => {
     CAPABILITIES.MANAGE_EMPLOYER_REGISTRIES,
     CAPABILITIES.MANAGE_CATEGORIES,
     // Administrar el catálogo de áreas afecta a todo el grupo, igual (D-58).
-    CAPABILITIES.MANAGE_AREAS
+    CAPABILITIES.MANAGE_AREAS,
+    // Y armar roles, que valen para todo el grupo (D-93). Administrar accesos
+    // NO alcanza: repartir accesos y definir perfiles no son el mismo trabajo.
+    CAPABILITIES.MANAGE_ROLES
   ]
 
   it('rh_admin puede todo dentro de su empresa', () => {

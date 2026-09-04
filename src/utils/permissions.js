@@ -51,8 +51,37 @@
  * es lo único que se muestra, y por eso va en español (decisión del 4 sept 2026:
  * claves en inglés, etiquetas del catálogo).
  */
-// prettier-ignore -- una casilla por renglón se lee como la tabla que es.
-const PERMISSIONS = Object.freeze([
+/**
+ * Dos propiedades del PERMISO que antes eran valores de la matriz por nivel
+ * (D-93). Salieron de ahí porque un rol es una **lista de casillas marcadas**, y
+ * una lista no puede llevar tres valores por casilla.
+ *
+ * - `exigeAlcanceGlobal` — la acción afecta a TODO el grupo, así que además de
+ *   tener la casilla hay que ser administrador de plataforma. Es propiedad de la
+ *   acción, no de quien la tiene: crear una empresa afecta al grupo lo haga
+ *   quien lo haga. Antes era el valor `'global'`, y sólo lo tenía `rh_admin`.
+ * - `acotableAAreas` — la casilla puede quedar limitada a las áreas que la
+ *   persona dirige, si su rol lo dice (`soloSusAreas`). Antes era el valor
+ *   `'own_area'`, y sólo lo tenía `jefe_area`.
+ *
+ * Ninguna de las dos cambia lo que puede nadie: ver D-93 y la prueba de paridad.
+ */
+const EXIGEN_ALCANCE_GLOBAL = Object.freeze([
+  'manageCompanies',
+  'manageEmployerRegistries',
+  'manageAreas',
+  'manageCategories',
+  'manageRoles'
+])
+
+const ACOTABLES_A_AREAS = Object.freeze([
+  'viewEmployees',
+  'viewAffiliations',
+  'viewRecords',
+  'viewAlerts'
+])
+
+const CATALOGO = Object.freeze([
   // ── Personal ───────────────────────────────────────────────────────────────
   {
     clave: 'viewEmployees',
@@ -339,6 +368,19 @@ const PERMISSIONS = Object.freeze([
     requiere: ['viewEmployees']
   },
   {
+    clave: 'manageRoles',
+    etiqueta: 'Crear y editar roles',
+    seccion: 'plataforma',
+    subseccion: null,
+    /*
+     * Exige `manageAccess` porque un rol se arma para dárselo a alguien, y exige
+     * además ser administrador de plataforma (`exigeAlcanceGlobal`): un rol vale
+     * para todo el grupo. Administrar accesos NO alcanza — decisión del usuario,
+     * 4 sept 2026: repartir accesos y decidir qué puede un perfil son dos cosas.
+     */
+    requiere: ['manageAccess']
+  },
+  {
     clave: 'manageTemplates',
     etiqueta: 'Administrar las plantillas de checklist',
     seccion: 'plataforma',
@@ -353,6 +395,25 @@ const PERMISSIONS = Object.freeze([
     requiere: ['viewEmployees']
   }
 ])
+
+/**
+ * El catálogo publicado: cada casilla con sus dos banderas ya resueltas, para que
+ * nadie tenga que cruzar tres listas para saber qué exige una.
+ */
+const PERMISSIONS = Object.freeze(
+  CATALOGO.map((permiso) =>
+    Object.freeze({
+      ...permiso,
+      exigeAlcanceGlobal: EXIGEN_ALCANCE_GLOBAL.includes(permiso.clave),
+      acotableAAreas: ACOTABLES_A_AREAS.includes(permiso.clave)
+    })
+  )
+)
+
+/** Por clave, para no recorrer 41 objetos en cada `can`. */
+const PERMISSION_BY_KEY = Object.freeze(
+  Object.fromEntries(PERMISSIONS.map((permiso) => [permiso.clave, permiso]))
+)
 
 /**
  * Las secciones, en orden y sin repetir. Es lo que agrupa la pantalla de roles.
@@ -427,6 +488,8 @@ const PERMISSION_MATRIX = Object.freeze({
     closeTemporaryAreas: true,
     manageCategories: 'global',
     manageAccess: true,
+    // Nace exigiendo alcance global: un rol vale para todo el grupo (D-93).
+    manageRoles: 'global',
     manageTemplates: true,
     generateReports: true
   }),
@@ -477,6 +540,7 @@ const PERMISSION_MATRIX = Object.freeze({
     closeTemporaryAreas: true,
     manageCategories: false,
     manageAccess: false,
+    manageRoles: false,
     manageTemplates: false,
     generateReports: true
   }),
@@ -520,6 +584,7 @@ const PERMISSION_MATRIX = Object.freeze({
     closeTemporaryAreas: false,
     manageCategories: false,
     manageAccess: false,
+    manageRoles: false,
     manageTemplates: false,
     generateReports: false
   })
@@ -553,24 +618,155 @@ function canManageEmployeeType(acceso, tipo) {
 }
 
 /**
+ * El rol resuelto de un acceso, o `null` si no trae.
+ *
+ * `acceso.rolId` llega **poblado** desde `protect`, que lo trae en la misma
+ * consulta con la que ya releía al empleado. Si es un `ObjectId` sin poblar
+ * —alguien llamó a `can` con un empleado leído a mano—, no hay rol que leer y se
+ * responde por la matriz, que es el camino seguro.
+ */
+function rolDe(acceso) {
+  const rol = acceso?.rolId
+  return rol && typeof rol === 'object' && Array.isArray(rol.permisos) ? rol : null
+}
+
+/**
  * ¿Este acceso tiene la capacidad, aunque sea acotada?
- * @param {{nivelAcceso: string, alcanceGlobal?: boolean}|null|undefined} acceso
+ *
+ * **Dos caminos, y el orden importa** (D-93):
+ *
+ * 1. **Con rol** —lo normal desde que los roles son dato—: la casilla sale del
+ *    rol, o de las excepciones de la persona, que son **sólo aditivas**. Encima,
+ *    lo que `exigeAlcanceGlobal` sigue exigiéndolo.
+ * 2. **Sin rol**: se responde por `PERMISSION_MATRIX` según `nivelAcceso`,
+ *    exactamente como antes de que los roles existieran.
+ *
+ * El segundo camino **no es transitorio**. Es lo que hace que la migración no sea
+ * un despliegue bloqueante, y que un acceso creado por un script viejo —o por una
+ * prueba que arma un `acceso` a mano— nunca se quede sin permisos por un campo
+ * que nadie llenó. Los tres roles sembrados se derivan de esa misma matriz, así
+ * que los dos caminos contestan lo mismo.
+ *
+ * @param {{nivelAcceso: string, alcanceGlobal?: boolean, rolId?: object,
+ *          permisosExtra?: string[]}|null|undefined} acceso
  * @param {string} capability
  */
 function can(acceso, capability) {
   if (!acceso) return false
+
+  /*
+   * Las excepciones se miran en los DOS caminos, no sólo en el del rol. Sólo
+   * suman, así que no hay nada que puedan romper — y si sólo valieran con rol,
+   * dárselas a alguien que todavía no tiene uno se guardaría y no haría nada:
+   * un permiso que se ve en la ficha y no funciona.
+   */
+  const porExcepcion = (acceso.permisosExtra || []).includes(capability)
+
+  const rol = rolDe(acceso)
+  if (rol) {
+    if (rol.activo === false && !porExcepcion) return false
+
+    const tiene =
+      Boolean(rol.todosLosPermisos) || rol.permisos.includes(capability) || porExcepcion
+
+    return tiene && cumpleAlcance(acceso, capability)
+  }
+
   const fila = PERMISSION_MATRIX[acceso.nivelAcceso]
-  if (!fila) return false
+  if (!fila) return porExcepcion && cumpleAlcance(acceso, capability)
 
   const valor = fila[capability]
   if (valor === 'global') return Boolean(acceso.alcanceGlobal)
-  return Boolean(valor)
+  if (valor) return true
+
+  return porExcepcion && cumpleAlcance(acceso, capability)
 }
 
-/** ¿La capacidad está limitada a sus propias áreas? */
+/**
+ * La condición que se comprueba ENCIMA de tener la casilla: lo que afecta a todo
+ * el grupo exige además ser administrador de plataforma. Y una clave que no está
+ * en el catálogo no existe, la tenga quien la tenga.
+ */
+function cumpleAlcance(acceso, capability) {
+  const permiso = PERMISSION_BY_KEY[capability]
+  if (!permiso) return false
+  return permiso.exigeAlcanceGlobal ? Boolean(acceso.alcanceGlobal) : true
+}
+
+/**
+ * ¿La capacidad está limitada a sus propias áreas?
+ *
+ * Con rol, son dos condiciones: que el rol sea de los que ven **sólo sus áreas**
+ * y que la casilla sea de las que se pueden acotar. Sin las dos, acotar
+ * `manageProjects` —que nunca estuvo acotado— habría cambiado el alcance de un
+ * jefe de área sin que nadie lo pidiera.
+ */
 function isLimitedToOwnArea(acceso, capability) {
   if (!acceso) return false
+
+  const rol = rolDe(acceso)
+  if (rol) {
+    return (
+      Boolean(rol.soloSusAreas) &&
+      Boolean(PERMISSION_BY_KEY[capability]?.acotableAAreas) &&
+      can(acceso, capability)
+    )
+  }
+
   return PERMISSION_MATRIX[acceso.nivelAcceso]?.[capability] === 'own_area'
+}
+
+/**
+ * Las casillas de un acceso, con **de dónde le viene cada una**.
+ *
+ * Es lo que contesta «¿por qué ve esto?» sin que nadie tenga que cruzar el rol
+ * con las excepciones a mano. `origen` sólo puede ser `'rol'` o `'excepcion'`
+ * porque las excepciones son aditivas: no existe «el rol menos algo», y por eso
+ * siempre hay una respuesta.
+ *
+ * @returns {Array<{clave: string, origen: 'rol'|'excepcion'}>}
+ */
+function permissionsOf(acceso) {
+  if (!acceso) return []
+
+  const rol = rolDe(acceso)
+  const extras = new Set(acceso.permisosExtra || [])
+  // El mismo acceso sin sus excepciones: sirve para saber qué le daba la base.
+  const sinExcepciones = { ...acceso, permisosExtra: [], rolId: rol }
+
+  return PERMISSIONS.filter(({ clave }) => can(acceso, clave)).map(({ clave }) => ({
+    clave,
+    /*
+     * `'excepcion'` sólo si la casilla NO la daba ya lo de base —su rol, o su
+     * nivel de acceso si todavía no tiene rol—. Si las dos la dan, el origen es
+     * la base: quitarle la excepción no se la quitaría, y decir «excepción»
+     * mentiría sobre lo que pasaría al quitarla.
+     */
+    origen: extras.has(clave) && !can(sinExcepciones, clave) ? 'excepcion' : 'rol'
+  }))
+}
+
+/**
+ * Las casillas que faltan para que esta lista sea coherente: por cada una
+ * marcada, las que `requiere` y no están.
+ *
+ * Se usa al **guardar un rol**, no al autorizar: cada ruta pide la casilla que le
+ * toca y no le importa el resto. Un rol que puede modificar máquinas pero no
+ * verlas no es ilegal, es un error de captura, y se atrapa donde se captura.
+ *
+ * @returns {Array<{clave: string, requiere: string}>}
+ */
+function missingRequirements(claves) {
+  const marcadas = new Set(claves)
+  const faltantes = []
+
+  for (const clave of claves) {
+    for (const exigida of PERMISSION_BY_KEY[clave]?.requiere || []) {
+      if (!marcadas.has(exigida)) faltantes.push({ clave, requiere: exigida })
+    }
+  }
+
+  return faltantes
 }
 
 /** ¿Es administrador de plataforma? Ve todas las empresas y los catálogos. */
@@ -580,6 +776,9 @@ function isPlatformAdmin(acceso) {
 
 module.exports = {
   PERMISSIONS,
+  PERMISSION_BY_KEY,
+  permissionsOf,
+  missingRequirements,
   PERMISSION_SECTIONS,
   PERMISSION_KEYS,
   CAPABILITIES,
