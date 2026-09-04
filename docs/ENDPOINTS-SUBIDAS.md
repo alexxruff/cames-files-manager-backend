@@ -29,7 +29,11 @@ las dos formas conviven, y se apagará la vieja cuando ya no la llamen.
 ## 1. `POST /subidas` → `201`
 
 Pide el permiso. Requiere sesión, y **la capacidad que exija el destino** — la
-misma que la ruta que va a confirmar.
+misma que la ruta que va a confirmar. Desde D-92 esas capacidades tienen nombre
+propio por sección: `contrato` y `contrato-modificacion` piden `manageContracts`,
+los dos del SIROC `manageSiroc`, `registro-obra` `manageWorkRegistries`,
+`maquina` `manageMachines` y `expediente` sigue en `uploadDocuments`. **A nadie
+le cambió lo que podía subir**: cada una nació con la fila que tenía la de antes.
 
 ```jsonc
 {

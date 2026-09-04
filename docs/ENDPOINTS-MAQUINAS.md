@@ -37,9 +37,13 @@ convenciones generales: [`INTEGRACION-FRONTEND.md`](./INTEGRACION-FRONTEND.md).
 | 17  | `PATCH /tipos-incidencia/:id`        | `rh_admin` · `jefe_area` |
 | 18  | `PATCH /tipos-incidencia/:id/estado` | `rh_admin` · `jefe_area` |
 
-«Sesión» es cualquier usuario con alcance sobre la empresa. `rh_consulta`
-consulta y no escribe: la capacidad es `manageProjects`, la misma que los
-proyectos y los contratos, porque la maquinaria es de la obra.
+«Sesión» ya no es cualquiera con alcance sobre la empresa: **desde D-92 leer la
+maquinaria pide `viewMachines`, y las incidencias `viewMachineIncidents`** —los
+tres niveles las tienen, así que el reparto de la tabla de arriba no cambió—.
+Escribir dejó de colgar de `manageProjects`: son `manageMachines` (el catálogo),
+`assignMachines` (entregarla y devolverla), `manageMachineIncidents` (levantar y
+resolver) y `manageIncidentTypes` (el catálogo de tipos), las cuatro con la fila
+que tenía `manageProjects`. `rh_consulta` sigue consultando y no escribiendo.
 
 ---
 
@@ -581,7 +585,7 @@ Igual que el contrato escaneado, en tres pasos:
 | `400`  | Sin `identificador` o `modelo` al dar de alta; `PATCH` sin nada; campo que no va; `activo` no booleano                                                                  |
 | `400`  | `subidaId` que no es de esta máquina/empresa, ya usado, caducado, o cuyo archivo no llegó                                                                               |
 | `401`  | Sin sesión                                                                                                                                                              |
-| `403`  | Escribir sin `manageProjects` (`rh_consulta`)                                                                                                                           |
+| `403`  | Leer sin `viewMachines` / `viewMachineIncidents`; escribir sin `manageMachines`, `assignMachines`, `manageMachineIncidents` o `manageIncidentTypes` (`rh_consulta`)     |
 | `404`  | Empresa o máquina fuera de alcance; `GET …/imagen` sin foto                                                                                                             |
 | `400`  | Asignar: sin `empleadoId`; a alguien de baja; a alguien sin obra en esa empresa; a una obra donde no está; a una máquina de baja; fecha anterior a su entrada a la obra |
 | `400`  | `OBRA_REQUERIDA` — está en varias obras y no se dijo en cuál. Trae `data.obras`                                                                                         |

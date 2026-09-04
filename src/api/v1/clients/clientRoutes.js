@@ -29,14 +29,21 @@ router.use(protect, requirePasswordDefinitiva, applyScope)
  * confirmada con Urbacames). `rh_consulta` no. Como en el personal, quien puede
  * crear puede también corregir y desactivar.
  *
- * Leer: cualquiera con sesión — el catálogo puebla los selectores de proyectos y
- * carteras.
+ * Desde D-92 leer también es una casilla, y los registros de obra tienen la
+ * suya: el contador los captura sin poder dar de alta clientes.
  */
+const verClientes = requireCapability(CAPABILITIES.VIEW_CLIENTS)
 const administrarClientes = requireCapability(CAPABILITIES.MANAGE_CLIENTS)
+const administrarRegistrosObra = requireCapability(CAPABILITIES.MANAGE_WORK_REGISTRIES)
 
 router
   .route('/')
-  .get(listClientsValidation, validateRequest, asyncHandler(clientController.list))
+  .get(
+    verClientes,
+    listClientsValidation,
+    validateRequest,
+    asyncHandler(clientController.list)
+  )
   .post(
     administrarClientes,
     createClientValidation,
@@ -46,7 +53,12 @@ router
 
 router
   .route('/:id')
-  .get(clientIdValidation, validateRequest, asyncHandler(clientController.getById))
+  .get(
+    verClientes,
+    clientIdValidation,
+    validateRequest,
+    asyncHandler(clientController.getById)
+  )
   .patch(
     administrarClientes,
     updateClientValidation,
@@ -66,8 +78,9 @@ router.patch(
  * Registros de obra del cliente (D-66). Sub-recurso, igual que los registros
  * patronales bajo la empresa: no tienen vida fuera de su cliente.
  *
- * Mismo permiso que administrar clientes —`rh_admin` y `jefe_area`—, no el de
- * plataforma: son dato operativo del cliente, no configuración del grupo.
+ * Su propia casilla desde D-92 (`MANAGE_WORK_REGISTRIES`), que nació con el
+ * mismo reparto que administrar clientes —`rh_admin` y `jefe_area`— y no con el
+ * de plataforma: son dato operativo del cliente, no configuración del grupo.
  */
 /*
  * `recibirArchivo` va antes de las validaciones porque es quien llena
@@ -77,7 +90,7 @@ router.patch(
  */
 router.post(
   '/:id/registros-obra',
-  administrarClientes,
+  administrarRegistrosObra,
   recibirArchivo,
   addConstructionRegistrationValidation,
   validateRequest,
@@ -86,7 +99,7 @@ router.post(
 
 router.patch(
   '/:id/registros-obra/:roId',
-  administrarClientes,
+  administrarRegistrosObra,
   recibirArchivo,
   updateConstructionRegistrationValidation,
   validateRequest,
@@ -94,11 +107,12 @@ router.patch(
 )
 
 /*
- * Abrir el archivo del registro. Sólo pide sesión y alcance —lo mismo que ver
- * el cliente—: quien puede leer el número puede ver el papel que lo respalda.
+ * Abrir el archivo del registro. No pide más que ver el cliente: quien puede
+ * leer el número puede ver el papel que lo respalda.
  */
 router.get(
   '/:id/registros-obra/:roId/archivo',
+  verClientes,
   constructionRegistrationFileValidation,
   validateRequest,
   asyncHandler(clientController.urlArchivoRegistroObra)
@@ -106,7 +120,7 @@ router.get(
 
 router.patch(
   '/:id/registros-obra/:roId/estado',
-  administrarClientes,
+  administrarRegistrosObra,
   constructionRegistrationEstadoValidation,
   validateRequest,
   asyncHandler(clientController.setEstadoRegistroObra)

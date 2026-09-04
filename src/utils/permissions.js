@@ -1,143 +1,527 @@
 /**
- * Matriz de permisos (modelo-datos §8.2). Fuente única de verdad del servidor.
+ * Catálogo de permisos y matriz por nivel de acceso (modelo-datos §8.2). Fuente
+ * única de verdad del servidor.
  *
  * El front tiene la misma matriz para apagar botones, pero **la autorización real
  * es de aquí**.
  *
- * Tres clases de valor, y la diferencia importa:
+ * # Un permiso por sección, y **ver también es un permiso** (D-92)
+ *
+ * Antes eran veinte capacidades sueltas y ocho secciones que **no comprobaban
+ * nada para leerse**: proyectos, contratos, maquinaria, incidencias, clientes,
+ * empresas, el personal de la obra y la importación de nómina las veía cualquiera
+ * con sesión. Y `manageProjects` autorizaba, además de los proyectos, los
+ * contratos, el SIROC, la maquinaria, las asignaciones, las incidencias y su
+ * catálogo de tipos: quien podía lo uno podía lo otro, forzosamente.
+ *
+ * Ahora cada sección tiene su `viewX` y cada acción su `manageX`, y son 40
+ * casillas. El reparto **no cambió el comportamiento de nadie**: los nueve `view`
+ * nuevos nacieron encendidos para los tres niveles —porque leer sólo pedía
+ * sesión— y los que salieron de `manageProjects`, `manageClients` y
+ * `manageCompanies` heredaron su fila tal cual. `tests/unitarias/permissionsParity.test.js`
+ * congela la matriz anterior y falla si alguna respuesta se movió.
+ *
+ * # Los metadatos son para la pantalla, no para el servidor
+ *
+ * `seccion`, `subseccion` y `etiqueta` los usa el front para agrupar las casillas
+ * al armar un rol; `requiere` es lo que le deja avisar «para modificar hay que
+ * poder ver» sin adivinarlo. El servidor **no** los interpreta: `requiere` no se
+ * comprueba al autorizar —cada ruta pide la casilla que le toca— sino al guardar
+ * un rol (tarea del catálogo de roles).
+ *
+ * # Tres clases de valor, y la diferencia importa
+ *
  * - `true`  — permitido sin más.
  * - `'own_area'` — permitido, pero acotado a sus áreas dentro de cada empresa.
  *   No es un booleano: es un permiso con filtro, y se traduce a `req.areasPorEmpresa`.
+ *   El filtro cuelga de `viewEmployees`: es la casilla que consultan
+ *   `scopeMiddleware` y `employeeService`. Las demás lo llevan porque describen
+ *   la verdad —el jefe de área ve el expediente y las alertas de SU gente—, no
+ *   porque cada una filtre por su cuenta.
  * - `'global'` — exige además `acceso.alcanceGlobal` (administrador de
  *   plataforma). Es lo que protege los catálogos compartidos: dar de alta una
  *   persona o un cliente afecta a TODAS las empresas del grupo, así que no puede
  *   hacerlo el administrador de una sola.
  */
-const CAPABILITIES = Object.freeze({
-  VIEW_EMPLOYEES: 'viewEmployees',
-  /**
-   * Dar de baja del sistema (y reactivar). Sigue siendo exclusivo de `rh_admin`:
-   * sacar a alguien del sistema no es lo mismo que corregir sus datos.
-   */
-  DEACTIVATE_EMPLOYEES: 'deactivateEmployees',
-  /** Crear **y editar** personal de obra. Los tres niveles pueden. */
-  MANAGE_FIELD_EMPLOYEES: 'manageFieldEmployees',
-  /** Crear **y editar** personal administrativo. Sólo `rh_admin`. */
-  MANAGE_ADMIN_EMPLOYEES: 'manageAdminEmployees',
-  MANAGE_AFFILIATIONS: 'manageAffiliations',
-  UPLOAD_DOCUMENTS: 'uploadDocuments',
-  REVIEW_DOCUMENTS: 'reviewDocuments',
-  OPEN_SENSITIVE_DOCUMENTS: 'openSensitiveDocuments',
-  MANAGE_PROJECTS: 'manageProjects',
-  ASSIGN_TO_PROJECTS: 'assignToProjects',
-  /**
-   * Alta, edición y baja de clientes del catálogo global. Como en el personal,
-   * quien puede crear puede también corregir: `rh_admin` y `jefe_area`.
-   */
-  MANAGE_CLIENTS: 'manageClients',
-  /** Vincular un cliente a la cartera de una empresa propia. */
-  MANAGE_CLIENT_PORTFOLIO: 'manageClientPortfolio',
-  MANAGE_TEMPLATES: 'manageTemplates',
-  GENERATE_REPORTS: 'generateReports',
-  MANAGE_ACCESS: 'manageAccess',
-  /**
-   * Decir **quién dirige qué área** en cada empresa (D-60).
-   *
-   * Va aparte de `MANAGE_AFFILIATIONS` aunque se guarde en la adscripción: no es
-   * un dato de la relación laboral, es **quién ve a quién**. Está al lado de
-   * `MANAGE_ACCESS` porque es de la misma naturaleza —reparte visibilidad— y por
-   * eso es exclusivo de `rh_admin`.
-   */
-  MANAGE_AREA_LEADERSHIP: 'manageAreaLeadership',
-  /** Crear empresas y categorías: afecta a todo el grupo. Exige `alcanceGlobal`. */
-  MANAGE_COMPANIES: 'manageCompanies',
-  MANAGE_CATEGORIES: 'manageCategories',
-  /** Crear, renombrar y dar de baja áreas del catálogo. Exige `alcanceGlobal`. */
-  MANAGE_AREAS: 'manageAreas',
-  /**
-   * Dar de baja las áreas **temporales** que deja el archivo de nómina — casi
-   * siempre una obra que terminó (D-58).
-   *
-   * Va aparte de `MANAGE_AREAS` a propósito: quien sabe que la obra acabó es
-   * RH, no el administrador de plataforma, y obligarles a pedírselo dejaría el
-   * catálogo lleno de obras viejas. No alcanza para tocar el resto del catálogo.
-   */
-  CLOSE_TEMPORARY_AREAS: 'closeTemporaryAreas'
-})
+
+/**
+ * Las 40 casillas, en el orden en que se pintan.
+ *
+ * `clave` es lo que viaja en el contrato y lo que compara el servidor; `etiqueta`
+ * es lo único que se muestra, y por eso va en español (decisión del 4 sept 2026:
+ * claves en inglés, etiquetas del catálogo).
+ */
+// prettier-ignore -- una casilla por renglón se lee como la tabla que es.
+const PERMISSIONS = Object.freeze([
+  // ── Personal ───────────────────────────────────────────────────────────────
+  {
+    clave: 'viewEmployees',
+    etiqueta: 'Ver el personal',
+    seccion: 'personal',
+    subseccion: 'empleados',
+    requiere: []
+  },
+  {
+    clave: 'manageFieldEmployees',
+    etiqueta: 'Dar de alta y editar personal de obra',
+    seccion: 'personal',
+    subseccion: 'empleados',
+    requiere: ['viewEmployees']
+  },
+  {
+    clave: 'manageAdminEmployees',
+    etiqueta: 'Dar de alta y editar personal administrativo',
+    seccion: 'personal',
+    subseccion: 'empleados',
+    requiere: ['viewEmployees']
+  },
+  {
+    clave: 'deactivateEmployees',
+    etiqueta: 'Dar de baja del sistema',
+    seccion: 'personal',
+    subseccion: 'empleados',
+    requiere: ['viewEmployees']
+  },
+  {
+    clave: 'importEmployees',
+    etiqueta: 'Importar el archivo de nómina',
+    seccion: 'personal',
+    subseccion: 'empleados',
+    requiere: ['viewEmployees']
+  },
+  {
+    clave: 'viewAffiliations',
+    etiqueta: 'Ver las adscripciones',
+    seccion: 'personal',
+    subseccion: 'adscripciones',
+    requiere: ['viewEmployees']
+  },
+  {
+    clave: 'manageAffiliations',
+    etiqueta: 'Adscribir a una empresa y editar la relación laboral',
+    seccion: 'personal',
+    subseccion: 'adscripciones',
+    requiere: ['viewAffiliations']
+  },
+  {
+    clave: 'manageAreaLeadership',
+    etiqueta: 'Decir quién dirige cada área',
+    seccion: 'personal',
+    subseccion: 'adscripciones',
+    requiere: ['viewAffiliations']
+  },
+
+  // ── Expedientes ────────────────────────────────────────────────────────────
+  {
+    clave: 'viewRecords',
+    etiqueta: 'Ver el expediente',
+    seccion: 'expedientes',
+    subseccion: null,
+    requiere: ['viewEmployees']
+  },
+  {
+    clave: 'uploadDocuments',
+    etiqueta: 'Subir documentos',
+    seccion: 'expedientes',
+    subseccion: null,
+    requiere: ['viewRecords']
+  },
+  {
+    clave: 'reviewDocuments',
+    etiqueta: 'Validar y rechazar documentos',
+    seccion: 'expedientes',
+    subseccion: null,
+    requiere: ['viewRecords']
+  },
+  {
+    clave: 'openSensitiveDocuments',
+    etiqueta: 'Abrir los documentos sensibles',
+    seccion: 'expedientes',
+    subseccion: null,
+    requiere: ['viewRecords']
+  },
+
+  // ── Alertas ────────────────────────────────────────────────────────────────
+  {
+    clave: 'viewAlerts',
+    etiqueta: 'Ver la bandeja de alertas',
+    seccion: 'alertas',
+    subseccion: null,
+    requiere: ['viewEmployees']
+  },
+
+  // ── Proyectos ──────────────────────────────────────────────────────────────
+  {
+    clave: 'viewProjects',
+    etiqueta: 'Ver las obras',
+    seccion: 'proyectos',
+    subseccion: null,
+    requiere: []
+  },
+  {
+    clave: 'manageProjects',
+    etiqueta: 'Crear y editar obras',
+    seccion: 'proyectos',
+    subseccion: null,
+    requiere: ['viewProjects']
+  },
+  {
+    clave: 'viewProjectStaff',
+    etiqueta: 'Ver el personal de la obra',
+    seccion: 'proyectos',
+    subseccion: 'personal',
+    requiere: ['viewProjects']
+  },
+  {
+    clave: 'assignToProjects',
+    etiqueta: 'Asignar personal a la obra',
+    seccion: 'proyectos',
+    subseccion: 'personal',
+    requiere: ['viewProjectStaff', 'viewEmployees']
+  },
+
+  // ── Contratos ──────────────────────────────────────────────────────────────
+  {
+    clave: 'viewContracts',
+    etiqueta: 'Ver los contratos y sus montos',
+    seccion: 'contratos',
+    subseccion: null,
+    requiere: ['viewProjects']
+  },
+  {
+    clave: 'manageContracts',
+    etiqueta: 'Registrar y modificar contratos',
+    seccion: 'contratos',
+    subseccion: null,
+    requiere: ['viewContracts']
+  },
+  {
+    clave: 'viewSiroc',
+    etiqueta: 'Ver el SIROC y sus reportes bimestrales',
+    seccion: 'contratos',
+    subseccion: 'siroc',
+    requiere: ['viewContracts']
+  },
+  {
+    clave: 'manageSiroc',
+    etiqueta: 'Registrar el SIROC y sus reportes bimestrales',
+    seccion: 'contratos',
+    subseccion: 'siroc',
+    requiere: ['viewSiroc']
+  },
+
+  // ── Maquinaria ─────────────────────────────────────────────────────────────
+  {
+    clave: 'viewMachines',
+    etiqueta: 'Ver la maquinaria',
+    seccion: 'maquinaria',
+    subseccion: null,
+    requiere: []
+  },
+  {
+    clave: 'manageMachines',
+    etiqueta: 'Dar de alta y editar máquinas',
+    seccion: 'maquinaria',
+    subseccion: null,
+    requiere: ['viewMachines']
+  },
+  {
+    clave: 'assignMachines',
+    etiqueta: 'Asignar y devolver máquinas',
+    seccion: 'maquinaria',
+    subseccion: null,
+    requiere: ['viewMachines']
+  },
+  {
+    clave: 'viewMachineIncidents',
+    etiqueta: 'Ver las incidencias',
+    seccion: 'maquinaria',
+    subseccion: 'incidencias',
+    requiere: ['viewMachines']
+  },
+  {
+    clave: 'manageMachineIncidents',
+    etiqueta: 'Levantar y resolver incidencias',
+    seccion: 'maquinaria',
+    subseccion: 'incidencias',
+    requiere: ['viewMachineIncidents']
+  },
+  {
+    clave: 'manageIncidentTypes',
+    etiqueta: 'Administrar el catálogo de tipos de incidencia',
+    seccion: 'maquinaria',
+    subseccion: 'incidencias',
+    requiere: ['viewMachineIncidents']
+  },
+
+  // ── Clientes ───────────────────────────────────────────────────────────────
+  {
+    clave: 'viewClients',
+    etiqueta: 'Ver los clientes',
+    seccion: 'clientes',
+    subseccion: null,
+    requiere: []
+  },
+  {
+    clave: 'manageClients',
+    etiqueta: 'Dar de alta y editar clientes',
+    seccion: 'clientes',
+    subseccion: null,
+    requiere: ['viewClients']
+  },
+  {
+    clave: 'manageClientPortfolio',
+    etiqueta: 'Vincular clientes a la cartera de una empresa',
+    seccion: 'clientes',
+    subseccion: null,
+    requiere: ['viewClients']
+  },
+  {
+    clave: 'manageWorkRegistries',
+    etiqueta: 'Registrar los registros de obra',
+    seccion: 'clientes',
+    subseccion: 'registros_obra',
+    requiere: ['viewClients']
+  },
+
+  // ── Empresas ───────────────────────────────────────────────────────────────
+  {
+    clave: 'viewCompanies',
+    etiqueta: 'Ver las empresas',
+    seccion: 'empresas',
+    subseccion: null,
+    requiere: []
+  },
+  {
+    clave: 'manageCompanies',
+    etiqueta: 'Dar de alta y editar empresas',
+    seccion: 'empresas',
+    subseccion: null,
+    requiere: ['viewCompanies']
+  },
+  {
+    clave: 'manageEmployerRegistries',
+    etiqueta: 'Administrar los registros patronales',
+    seccion: 'empresas',
+    subseccion: 'registros_patronales',
+    requiere: ['viewCompanies']
+  },
+
+  // ── Catálogos del grupo ────────────────────────────────────────────────────
+  {
+    clave: 'manageAreas',
+    etiqueta: 'Administrar el catálogo de áreas',
+    seccion: 'catalogos',
+    subseccion: null,
+    requiere: []
+  },
+  {
+    clave: 'closeTemporaryAreas',
+    etiqueta: 'Dar de baja las áreas temporales',
+    seccion: 'catalogos',
+    subseccion: null,
+    requiere: []
+  },
+  {
+    clave: 'manageCategories',
+    etiqueta: 'Administrar el catálogo de puestos',
+    seccion: 'catalogos',
+    subseccion: null,
+    requiere: []
+  },
+
+  // ── Plataforma ─────────────────────────────────────────────────────────────
+  {
+    clave: 'manageAccess',
+    etiqueta: 'Dar y quitar accesos a la plataforma',
+    seccion: 'plataforma',
+    subseccion: null,
+    requiere: ['viewEmployees']
+  },
+  {
+    clave: 'manageTemplates',
+    etiqueta: 'Administrar las plantillas de checklist',
+    seccion: 'plataforma',
+    subseccion: null,
+    requiere: []
+  },
+  {
+    clave: 'generateReports',
+    etiqueta: 'Generar reportes',
+    seccion: 'plataforma',
+    subseccion: null,
+    requiere: ['viewEmployees']
+  }
+])
+
+/**
+ * Las secciones, en orden y sin repetir. Es lo que agrupa la pantalla de roles.
+ */
+const PERMISSION_SECTIONS = Object.freeze([
+  { clave: 'personal', etiqueta: 'Personal' },
+  { clave: 'expedientes', etiqueta: 'Expedientes' },
+  { clave: 'alertas', etiqueta: 'Alertas' },
+  { clave: 'proyectos', etiqueta: 'Obras' },
+  { clave: 'contratos', etiqueta: 'Contratos y SIROC' },
+  { clave: 'maquinaria', etiqueta: 'Maquinaria' },
+  { clave: 'clientes', etiqueta: 'Clientes' },
+  { clave: 'empresas', etiqueta: 'Empresas' },
+  { clave: 'catalogos', etiqueta: 'Catálogos del grupo' },
+  { clave: 'plataforma', etiqueta: 'Plataforma' }
+])
+
+/**
+ * `CAPABILITIES` se **deriva** del catálogo (`viewEmployees` → `VIEW_EMPLOYEES`),
+ * no se escribe aparte: dos listas a mano se desincronizan, y ésta es justo la
+ * que usan las rutas.
+ */
+const CAPABILITIES = Object.freeze(
+  Object.fromEntries(
+    PERMISSIONS.map(({ clave }) => [
+      clave.replace(/[A-Z]/g, (letra) => `_${letra}`).toUpperCase(),
+      clave
+    ])
+  )
+)
+
+/** Las claves, en el orden del catálogo. */
+const PERMISSION_KEYS = Object.freeze(PERMISSIONS.map(({ clave }) => clave))
 
 const PERMISSION_MATRIX = Object.freeze({
   rh_admin: Object.freeze({
     viewEmployees: true,
-    deactivateEmployees: true,
     manageFieldEmployees: true,
     manageAdminEmployees: true,
+    deactivateEmployees: true,
+    importEmployees: true,
+    viewAffiliations: true,
     manageAffiliations: true,
+    manageAreaLeadership: true,
+    viewRecords: true,
     uploadDocuments: true,
     reviewDocuments: true,
     openSensitiveDocuments: true,
+    viewAlerts: true,
+    viewProjects: true,
     manageProjects: true,
+    viewProjectStaff: true,
     assignToProjects: true,
+    viewContracts: true,
+    manageContracts: true,
+    viewSiroc: true,
+    manageSiroc: true,
+    viewMachines: true,
+    manageMachines: true,
+    assignMachines: true,
+    viewMachineIncidents: true,
+    manageMachineIncidents: true,
+    manageIncidentTypes: true,
+    viewClients: true,
     manageClients: true,
     manageClientPortfolio: true,
-    manageTemplates: true,
-    generateReports: true,
-    manageAccess: true,
-    manageAreaLeadership: true,
+    manageWorkRegistries: true,
+    viewCompanies: true,
     manageCompanies: 'global',
-    manageCategories: 'global',
+    manageEmployerRegistries: 'global',
     manageAreas: 'global',
-    closeTemporaryAreas: true
+    closeTemporaryAreas: true,
+    manageCategories: 'global',
+    manageAccess: true,
+    manageTemplates: true,
+    generateReports: true
   }),
   rh_consulta: Object.freeze({
     viewEmployees: true,
-    deactivateEmployees: false,
     // Corrección confirmada con Urbacames: el "administrador analista" da de
     // alta personal de obra, que es la mayor parte del alta diaria, y por lo
     // tanto también lo edita.
     manageFieldEmployees: true,
     manageAdminEmployees: false,
+    deactivateEmployees: false,
+    // La importación exigía `manageAffiliations` Y `manageAdminEmployees` a la
+    // vez, y la analista no tiene el primero: sigue sin poder importar.
+    importEmployees: false,
+    viewAffiliations: true,
     manageAffiliations: false,
+    manageAreaLeadership: false,
+    viewRecords: true,
     uploadDocuments: true,
     // Corrección confirmada con Urbacames (D-44): la analista también revisa lo
     // que ella misma sube, no sólo `rh_admin`.
     reviewDocuments: true,
     openSensitiveDocuments: true,
+    viewAlerts: true,
+    viewProjects: true,
     manageProjects: false,
+    viewProjectStaff: true,
     assignToProjects: false,
+    viewContracts: true,
+    manageContracts: false,
+    viewSiroc: true,
+    manageSiroc: false,
+    viewMachines: true,
+    manageMachines: false,
+    assignMachines: false,
+    viewMachineIncidents: true,
+    manageMachineIncidents: false,
+    manageIncidentTypes: false,
+    viewClients: true,
     manageClients: false,
     manageClientPortfolio: false,
-    manageTemplates: false,
-    generateReports: true,
-    manageAccess: false,
-    manageAreaLeadership: false,
+    manageWorkRegistries: false,
+    viewCompanies: true,
     manageCompanies: false,
-    manageCategories: false,
+    manageEmployerRegistries: false,
     manageAreas: false,
     // Cierra las obras terminadas que deja el archivo: es trabajo suyo (D-58).
-    closeTemporaryAreas: true
+    closeTemporaryAreas: true,
+    manageCategories: false,
+    manageAccess: false,
+    manageTemplates: false,
+    generateReports: true
   }),
   jefe_area: Object.freeze({
     viewEmployees: 'own_area',
-    deactivateEmployees: false,
     manageFieldEmployees: true,
     manageAdminEmployees: false,
+    deactivateEmployees: false,
+    importEmployees: false,
+    viewAffiliations: 'own_area',
     manageAffiliations: false,
+    manageAreaLeadership: false,
+    viewRecords: 'own_area',
     uploadDocuments: false,
     reviewDocuments: false,
     openSensitiveDocuments: false,
+    viewAlerts: 'own_area',
+    viewProjects: true,
     manageProjects: true,
+    viewProjectStaff: true,
     assignToProjects: true,
+    viewContracts: true,
+    manageContracts: true,
+    viewSiroc: true,
+    manageSiroc: true,
+    viewMachines: true,
+    manageMachines: true,
+    assignMachines: true,
+    viewMachineIncidents: true,
+    manageMachineIncidents: true,
+    manageIncidentTypes: true,
+    viewClients: true,
     // También da de alta clientes y los vincula a la cartera de SUS empresas.
     manageClients: true,
     manageClientPortfolio: true,
-    manageTemplates: false,
-    generateReports: false,
-    manageAccess: false,
-    manageAreaLeadership: false,
+    manageWorkRegistries: true,
+    viewCompanies: true,
     manageCompanies: false,
-    manageCategories: false,
+    manageEmployerRegistries: false,
     manageAreas: false,
-    closeTemporaryAreas: false
+    closeTemporaryAreas: false,
+    manageCategories: false,
+    manageAccess: false,
+    manageTemplates: false,
+    generateReports: false
   })
 })
 
@@ -195,6 +579,9 @@ function isPlatformAdmin(acceso) {
 }
 
 module.exports = {
+  PERMISSIONS,
+  PERMISSION_SECTIONS,
+  PERMISSION_KEYS,
   CAPABILITIES,
   PERMISSION_MATRIX,
   can,

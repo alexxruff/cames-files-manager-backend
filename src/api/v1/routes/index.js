@@ -25,6 +25,7 @@ const recordRoutes = require('../records/recordRoutes')
 const affiliationRoutes = require('../affiliations/affiliationRoutes')
 const alertRoutes = require('../alerts/alertRoutes')
 const uploadRoutes = require('../uploads/uploadRoutes')
+const permissionRoutes = require('../permissions/permissionRoutes')
 const goneRoutes = require('../users/goneRoutes')
 
 const router = express.Router()
@@ -157,6 +158,7 @@ router.use('/expedientes', recordRoutes)
 router.use('/adscripciones', affiliationRoutes)
 router.use('/alertas', alertRoutes)
 router.use('/subidas', uploadRoutes)
+router.use('/permisos', permissionRoutes)
 
 // Movida al modelo nuevo: responde 410 con la ruta que la sustituye.
 router.use('/usuarios', goneRoutes)

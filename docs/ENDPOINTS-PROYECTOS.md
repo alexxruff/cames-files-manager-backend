@@ -811,10 +811,10 @@ El **convenio modificatorio** de una modificación concreta, direccionada por
 **posición** —el `indice` que viene en cada entrada de `historia`—.
 
 - `GET` devuelve `{ "archivo": { …, "url" } }` con un enlace fresco;
-  `?descargar=true` fuerza la descarga. Sólo pide sesión y alcance.
+  `?descargar=true` fuerza la descarga. Pide `viewContracts` (D-92).
 - `PUT` le pone el convenio a una modificación **ya capturada**, o reemplaza el
   que tenga, sin tocar fechas ni monto. `multipart` campo `archivo`, o
-  `subidaId`. Pide gestionar proyectos.
+  `subidaId`. Pide `manageContracts`.
 
 `404` `Esa modificación no existe` si el índice no existe, y
 `Esa modificación no tiene convenio adjunto` si aún no le han subido el papel.

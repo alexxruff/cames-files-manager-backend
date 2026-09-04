@@ -1202,6 +1202,64 @@ bucle.
   permisos del proyecto y una prueba la compara celda por celda contra el código.
   La columna «Permiso» de la tabla de abajo dice qué hace falta para cada ruta;
   el detalle por nivel, en §8.2.
+- **Sin el permiso, 403; fuera de alcance, 404.** Son dos respuestas distintas a
+  propósito (D-92): «no puedes hacer esto» y «esto no es tuyo». El mensaje del
+  403 es siempre `No tienes permiso para realizar esta acción`.
+
+#### El catálogo de permisos (D-92)
+
+Son **40 casillas en diez secciones**, y **ver es una de ellas**: proyectos,
+contratos, SIROC, maquinaria, incidencias, clientes, empresas y el personal de la
+obra ya no se leen con sólo tener sesión. Nada cambió para los tres niveles de
+hoy —las casillas de ver nacieron encendidas para los tres—, pero **una ruta que
+antes sólo pedía sesión ahora puede responder 403**, y el front debe tratarlo.
+
+```
+GET /api/v1/permisos            → 200 (sólo sesión)
+```
+
+```jsonc
+{
+  "status": "success",
+  "data": {
+    "permisos": [
+      {
+        "clave": "viewMachines",
+        "etiqueta": "Ver la maquinaria",
+        "seccion": "maquinaria",
+        "subseccion": null,
+        "requiere": []
+      },
+      {
+        "clave": "manageMachineIncidents",
+        "etiqueta": "Levantar y resolver incidencias",
+        "seccion": "maquinaria",
+        "subseccion": "incidencias",
+        "requiere": ["viewMachineIncidents"]
+      }
+      // … 40 en total, en el orden en que se pintan
+    ],
+    "secciones": [
+      { "clave": "personal", "etiqueta": "Personal" },
+      { "clave": "maquinaria", "etiqueta": "Maquinaria" }
+      // … 10 en total, en orden
+    ],
+    "tengo": ["viewEmployees", "viewMachines", "manageAccess"]
+  }
+}
+```
+
+- `seccion` y `subseccion` son para **agrupar** las casillas en la pantalla;
+  `subseccion` es `null` cuando la casilla cuelga directo de la sección.
+- `requiere` son las casillas que ésta da por supuestas, para **avisar sin
+  adivinarlo**: marcar «modificar» sin «ver» no tiene sentido. El servidor **no
+  lo comprueba al autorizar** —cada ruta pide la suya—; se comprobará al guardar
+  un rol.
+- `tengo` son las casillas de **quien pregunta**, ya resueltas: incluye el efecto
+  de `alcanceGlobal`. Es lo que debe apagar el menú y los botones, **en lugar de
+  la copia de la matriz que el front mantiene a mano** — hoy las dos listas ya
+  difieren en un caso.
+- Es un catálogo **estático**: sale del código. No hay alta, edición ni baja.
 
 ## Pendiente
 

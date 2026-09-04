@@ -35,13 +35,31 @@ const router = express.Router()
 // `requirePasswordDefinitiva` va aquí y no en `protect`: ver D-49.
 router.use(protect, requirePasswordDefinitiva, applyScope)
 
-// Proyectos: `rh_admin` y `jefe_area` (matriz §8.2). Leer, cualquiera con sesión.
+/*
+ * Cuatro casillas, no una (D-92). `MANAGE_PROJECTS` autorizaba antes también los
+ * contratos, el SIROC y toda la maquinaria; ahora se queda sólo con la obra, y
+ * **ver la obra es su propio permiso**, que antes no se comprobaba.
+ *
+ * El personal de la obra va aparte de la obra a propósito: quien maneja
+ * maquinaria necesita saber quién está en cada frente sin poder editar el
+ * proyecto, y quien planea obras no tiene por qué ver la plantilla.
+ */
+const verProyectos = requireCapability(CAPABILITIES.VIEW_PROJECTS)
 const gestionarProyectos = requireCapability(CAPABILITIES.MANAGE_PROJECTS)
+const verPersonal = requireCapability(CAPABILITIES.VIEW_PROJECT_STAFF)
 const asignarPersonal = requireCapability(CAPABILITIES.ASSIGN_TO_PROJECTS)
+const verContratos = requireCapability(CAPABILITIES.VIEW_CONTRACTS)
+const gestionarContratos = requireCapability(CAPABILITIES.MANAGE_CONTRACTS)
+const verMaquinas = requireCapability(CAPABILITIES.VIEW_MACHINES)
 
 router
   .route('/')
-  .get(listProjectsValidation, validateRequest, asyncHandler(projectController.list))
+  .get(
+    verProyectos,
+    listProjectsValidation,
+    validateRequest,
+    asyncHandler(projectController.list)
+  )
   .post(
     gestionarProyectos,
     createProjectValidation,
@@ -51,7 +69,12 @@ router
 
 router
   .route('/:id')
-  .get(projectIdValidation, validateRequest, asyncHandler(projectController.getById))
+  .get(
+    verProyectos,
+    projectIdValidation,
+    validateRequest,
+    asyncHandler(projectController.getById)
+  )
   .patch(
     gestionarProyectos,
     updateProjectValidation,
@@ -88,6 +111,7 @@ router.post(
 router
   .route('/:id/asignaciones')
   .get(
+    verPersonal,
     listAssignmentsValidation,
     validateRequest,
     asyncHandler(assignmentController.listByProject)
@@ -113,12 +137,13 @@ router.get(
 router
   .route('/:id/contratos')
   .get(
+    verContratos,
     listContractsValidation,
     validateRequest,
     asyncHandler(contractController.listByProject)
   )
   .post(
-    gestionarProyectos,
+    gestionarContratos,
     // Multer primero: es quien llena `req.body` cuando viene como `multipart`.
     recibirArchivo,
     createContractValidation,
@@ -133,6 +158,7 @@ router
  */
 router.get(
   '/:id/maquinas',
+  verMaquinas,
   machinesByProjectValidation,
   validateRequest,
   asyncHandler(machineAssignmentController.deLaObra)

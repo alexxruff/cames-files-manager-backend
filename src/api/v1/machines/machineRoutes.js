@@ -32,18 +32,26 @@ const {
  * el catálogo es de ella; lo demás opera sobre la máquina, que ya se identifica
  * sola. Mismo reparto que contratos y asignaciones.
  *
- * Leer: cualquiera con sesión y alcance sobre la empresa. Escribir: la misma
- * capacidad que gestionar proyectos —la maquinaria es de la obra—.
+ * Cuatro casillas propias desde D-92: la maquinaria dejó de colgar de
+ * `MANAGE_PROJECTS` —quien podía editar una obra podía dar de alta máquinas— y
+ * de leerse con sólo tener sesión. Ver, administrar el catálogo, entregarlas y
+ * levantar incidencias se dan por separado: el contador ve la lista sin poder
+ * levantar nada, y el auxiliar la maneja entera sin tocar la obra.
  */
 const router = express.Router()
 
 // `requirePasswordDefinitiva` va aquí y no en `protect`: ver D-49.
 router.use(protect, requirePasswordDefinitiva, applyScope)
 
-const gestionarProyectos = requireCapability(CAPABILITIES.MANAGE_PROJECTS)
+const verMaquinas = requireCapability(CAPABILITIES.VIEW_MACHINES)
+const gestionarMaquinas = requireCapability(CAPABILITIES.MANAGE_MACHINES)
+const asignarMaquinas = requireCapability(CAPABILITIES.ASSIGN_MACHINES)
+const verIncidencias = requireCapability(CAPABILITIES.VIEW_MACHINE_INCIDENTS)
+const gestionarIncidencias = requireCapability(CAPABILITIES.MANAGE_MACHINE_INCIDENTS)
 
 router.get(
   '/:id',
+  verMaquinas,
   machineIdValidation,
   validateRequest,
   asyncHandler(machineController.getById)
@@ -56,7 +64,7 @@ router.get(
  */
 router.patch(
   '/:id',
-  gestionarProyectos,
+  gestionarMaquinas,
   recibirArchivo,
   updateMachineValidation,
   validateRequest,
@@ -65,19 +73,20 @@ router.patch(
 
 router.patch(
   '/:id/estado',
-  gestionarProyectos,
+  gestionarMaquinas,
   machineEstadoValidation,
   validateRequest,
   asyncHandler(machineController.setEstado)
 )
 
 /*
- * Abrir la foto. Sólo pide sesión y alcance —quien puede ver la máquina puede
- * ver su imagen—, y existe porque la URL que viaja en cada respuesta caduca a
+ * Abrir la foto. No pide más que ver la máquina —quien la ve puede ver su
+ * imagen—, y existe porque la URL que viaja en cada respuesta caduca a
  * los 10 minutos.
  */
 router.get(
   '/:id/imagen',
+  verMaquinas,
   machineImageValidation,
   validateRequest,
   asyncHandler(machineController.urlImagen)
@@ -96,7 +105,7 @@ router.get(
  */
 router.post(
   '/:id/asignacion',
-  gestionarProyectos,
+  asignarMaquinas,
   asignarMaquinaValidation,
   validateRequest,
   asyncHandler(machineAssignmentController.asignar)
@@ -104,7 +113,7 @@ router.post(
 
 router.post(
   '/:id/devolucion',
-  gestionarProyectos,
+  asignarMaquinas,
   devolverMaquinaValidation,
   validateRequest,
   asyncHandler(machineAssignmentController.devolver)
@@ -112,6 +121,7 @@ router.post(
 
 router.get(
   '/:id/historial',
+  verMaquinas,
   machineHistoryValidation,
   validateRequest,
   asyncHandler(machineAssignmentController.historial)
@@ -128,7 +138,7 @@ router.get(
  */
 router.post(
   '/:id/incidencias',
-  gestionarProyectos,
+  gestionarIncidencias,
   createIncidentValidation,
   validateRequest,
   asyncHandler(machineIncidentController.create)
@@ -136,6 +146,7 @@ router.post(
 
 router.get(
   '/:id/incidencias',
+  verIncidencias,
   listIncidentsValidation,
   validateRequest,
   asyncHandler(machineIncidentController.list)

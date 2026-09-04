@@ -39,8 +39,16 @@ const router = express.Router()
 // `requirePasswordDefinitiva` va aquí y no en `protect`: ver D-49.
 router.use(protect, requirePasswordDefinitiva, applyScope)
 
-// Los contratos son parte de gestionar el proyecto: misma capacidad.
-const gestionarProyectos = requireCapability(CAPABILITIES.MANAGE_PROJECTS)
+/*
+ * Cuatro casillas donde antes había una (D-92). El contrato y el SIROC dejaron
+ * de colgar de `MANAGE_PROJECTS` —que además abría la maquinaria entera— y de
+ * leerse con sólo tener sesión: ahora se puede dar el SIROC sin dar el contrato,
+ * y verlos sin poder tocarlos.
+ */
+const verContratos = requireCapability(CAPABILITIES.VIEW_CONTRACTS)
+const gestionarContratos = requireCapability(CAPABILITIES.MANAGE_CONTRACTS)
+const verSiroc = requireCapability(CAPABILITIES.VIEW_SIROC)
+const gestionarSiroc = requireCapability(CAPABILITIES.MANAGE_SIROC)
 
 /*
  * Editar un contrato **ya no existe** (D-90). Se confundía con modificarlo, que
@@ -70,7 +78,7 @@ router.patch('/:id', (req, res, next) => {
  */
 router.put(
   '/:id/archivo',
-  gestionarProyectos,
+  gestionarContratos,
   recibirArchivo,
   contractFileUploadValidation,
   validateRequest,
@@ -80,12 +88,12 @@ router.put(
 /*
  * Las modificaciones del contrato (D-90). Mismo reparto que los reportes
  * bimestrales del SIROC: se agregan, se deshace la última, y el papel de
- * cualquiera se lee con sesión y alcance y se reemplaza con la capacidad de
- * gestionar proyectos.
+ * cualquiera se lee con la casilla de ver contratos y se reemplaza con la de
+ * gestionarlos.
  */
 router.post(
   '/:id/modificaciones',
-  gestionarProyectos,
+  gestionarContratos,
   recibirArchivo,
   contractModificacionValidation,
   validateRequest,
@@ -93,7 +101,7 @@ router.post(
 )
 router.delete(
   '/:id/modificaciones/ultima',
-  gestionarProyectos,
+  gestionarContratos,
   contractIdValidation,
   validateRequest,
   asyncHandler(contractController.quitarUltimaModificacion)
@@ -101,12 +109,13 @@ router.delete(
 router
   .route('/:id/modificaciones/:indice/archivo')
   .get(
+    verContratos,
     contractModificacionFileValidation,
     validateRequest,
     asyncHandler(contractController.urlArchivoModificacion)
   )
   .put(
-    gestionarProyectos,
+    gestionarContratos,
     recibirArchivo,
     contractModificacionFileUploadValidation,
     validateRequest,
@@ -121,20 +130,20 @@ router
  */
 router.delete(
   '/:id',
-  gestionarProyectos,
+  gestionarContratos,
   contractIdValidation,
   validateRequest,
   asyncHandler(contractController.eliminar)
 )
 
 /*
- * Abrir el contrato escaneado. Como el papel del aviso: sólo pide sesión y
- * alcance —quien puede leer el contrato puede ver el documento que lo
- * respalda—, y existe porque la URL que viaja en cada respuesta caduca a los 10
- * minutos.
+ * Abrir el contrato escaneado. Como el papel del aviso: no pide más que ver el
+ * contrato —quien puede leerlo puede ver el documento que lo respalda—, y existe
+ * porque la URL que viaja en cada respuesta caduca a los 10 minutos.
  */
 router.get(
   '/:id/archivo',
+  verContratos,
   contractFileValidation,
   validateRequest,
   asyncHandler(contractController.urlArchivoContrato)
@@ -149,14 +158,14 @@ router.get(
 router
   .route('/:id/siroc')
   .put(
-    gestionarProyectos,
+    gestionarSiroc,
     recibirArchivo,
     setSirocValidation,
     validateRequest,
     asyncHandler(contractController.setSiroc)
   )
   .delete(
-    gestionarProyectos,
+    gestionarSiroc,
     contractIdValidation,
     validateRequest,
     asyncHandler(contractController.quitarSiroc)
@@ -169,7 +178,7 @@ router
  */
 router.post(
   '/:id/siroc/actualizaciones',
-  gestionarProyectos,
+  gestionarSiroc,
   recibirArchivo,
   sirocRenovacionValidation,
   validateRequest,
@@ -177,39 +186,40 @@ router.post(
 )
 router.delete(
   '/:id/siroc/actualizaciones/ultima',
-  gestionarProyectos,
+  gestionarSiroc,
   contractIdValidation,
   validateRequest,
   asyncHandler(contractController.quitarUltimaActualizacion)
 )
 
 /*
- * Abrir el papel del aviso. Sólo pide sesión y alcance —lo mismo que ver el
- * contrato—: quien puede leer el número del SIROC puede ver el papel que lo
- * respalda. La URL que viaja en cada respuesta caduca a los 10 minutos; esto
+ * Abrir el papel del aviso. No pide más que ver el SIROC: quien puede leer su
+ * número puede ver el papel que lo respalda. La URL que viaja en cada respuesta caduca a los 10 minutos; esto
  * pide una nueva sin recargar el proyecto entero.
  */
 router.get(
   '/:id/siroc/archivo',
+  verSiroc,
   sirocFileValidation,
   validateRequest,
   asyncHandler(contractController.urlArchivoSiroc)
 )
 /*
- * El archivo de una renovación se LEE con sesión y alcance, y se REEMPLAZA con
- * la misma capacidad que capturarla. El `PUT` está aquí y no en un `POST` nuevo
+ * El archivo de una renovación se LEE con la casilla de ver el SIROC, y se
+ * REEMPLAZA con la misma que capturarla. El `PUT` está aquí y no en un `POST` nuevo
  * porque el recurso es el archivo de esa posición y esto lo reemplaza entero: no
  * toca la fecha, la nota, el monto, el bimestre ni el orden (D-80, D-91).
  */
 router
   .route('/:id/siroc/actualizaciones/:indice/archivo')
   .get(
+    verSiroc,
     sirocUpdateFileValidation,
     validateRequest,
     asyncHandler(contractController.urlArchivoActualizacion)
   )
   .put(
-    gestionarProyectos,
+    gestionarSiroc,
     recibirArchivo,
     sirocUpdateFileUploadValidation,
     validateRequest,
@@ -218,14 +228,14 @@ router
 
 router.post(
   '/:id/finalizar',
-  gestionarProyectos,
+  gestionarContratos,
   contractIdValidation,
   validateRequest,
   asyncHandler(contractController.finalizar)
 )
 router.post(
   '/:id/reabrir',
-  gestionarProyectos,
+  gestionarContratos,
   contractIdValidation,
   validateRequest,
   asyncHandler(contractController.reabrir)
@@ -233,7 +243,7 @@ router.post(
 
 router.patch(
   '/:id/estado',
-  gestionarProyectos,
+  gestionarContratos,
   contractEstadoValidation,
   validateRequest,
   asyncHandler(contractController.setEstado)

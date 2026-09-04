@@ -23,11 +23,40 @@ function prefijoDeCapa(capa) {
 }
 
 /**
+ * Qué casilla exige cada MÉTODO de una ruta: `{ GET: ['viewMachines'], … }`.
+ *
+ * Por método y no por ruta porque `router.route('/x').get(…).post(…)` monta las
+ * dos cosas en la misma capa, y ver el catálogo de maquinaria no pide lo mismo
+ * que dar de alta una máquina. `requireCapability` cuelga la capacidad de la
+ * función que devuelve (D-92); esto sólo las recoge.
+ *
+ * Un método puede no tener ninguna: las públicas, y aquellas cuya casilla
+ * depende del cuerpo y la decide el servicio.
+ */
+function capacidadesDeRuta(route, metodos) {
+  const porMetodo = Object.fromEntries(metodos.map((m) => [m, []]))
+
+  for (const capa of route.stack || []) {
+    const capacidad = capa.handle?.capability
+    if (!capacidad) continue
+    // `router.all(…)` y los middlewares sin método declarado valen para todos.
+    const destinos = capa.method ? [capa.method.toUpperCase()] : metodos
+    for (const metodo of destinos) porMetodo[metodo]?.push(capacidad)
+  }
+
+  return porMetodo
+}
+
+/**
  * @param {object} router Router o app de Express.
  * @param {string} [prefijo]
- * @returns {Array<{metodos: string[], ruta: string}>}
+ * @param {{conCapacidades?: boolean}} [opciones] `conCapacidades` agrega qué
+ *   casilla exige cada ruta. Va apagado por omisión **a propósito**: el
+ *   inventario de `GET /api/v1` es público y no tiene por qué publicar la matriz
+ *   de permisos. Lo enciende `tests/unitarias/routeGuards.test.js`.
+ * @returns {Array<{metodos: string[], ruta: string, capacidades?: Record<string, string[]>}>}
  */
-function listRoutes(router, prefijo = '') {
+function listRoutes(router, prefijo = '', opciones = {}) {
   const stack = router?.stack || router?._router?.stack || []
   const rutas = []
 
@@ -39,9 +68,15 @@ function listRoutes(router, prefijo = '') {
         declarados.length > 0 ? declarados.map((m) => m.toUpperCase()).sort() : ['ALL']
       // Normaliza '/usuarios/' → '/usuarios'
       const ruta = (prefijo + capa.route.path).replace(/\/$/, '') || '/'
-      rutas.push({ metodos, ruta })
+      rutas.push({
+        metodos,
+        ruta,
+        ...(opciones.conCapacidades
+          ? { capacidades: capacidadesDeRuta(capa.route, metodos) }
+          : {})
+      })
     } else if (capa.handle?.stack) {
-      rutas.push(...listRoutes(capa.handle, prefijo + prefijoDeCapa(capa)))
+      rutas.push(...listRoutes(capa.handle, prefijo + prefijoDeCapa(capa), opciones))
     }
   }
 

@@ -34,6 +34,11 @@ const { can, CAPABILITIES } = require('../../../utils/permissions')
  * Qué exige cada destino: la capacidad, los ids obligatorios, y cómo se
  * comprueba que el recurso existe y es visible para quien pide.
  *
+ * **La capacidad es la MISMA que pide la ruta que después registra el adjunto**
+ * (D-92). Si aquí dijera menos, pedir el permiso de subida sería el rodeo para
+ * saltarse la casilla del recurso; si dijera más, el archivo subiría y la ruta
+ * lo rechazaría.
+ *
  * Cada comprobación reutiliza el servicio dueño del recurso, así que el alcance
  * se decide en un solo sitio: si mañana cambia ahí, cambia aquí.
  */
@@ -44,7 +49,7 @@ const DESTINOS = {
     comprobar: (ref, contexto) => recordService.porId(ref.expedienteId, contexto)
   },
   contrato: {
-    capacidad: CAPABILITIES.MANAGE_PROJECTS,
+    capacidad: CAPABILITIES.MANAGE_CONTRACTS,
     /*
      * Uno u otro, no los dos: el contrato NUEVO todavía no existe cuando se pide
      * el permiso —el papel viaja en el alta—, así que ahí el dueño es el
@@ -61,27 +66,27 @@ const DESTINOS = {
    * SIEMPRE existe: no se modifica un contrato que todavía no se ha capturado.
    */
   'contrato-modificacion': {
-    capacidad: CAPABILITIES.MANAGE_PROJECTS,
+    capacidad: CAPABILITIES.MANAGE_CONTRACTS,
     ids: ['contratoId'],
     comprobar: (ref, contexto) => contractService.assertVisible(ref.contratoId, contexto)
   },
   'siroc-aviso': {
-    capacidad: CAPABILITIES.MANAGE_PROJECTS,
+    capacidad: CAPABILITIES.MANAGE_SIROC,
     ids: ['contratoId'],
     comprobar: (ref, contexto) => contractService.assertVisible(ref.contratoId, contexto)
   },
   'siroc-actualizacion': {
-    capacidad: CAPABILITIES.MANAGE_PROJECTS,
+    capacidad: CAPABILITIES.MANAGE_SIROC,
     ids: ['contratoId'],
     comprobar: (ref, contexto) => contractService.assertVisible(ref.contratoId, contexto)
   },
   'registro-obra': {
-    capacidad: CAPABILITIES.MANAGE_CLIENTS,
+    capacidad: CAPABILITIES.MANAGE_WORK_REGISTRIES,
     ids: ['clienteId'],
     comprobar: (ref, contexto) => clientService.getById(ref.clienteId, contexto)
   },
   maquina: {
-    capacidad: CAPABILITIES.MANAGE_PROJECTS,
+    capacidad: CAPABILITIES.MANAGE_MACHINES,
     /*
      * Como en el contrato: la máquina NUEVA no existe cuando se pide el permiso
      * —la foto viaja en el alta—, así que ahí el dueño es la empresa. Al

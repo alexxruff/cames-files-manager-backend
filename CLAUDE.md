@@ -158,6 +158,8 @@ src/
     machineIncidents/   las incidencias de la máquina: quién la tenía ese día y
                         en qué obra sale de la historia, no se teclea (D-88)
     incidentTypes/      catálogo compartido de tipos de incidencia (D-88)
+    permissions/        el catálogo de los 40 permisos: qué casillas existen, a
+                        qué sección pertenecen y cuáles trae quien pregunta (D-92)
     assignments/        proyecto ↔ empleado; avisa si el registro patronal no
                         coincide y resuelve la trazabilidad (D-71)
     alerts/             bandeja derivada: documentos y cumpleaños (D-47)
@@ -234,6 +236,11 @@ imposible acabar con dos registros de la misma persona.
 - Fuera de alcance: **404, no 403**.
 - Permisos por capacidad: `requireCapability(CAPABILITIES.X)` contra
   `utils/permissions.js`. Los catálogos compartidos exigen además `alcanceGlobal`.
+- **Ver también es un permiso** (D-92): son **40 casillas en diez secciones**, y
+  ninguna sección se lee con sólo tener sesión —salvo `/areas` y `/categorias`,
+  que llenan los desplegables de todos los formularios—. Sin la casilla: **403**;
+  fuera de alcance: **404**. Al agregar una ruta, `tests/unitarias/routeGuards.test.js`
+  falla si se queda sin la suya.
 - Ninguna ruta pública salvo `POST /auth/login`, `GET /api/v1`, `/health` y
   `/ready`.
 

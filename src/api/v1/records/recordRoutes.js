@@ -23,7 +23,7 @@ router.use(protect, requirePasswordDefinitiva, applyScope)
 /** GET /expedientes — listado paginado (D-45). Mismos filtros que /empleados. */
 router.get(
   '/',
-  requireCapability(CAPABILITIES.VIEW_EMPLOYEES),
+  requireCapability(CAPABILITIES.VIEW_RECORDS),
   listRecordsValidation,
   validateRequest,
   asyncHandler(recordController.list)
@@ -31,7 +31,7 @@ router.get(
 
 router.get(
   '/:id',
-  requireCapability(CAPABILITIES.VIEW_EMPLOYEES),
+  requireCapability(CAPABILITIES.VIEW_RECORDS),
   recordIdValidation,
   validateRequest,
   asyncHandler(recordController.porId)
@@ -72,7 +72,7 @@ router.post(
  */
 router.get(
   '/:id/documentos/:tipo/versiones/:version/url',
-  requireCapability(CAPABILITIES.VIEW_EMPLOYEES),
+  requireCapability(CAPABILITIES.VIEW_RECORDS),
   documentVersionValidation,
   validateRequest,
   asyncHandler(recordController.urlDeVersion)

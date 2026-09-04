@@ -16,6 +16,10 @@ const {
  * Levantarlas y listarlas vive bajo la máquina (`/maquinas/:id/incidencias`),
  * porque son de ella; resolverla opera sobre la incidencia, que ya se identifica
  * sola. Mismo reparto que los contratos y la maquinaria.
+ *
+ * Resolver pide la misma casilla que levantar (`MANAGE_MACHINE_INCIDENTS`,
+ * D-92): son las dos mitades del mismo trabajo, y quien reporta la falla es
+ * quien dice cómo se arregló.
  */
 const router = express.Router()
 
@@ -24,7 +28,7 @@ router.use(protect, requirePasswordDefinitiva, applyScope)
 
 router.post(
   '/:id/resolucion',
-  requireCapability(CAPABILITIES.MANAGE_PROJECTS),
+  requireCapability(CAPABILITIES.MANAGE_MACHINE_INCIDENTS),
   resolveIncidentValidation,
   validateRequest,
   asyncHandler(machineIncidentController.resolver)

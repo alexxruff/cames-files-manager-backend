@@ -4411,3 +4411,131 @@ refrendos —es la forma de conservarlos cuando cambia el número (D-76)— y co
 sólo fecha, nota y archivo. Sin tocar eso, **corregir un dedazo del número habría
 borrado el monto y el bimestre de todos sus reportes**, en silencio. Ahora los
 copia también, y hay una prueba que lo fija.
+
+## D-92 · Un permiso por sección, y ver también es un permiso
+
+**Contexto.** Tarea #44, 4 sept 2026, a pedido de Urbacames
+(`cames-ops/plan/propuestas/2026-09-04-usuarios-con-permisos-por-seccion.md`).
+Se pidió poder crear más usuarios que los tres perfiles de RH que existen
+—contador, auxiliar de operaciones, los cuatro de Finanzas— y marcar al crearlos
+a qué secciones entra cada uno. Se revisaron seis perfiles contra el código y
+**tres eran imposibles**, cada uno por un motivo distinto. Esta decisión resuelve
+los dos primeros; el tercero —que los roles sean dato y no código— es la #45.
+
+### Ver no era un permiso, y esconder el menú no protege nada
+
+Ocho de las trece secciones **no comprobaban nada para leerse**: proyectos,
+contratos, SIROC, maquinaria, incidencias, clientes, empresas y el personal de la
+obra las veía cualquiera con sesión, dentro de sus empresas. Así que «el contador
+no entra a maquinaria» no se podía decir: no había permiso que apagar, y
+esconderlo del menú no lo protege porque la dirección sigue respondiendo.
+
+Ahora cada sección tiene su `viewX`. Son nueve casillas nuevas —`viewProjects`,
+`viewProjectStaff`, `viewContracts`, `viewSiroc`, `viewMachines`,
+`viewMachineIncidents`, `viewClients`, `viewCompanies`, más `viewAffiliations`—
+y dos que se separaron de `viewEmployees`: **`viewRecords` y `viewAlerts`**. Esas
+dos son las que hacen armable al auxiliar de operaciones, que ve los datos
+generales de una persona **pero no su expediente**.
+
+### Un solo permiso abría seis secciones
+
+`manageProjects` autorizaba, además de los proyectos, **los contratos, el SIROC,
+el catálogo de maquinaria, la asignación de máquinas, las incidencias y el
+catálogo de tipos**. Por eso el auxiliar de operaciones —que maneja maquinaria
+pero no edita proyectos— no se podía armar: quien podía lo uno podía lo otro,
+forzosamente. Y el contador que ve maquinaria pero no levanta incidencias,
+tampoco.
+
+Se partió en siete: `manageProjects` se queda **sólo con la obra**, y salen
+`manageContracts`, `manageSiroc`, `manageMachines`, `assignMachines`,
+`manageMachineIncidents` y `manageIncidentTypes`. Por lo mismo,
+`manageWorkRegistries` sale de `manageClients` y `manageEmployerRegistries` de
+`manageCompanies`. Y `importEmployees` reemplaza al par
+`MANAGE_AFFILIATIONS` + `MANAGE_ADMIN_EMPLOYEES` que se exigía junto: una casilla
+es una casilla, y un rol no se arma marcando dos cosas que juntas significan una
+tercera.
+
+Son **40 casillas en diez secciones**, y el reparto está en `modelo-datos.md`
+§8.2, que una prueba compara celda por celda contra el código.
+
+### Nadie ganó ni perdió nada, y hay una prueba que lo sostiene
+
+Era la condición de la tarea: partir los permisos **sin cambiarle el
+comportamiento a nadie**. La regla que se siguió es mecánica y no admite criterio:
+
+- Una casilla que **sale de otra** hereda su fila **con el valor exacto**, `'global'`
+  y `'own_area'` incluidos. `manageEmployerRegistries` sigue exigiendo
+  administrador de plataforma porque `manageCompanies` lo exigía.
+- Una casilla de **ver una sección que se leía libre** nace en `true` para los
+  tres niveles. Apagársela a alguien sería quitarle algo que hoy tiene.
+- `importEmployees` responde lo que respondían **las dos juntas**: sólo
+  `rh_admin`.
+
+`tests/unitarias/permissionsParity.test.js` **congela la matriz anterior entera**
+—los 20 × 3 valores escritos a mano— y el mapa de qué casilla heredó de cuál, y
+falla si una sola respuesta se movió. No se reescribe para que pase: si falla,
+o se rompió la paridad, o alguien decidió cambiar permisos y esa decisión se
+escribe aquí primero.
+
+Y `tests/unitarias/routeGuards.test.js` recorre el router y comprueba que
+**ninguna ruta se quedó sin casilla**, con una lista corta de excepciones que
+llevan escrito el motivo. Para eso `requireCapability` cuelga la capacidad de la
+función que devuelve: se puede leer desde fuera qué exige cada ruta, en vez de
+abrir los veinte archivos de rutas uno por uno.
+
+### Sin permiso es 403, no 404
+
+El 404 sigue reservado a lo que queda **fuera del alcance** de empresa o de área
+(regla #7 del contrato). «No puedes hacer esto» y «esto no es tuyo» son dos
+respuestas distintas a propósito: mezclarlas dejaría al front sin saber si
+esconder el botón o la sección entera. Hoy además nadie puede toparse con ese 403
+en las secciones nuevas, porque los tres niveles nacen con todas las casillas de
+ver.
+
+El 404 por sección apagada es otra cosa y es de la #48: ahí se apaga un **módulo
+para toda una empresa**, y un módulo que su empresa no usa efectivamente no
+existe. Son dos ejes distintos —el permiso es de la persona, el módulo es de la
+empresa— y se componen.
+
+### Lo que NO se tocó
+
+- **Las áreas y las categorías se siguen leyendo con sólo tener sesión.** Llenan
+  los desplegables de todos los formularios; pedirles una casilla habría roto
+  media plataforma para proteger dos listas de nombres. Escribirlas sigue
+  exigiendo administrador de plataforma.
+- **Los catálogos del grupo se quedan como estaban** (decisión 8 del 4 sept):
+  clientes y empleados bastan con el permiso; empresas, puestos y áreas siguen
+  exigiendo `alcanceGlobal`.
+- **El alcance no se tocó.** Quién ve los datos de qué empresa y de qué área se
+  sigue derivando de las adscripciones, y `'own_area'` sigue colgando de
+  `viewEmployees`: es la casilla que consultan `scopeMiddleware` y
+  `employeeService`. Las demás la llevan porque describen la verdad, no porque
+  filtren por su cuenta.
+- **El nivel de acceso sigue siendo el de siempre.** Esto es sólo el catálogo;
+  que los roles dejen de estar en el código es la #45, y el rol por empresa la
+  #46. **Sin migración**: `nivelAcceso` no cambió de forma ni de valores.
+
+### El catálogo se lee desde la API
+
+`GET /permisos` devuelve las 40 casillas con su etiqueta en español, su sección,
+su subsección y **qué otras exige** (`requiere`), más las secciones que las
+agrupan y `tengo`, que dice cuáles trae quien pregunta. Existe porque el front
+mantiene hoy su propia copia de la tabla escrita a mano, y las dos **ya difieren
+en un caso**.
+
+`requiere` es para la pantalla, no para el servidor: **no se comprueba al
+autorizar** —cada ruta pide la casilla que le toca— sino al guardar un rol, que
+es de la #45. Y la ruta pide **sólo sesión**: la lista de permisos que existen no
+es dato de nadie, y quien entra necesita saber cuáles trae él para apagar su
+propio menú.
+
+### Un cambio que no era obvio: la subida directa
+
+`uploadService` decide la capacidad **por destino** (D-83), y esos destinos
+apuntaban a `MANAGE_PROJECTS` y `MANAGE_CLIENTS`. Se movieron a la casilla
+nueva de cada uno —`contrato` a `manageContracts`, los dos del SIROC a
+`manageSiroc`, `registro-obra` a `manageWorkRegistries`, `maquina` a
+`manageMachines`—, y la regla queda escrita ahí: **la casilla del permiso de
+subida es la misma que pide la ruta que después registra el adjunto**. Si dijera
+menos, pedir el permiso de subida sería el rodeo para saltarse la casilla del
+recurso.

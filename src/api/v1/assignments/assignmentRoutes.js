@@ -25,10 +25,11 @@ const router = express.Router()
 // `requirePasswordDefinitiva` va aquí y no en `protect`: ver D-49.
 router.use(protect, requirePasswordDefinitiva, applyScope)
 
-// Sólo sesión, como el listado del proyecto: leer quién está en la obra no es
-// lo mismo que moverlo.
+// Ver el personal de la obra, como el listado del proyecto: leer quién está en
+// la obra no es lo mismo que moverlo, y son dos casillas (D-92).
 router.get(
   '/:id',
+  requireCapability(CAPABILITIES.VIEW_PROJECT_STAFF),
   assignmentIdValidation,
   validateRequest,
   asyncHandler(assignmentController.getById)

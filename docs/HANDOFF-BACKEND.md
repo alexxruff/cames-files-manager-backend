@@ -67,6 +67,11 @@ un documento y aquí queda el enlace.
       lado no queda rastro y nadie se entera. No es una corrección de
       documentación: es revisar si la interfaz está tirando altas buenas. La
       regla, en [`INTEGRACION-FRONTEND.md`](./INTEGRACION-FRONTEND.md) §7.
+- [ ] **Tiren su copia de la matriz de permisos y lean `GET /permisos`.** Desde
+      la #44 el servidor la manda entera —40 casillas con su sección, su etiqueta
+      y qué exigen, más las que trae quien entró—. Mantenerla a mano ya les costó
+      un caso en el que las dos listas dicen cosas distintas, y a partir de la #45
+      las casillas van a cambiar sin que nadie despliegue el front.
 - [ ] **Borren el aviso de «no abrir modelo-datos §8.2» de su `backend-actual.md`.**
       Ya no hay nada de qué avisar: §8.2 es la única tabla de permisos, dice lo
       que el servidor hace y una prueba la sostiene. Es el parche que pusieron
@@ -108,6 +113,49 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 ---
 
 ## Bitácora
+
+### 2026-09-04 15:14:23 · backend · La #44: ver es un permiso, y son 40 casillas
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 4 sept (la #43 cerrada, con el
+monto y el bimestre ya pintados en la línea de reportes bimestrales).
+
+**Hecho.** Los 20 permisos de siempre se abrieron en **40 casillas repartidas en
+diez secciones**, y **ver dejó de ser gratis**: proyectos, contratos, SIROC,
+maquinaria, incidencias, clientes, empresas y el personal de la obra ya no se
+leen con sólo tener sesión. Además `manageProjects` —que autorizaba seis módulos
+distintos— se quedó sólo con la obra. Todo el detalle, en `plan/handoff/44.md`;
+el porqué, en D-92.
+
+**A nadie le cambió nada hoy, y hay una prueba que lo sostiene.** Los tres
+niveles conservan exactamente lo que podían: las casillas de ver nacieron
+encendidas donde la lectura era libre, y las que salieron de otra heredaron su
+fila con el valor exacto. `permissionsParity.test.js` congela la matriz anterior
+entera y falla si una sola respuesta se mueve.
+
+**Tres cosas que sí les tocan:**
+
+- **`GET /permisos` manda el catálogo, y su copia a mano sobra.** Devuelve las 40
+  casillas con etiqueta, sección, subsección y `requiere`, las 10 secciones en
+  orden, y **`tengo`** con las que trae quien entró —ya resueltas, incluyendo el
+  efecto de `alcanceGlobal`—. Es lo que debe apagar el menú y los botones. Hoy
+  sus dos listas ya difieren en un caso; ésta no puede.
+- **Rutas de lectura que antes nunca daban 403 ahora pueden darlo.** Son 21, y
+  están listadas en el handoff. No les pega todavía —los tres niveles tienen
+  todas las casillas de ver—, pero en cuanto exista un rol que no las traiga
+  (#45) sí, y conviene que el manejo esté puesto antes.
+- **`GET /areas` y `GET /categorias` NO cambiaron**: siguen pidiendo sólo sesión
+  porque llenan los desplegables de todos los formularios. `GET /tipos-incidencia`
+  sí pasó a pedir `viewMachineIncidents`.
+
+**Ninguna ruta cambió de dirección, de cuerpo ni de respuesta.** La única nueva
+es `GET /permisos`. **Sin migración**: `nivelAcceso` no cambió de forma ni de
+valores, y los roles siguen siendo los tres de siempre — que dejen de estar en el
+código es la #45, y el rol distinto por empresa la #46.
+
+**Qué necesitamos de ustedes:** nada todavía. Su parte es la **#47**, y va
+después de la #45 y la #46 a propósito, para construirse una sola vez contra el
+modelo completo. Si quieren adelantar algo, lo único que ya pueden hacer es
+**dejar de mantener su copia de la matriz** y leer `GET /permisos`.
 
 ### 2026-09-04 00:33:05 · backend · La #42: el reporte bimestral dice cuánto y de qué bimestre
 

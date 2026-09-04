@@ -62,9 +62,15 @@ async function protect(req, res, next) {
  * Exige una capacidad de la matriz (modelo-datos §8.2).
  *
  *   router.post('/', protect, requireCapability(CAPABILITIES.MANAGE_ACCESS), …)
+ *
+ * Sin la capacidad responde **403**, no 404: el 404 está reservado a lo que queda
+ * fuera del alcance de empresa o de área (regla #7 del contrato). «No puedes
+ * hacer esto» y «esto no es tuyo» son dos respuestas distintas a propósito, y
+ * mezclarlas dejaría al front sin forma de saber si esconder el botón o la
+ * sección entera.
  */
 function requireCapability(capability) {
-  return function verificar(req, res, next) {
+  function verificar(req, res, next) {
     if (!req.user) {
       return next(new AppError(401, 'Necesitas iniciar sesión para continuar'))
     }
@@ -73,6 +79,16 @@ function requireCapability(capability) {
     }
     return next()
   }
+
+  /*
+   * La capacidad queda colgada del guardián para poder LEER desde fuera qué
+   * exige cada ruta (D-92). No la usa la autorización —eso es el `can` de
+   * arriba—: la usa `tests/unitarias/routeGuards.test.js`, que recorre el router
+   * y falla si una sección se queda sin su casilla. Antes eso sólo se veía
+   * leyendo los veinte archivos de rutas uno por uno.
+   */
+  verificar.capability = capability
+  return verificar
 }
 
 /** Exige ser administrador de plataforma (catálogos compartidos). */

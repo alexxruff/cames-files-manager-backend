@@ -1216,28 +1216,68 @@ Cómo se lee cada celda:
 | sus áreas           | Permitido, pero acotado a las áreas que dirige en cada empresa (`req.areasPorEmpresa`)                 |
 | + alcance global    | Permitido **sólo** si además tiene `acceso.alcanceGlobal` (administrador de plataforma)                |
 
-| Capacidad                | Qué permite                                                             |    `rh_admin`    | `rh_consulta` | `jefe_area` |
-| ------------------------ | ----------------------------------------------------------------------- | :--------------: | :-----------: | :---------: |
-| `viewEmployees`          | Ver empleados y expedientes                                             |        ✓         |       ✓       |  sus áreas  |
-| `deactivateEmployees`    | Dar de baja del sistema y reactivar                                     |        ✓         |       —       |      —      |
-| `manageFieldEmployees`   | Alta **y edición** de personal de obra (`mano_de_obra`)                 |        ✓         |       ✓       |      ✓      |
-| `manageAdminEmployees`   | Alta **y edición** de personal administrativo                           |        ✓         |       —       |      —      |
-| `manageAffiliations`     | Adscribir a una empresa, editar la adscripción y darla de baja          |        ✓         |       —       |      —      |
-| `uploadDocuments`        | Subir y reemplazar documentos del expediente                            |        ✓         |       ✓       |      —      |
-| `reviewDocuments`        | Validar o rechazar un documento (D-44)                                  |        ✓         |       ✓       |      —      |
-| `openSensitiveDocuments` | Abrir documentos sensibles                                              |        ✓         |       ✓       |      —      |
-| `manageProjects`         | Crear, aplazar, finalizar y reabrir proyectos, sus contratos y la maquinaria (D-86) |        ✓         |       —       |      ✓      |
-| `assignToProjects`       | Asignar personal a un proyecto y darle salida                           |        ✓         |       —       |      ✓      |
-| `manageClients`          | Alta, edición y baja de clientes del catálogo global                    |        ✓         |       —       |      ✓      |
-| `manageClientPortfolio`  | Vincular un cliente a la cartera de una empresa propia                  |        ✓         |       —       |      ✓      |
-| `manageTemplates`        | Configurar las plantillas de checklist                                  |        ✓         |       —       |      —      |
-| `generateReports`        | Generar reportes                                                        |        ✓         |       ✓       |      —      |
-| `manageAccess`           | Conceder, editar y quitar el acceso a la plataforma                     |        ✓         |       —       |      —      |
-| `manageAreaLeadership`   | Decir quién dirige cada área en cada empresa (D-60)                     |        ✓         |       —       |      —      |
-| `manageCompanies`        | Crear y editar empresas y sus registros patronales                      | + alcance global |       —       |      —      |
-| `manageCategories`       | Crear categorías y darlas de baja                                       | + alcance global |       —       |      —      |
-| `manageAreas`            | Crear, renombrar y dar de baja áreas del catálogo (D-58)                | + alcance global |       —       |      —      |
-| `closeTemporaryAreas`    | Cerrar las áreas **temporales** que deja el archivo de nómina (D-58)    |        ✓         |       ✓       |      —      |
+**Son 40 casillas en diez secciones desde D-92.** Antes eran veinte capacidades
+sueltas, y ocho secciones —obras, contratos, SIROC, maquinaria, incidencias,
+clientes, empresas y el personal de la obra— **no comprobaban nada para
+leerse**: las veía cualquiera con sesión. Además `manageProjects` autorizaba de
+un golpe seis módulos. El reparto **no le cambió nada a ningún nivel**: los
+`view` nuevos nacieron encendidos donde la lectura era libre, y los que salieron
+de `manageProjects`, `manageClients` y `manageCompanies` heredaron su fila tal
+cual. `tests/unitarias/permissionsParity.test.js` congela la matriz anterior y
+falla si alguna respuesta se movió.
+
+| Permiso | Qué permite | `rh_admin` | `rh_consulta` | `jefe_area` |
+| ------- | ----------- | :---------: | :-------------: | :-----------: |
+| **Personal** | | | | |
+| `viewEmployees` | Ver el catálogo de personal y la ficha de cada persona | ✓ | ✓ | sus áreas |
+| `manageFieldEmployees` | Alta **y edición** de personal de obra (`mano_de_obra`) | ✓ | ✓ | ✓ |
+| `manageAdminEmployees` | Alta **y edición** de personal administrativo | ✓ | — | — |
+| `deactivateEmployees` | Dar de baja del sistema y reactivar | ✓ | — | — |
+| `importEmployees` | Previsualizar y aplicar el archivo de nómina (D-46) | ✓ | — | — |
+| `viewAffiliations` | Ver quién está adscrito a cada empresa | ✓ | ✓ | sus áreas |
+| `manageAffiliations` | Adscribir a una empresa, editar la adscripción y darla de baja | ✓ | — | — |
+| `manageAreaLeadership` | Decir quién dirige cada área en cada empresa (D-60) | ✓ | — | — |
+| **Expedientes** | | | | |
+| `viewRecords` | Ver el expediente y abrir sus documentos | ✓ | ✓ | sus áreas |
+| `uploadDocuments` | Subir y reemplazar documentos del expediente | ✓ | ✓ | — |
+| `reviewDocuments` | Validar o rechazar un documento (D-44) | ✓ | ✓ | — |
+| `openSensitiveDocuments` | Abrir documentos sensibles | ✓ | ✓ | — |
+| **Alertas** | | | | |
+| `viewAlerts` | Ver la bandeja de alertas (D-47) | ✓ | ✓ | sus áreas |
+| **Obras** | | | | |
+| `viewProjects` | Ver las obras y su ficha | ✓ | ✓ | ✓ |
+| `manageProjects` | Crear, editar, aplazar, finalizar y reabrir obras | ✓ | — | ✓ |
+| `viewProjectStaff` | Ver quién está asignado a una obra | ✓ | ✓ | ✓ |
+| `assignToProjects` | Asignar personal a una obra y darle salida | ✓ | — | ✓ |
+| **Contratos y SIROC** | | | | |
+| `viewContracts` | Ver los contratos de la obra, sus montos y sus papeles | ✓ | ✓ | ✓ |
+| `manageContracts` | Capturar, modificar y eliminar contratos (D-90) | ✓ | — | ✓ |
+| `viewSiroc` | Ver el SIROC y sus reportes bimestrales | ✓ | ✓ | ✓ |
+| `manageSiroc` | Capturar el SIROC y sus reportes bimestrales (D-91) | ✓ | — | ✓ |
+| **Maquinaria** | | | | |
+| `viewMachines` | Ver el catálogo de maquinaria y el historial de cada máquina | ✓ | ✓ | ✓ |
+| `manageMachines` | Dar de alta, editar y dar de baja máquinas (D-86) | ✓ | — | ✓ |
+| `assignMachines` | Entregar una máquina a un trabajador y devolverla (D-87) | ✓ | — | ✓ |
+| `viewMachineIncidents` | Ver las incidencias de una máquina y el catálogo de tipos | ✓ | ✓ | ✓ |
+| `manageMachineIncidents` | Levantar y resolver incidencias (D-88) | ✓ | — | ✓ |
+| `manageIncidentTypes` | Administrar el catálogo compartido de tipos de incidencia | ✓ | — | ✓ |
+| **Clientes** | | | | |
+| `viewClients` | Ver el catálogo de clientes y las carteras | ✓ | ✓ | ✓ |
+| `manageClients` | Alta, edición y baja de clientes del catálogo global | ✓ | — | ✓ |
+| `manageClientPortfolio` | Vincular un cliente a la cartera de una empresa propia | ✓ | — | ✓ |
+| `manageWorkRegistries` | Capturar los registros de obra del cliente (D-66) | ✓ | — | ✓ |
+| **Empresas** | | | | |
+| `viewCompanies` | Ver las empresas del grupo a las que se tiene alcance | ✓ | ✓ | ✓ |
+| `manageCompanies` | Crear, editar y dar de baja empresas | + alcance global | — | — |
+| `manageEmployerRegistries` | Administrar los registros patronales de una empresa (D-65) | + alcance global | — | — |
+| **Catálogos del grupo** | | | | |
+| `manageAreas` | Crear, renombrar y dar de baja áreas del catálogo (D-58) | + alcance global | — | — |
+| `closeTemporaryAreas` | Cerrar las áreas **temporales** que deja el archivo de nómina (D-58) | ✓ | ✓ | — |
+| `manageCategories` | Crear categorías y darlas de baja | + alcance global | — | — |
+| **Plataforma** | | | | |
+| `manageAccess` | Conceder, editar y quitar el acceso a la plataforma | ✓ | — | — |
+| `manageTemplates` | Configurar las plantillas de checklist | ✓ | — | — |
+| `generateReports` | Generar reportes | ✓ | ✓ | — |
 
 **El personal se decide por tipo, no por una sola capacidad.** `POST /empleados`
 y `PATCH /empleados/:id` no llevan un `requireCapability` fijo: el servicio

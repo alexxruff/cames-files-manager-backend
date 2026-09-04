@@ -15,7 +15,7 @@ const { listAlertsValidation } = require('../../../validations/alertValidation')
  * borran**. Se derivan de los expedientes y de las fechas de nacimiento en cada
  * consulta, así que se resuelven solas cuando se resuelve la causa (D-47).
  *
- * El permiso es `VIEW_EMPLOYEES` —los tres niveles— porque una alerta no dice
+ * El permiso es `VIEW_ALERTS` —los tres niveles, D-92— porque una alerta no dice
  * nada que su dueño no pueda ver ya en el expediente. El **alcance** sí acota:
  * `jefe_area` sólo recibe alertas de su gente, y lo garantiza
  * `employeeService.list`, no este archivo.
@@ -27,7 +27,7 @@ router.use(protect, requirePasswordDefinitiva, applyScope)
 
 router.get(
   '/',
-  requireCapability(CAPABILITIES.VIEW_EMPLOYEES),
+  requireCapability(CAPABILITIES.VIEW_ALERTS),
   listAlertsValidation,
   validateRequest,
   asyncHandler(alertController.list)

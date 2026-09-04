@@ -62,11 +62,11 @@ router
  * válido" sin que nadie entienda por qué.
  *
  * ─── El permiso ────────────────────────────────────────────────────────────
- * Se exigen DOS capacidades, las dos exclusivas de `rh_admin`: importar mueve
- * gente entre empresas (`MANAGE_AFFILIATIONS`) y da de alta personal
- * administrativo (`MANAGE_ADMIN_EMPLOYEES`) —de los 145 del archivo, buena parte
- * lo es—. Un alta masiva sobre el catálogo compartido no es trabajo de
- * `rh_consulta` ni de `jefe_area`.
+ * Una casilla propia, `IMPORT_EMPLOYEES` (D-92). Antes se exigían DOS a la vez
+ * —`MANAGE_AFFILIATIONS` y `MANAGE_ADMIN_EMPLOYEES`—, porque importar mueve
+ * gente entre empresas y da de alta personal administrativo; nació con el mismo
+ * reparto que daba ese par, o sea exclusiva de `rh_admin`. Un alta masiva sobre
+ * el catálogo compartido no es trabajo de `rh_consulta` ni de `jefe_area`.
  *
  * DESVIACIÓN ANOTADA: la importación crea las categorías que falten, y crear
  * categorías a mano exige `alcanceGlobal` (`MANAGE_CATEGORIES`). Aquí no se
@@ -82,10 +82,7 @@ router
  */
 const recibirLibro = recibirArchivoHasta(env.MAX_IMPORT_UPLOAD_BYTES)
 
-const importarPersonal = [
-  requireCapability(CAPABILITIES.MANAGE_AFFILIATIONS),
-  requireCapability(CAPABILITIES.MANAGE_ADMIN_EMPLOYEES)
-]
+const importarPersonal = requireCapability(CAPABILITIES.IMPORT_EMPLOYEES)
 
 router.post(
   '/importar/previsualizar',
@@ -133,10 +130,16 @@ router.patch(
   asyncHandler(employeeController.setEstado)
 )
 
-// El expediente de la persona. Se crea solo si no existía.
+/*
+ * El expediente de la persona. Se crea solo si no existía.
+ *
+ * Pide `VIEW_RECORDS`, no `VIEW_EMPLOYEES` (D-92): se le puede negar el
+ * expediente a quien sí puede ver a la persona —es justo lo que necesita el
+ * auxiliar de operaciones—.
+ */
 router.get(
   '/:id/expediente',
-  requireCapability(CAPABILITIES.VIEW_EMPLOYEES),
+  requireCapability(CAPABILITIES.VIEW_RECORDS),
   employeeIdValidation,
   validateRequest,
   asyncHandler(recordController.porEmpleado)
@@ -181,6 +184,7 @@ router.post(
  */
 router.get(
   '/:id/maquinas',
+  requireCapability(CAPABILITIES.VIEW_MACHINES),
   machinesByEmployeeValidation,
   validateRequest,
   asyncHandler(machineAssignmentController.delTrabajador)

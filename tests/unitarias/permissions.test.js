@@ -14,6 +14,9 @@ const jefe = { nivelAcceso: 'jefe_area' }
 describe('utils/permissions — matriz de modelo-datos §8.2', () => {
   const SOLO_GLOBALES = [
     CAPABILITIES.MANAGE_COMPANIES,
+    // Los registros patronales se separaron de la empresa (D-92) pero siguen
+    // donde estaban: son estructura del grupo, no dato operativo.
+    CAPABILITIES.MANAGE_EMPLOYER_REGISTRIES,
     CAPABILITIES.MANAGE_CATEGORIES,
     // Administrar el catálogo de áreas afecta a todo el grupo, igual (D-58).
     CAPABILITIES.MANAGE_AREAS
@@ -60,6 +63,55 @@ describe('utils/permissions — matriz de modelo-datos §8.2', () => {
       expect(can(consulta, CAPABILITIES.DEACTIVATE_EMPLOYEES)).toBe(false)
       expect(can(jefe, CAPABILITIES.DEACTIVATE_EMPLOYEES)).toBe(false)
     })
+  })
+
+  it('el reparto de D-92 no le movió nada a ningún nivel', () => {
+    /*
+     * La comprobación de verdad está en `permissionsParity.test.js`, que congela
+     * la matriz anterior entera. Aquí queda el caso que motivó partirla: quien
+     * gestionaba proyectos gestionaba también contratos, SIROC y maquinaria, y
+     * ahora son casillas que se pueden dar por separado.
+     */
+    for (const nivel of [admin, consulta, jefe]) {
+      const proyectos = can(nivel, CAPABILITIES.MANAGE_PROJECTS)
+      expect(can(nivel, CAPABILITIES.MANAGE_CONTRACTS)).toBe(proyectos)
+      expect(can(nivel, CAPABILITIES.MANAGE_SIROC)).toBe(proyectos)
+      expect(can(nivel, CAPABILITIES.MANAGE_MACHINES)).toBe(proyectos)
+      expect(can(nivel, CAPABILITIES.ASSIGN_MACHINES)).toBe(proyectos)
+      expect(can(nivel, CAPABILITIES.MANAGE_MACHINE_INCIDENTS)).toBe(proyectos)
+      expect(can(nivel, CAPABILITIES.MANAGE_INCIDENT_TYPES)).toBe(proyectos)
+    }
+  })
+
+  it('ver una sección es su propia casilla, y las ocho abiertas siguen abiertas', () => {
+    for (const nivel of [admin, consulta, jefe]) {
+      for (const capacidad of [
+        CAPABILITIES.VIEW_PROJECTS,
+        CAPABILITIES.VIEW_PROJECT_STAFF,
+        CAPABILITIES.VIEW_CONTRACTS,
+        CAPABILITIES.VIEW_SIROC,
+        CAPABILITIES.VIEW_MACHINES,
+        CAPABILITIES.VIEW_MACHINE_INCIDENTS,
+        CAPABILITIES.VIEW_CLIENTS,
+        CAPABILITIES.VIEW_COMPANIES
+      ]) {
+        expect(can(nivel, capacidad)).toBe(true)
+      }
+    }
+  })
+
+  it('el expediente se puede negar a quien sí ve a la persona', () => {
+    // Hoy no hay ningún nivel así —los tres ven las dos cosas—, pero la casilla
+    // ya existe: es lo que hace armable al auxiliar de operaciones (D-92).
+    expect(CAPABILITIES.VIEW_RECORDS).not.toBe(CAPABILITIES.VIEW_EMPLOYEES)
+    expect(can(jefe, CAPABILITIES.VIEW_RECORDS)).toBe(true)
+    expect(isLimitedToOwnArea(jefe, CAPABILITIES.VIEW_RECORDS)).toBe(true)
+  })
+
+  it('importar la nómina es una casilla, no dos capacidades juntas', () => {
+    expect(can(admin, CAPABILITIES.IMPORT_EMPLOYEES)).toBe(true)
+    expect(can(consulta, CAPABILITIES.IMPORT_EMPLOYEES)).toBe(false)
+    expect(can(jefe, CAPABILITIES.IMPORT_EMPLOYEES)).toBe(false)
   })
 
   it('el jefe de área también da de alta clientes y gestiona su cartera', () => {

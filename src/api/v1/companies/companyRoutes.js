@@ -38,13 +38,25 @@ const router = express.Router()
 // `requirePasswordDefinitiva` va aquí y no en `protect`: ver D-49.
 router.use(protect, requirePasswordDefinitiva, applyScope)
 
+/*
+ * Ver la empresa y administrarla son casillas distintas desde D-92, y los
+ * registros patronales tienen la suya, separada de editar la empresa.
+ */
+const verEmpresas = requireCapability(CAPABILITIES.VIEW_COMPANIES)
+const administrarEmpresas = requireCapability(CAPABILITIES.MANAGE_COMPANIES)
+
 router
   .route('/')
-  // Cualquiera con sesión ve SUS empresas; el admin de plataforma, todas.
-  .get(listCompaniesValidation, validateRequest, asyncHandler(companyController.list))
+  // Quien ve empresas ve LAS SUYAS; el admin de plataforma, todas.
+  .get(
+    verEmpresas,
+    listCompaniesValidation,
+    validateRequest,
+    asyncHandler(companyController.list)
+  )
   .post(
     // Crear una empresa cambia la estructura del grupo: exige alcance global.
-    requireCapability(CAPABILITIES.MANAGE_COMPANIES),
+    administrarEmpresas,
     createCompanyValidation,
     validateRequest,
     asyncHandler(companyController.create)
@@ -57,7 +69,7 @@ router
  */
 router.patch(
   '/:id',
-  requireCapability(CAPABILITIES.MANAGE_COMPANIES),
+  administrarEmpresas,
   updateCompanyValidation,
   validateRequest,
   asyncHandler(companyController.update)
@@ -65,7 +77,7 @@ router.patch(
 
 router.patch(
   '/:id/estado',
-  requireCapability(CAPABILITIES.MANAGE_COMPANIES),
+  administrarEmpresas,
   companyEstadoValidation,
   validateRequest,
   asyncHandler(companyController.setEstado)
@@ -73,6 +85,7 @@ router.patch(
 
 router.get(
   '/:id',
+  verEmpresas,
   companyIdValidation,
   validateRequest,
   asyncHandler(companyController.getById)
@@ -81,12 +94,17 @@ router.get(
 /*
  * La CARTERA de la empresa: qué clientes del catálogo global usa.
  * Vive bajo la empresa porque siempre se consulta desde una empresa concreta.
- * Leer: cualquiera con sesión (puebla el selector de cliente al crear un
+ * Leer: quien ve clientes (puebla el selector de cliente al crear un
  * proyecto). Modificar: `rh_admin` y `jefe_area`.
  */
 router
   .route('/:id/clientes')
-  .get(listPortfolioValidation, validateRequest, asyncHandler(portfolioController.list))
+  .get(
+    requireCapability(CAPABILITIES.VIEW_CLIENTS),
+    listPortfolioValidation,
+    validateRequest,
+    asyncHandler(portfolioController.list)
+  )
   .post(
     requireCapability(CAPABILITIES.MANAGE_CLIENT_PORTFOLIO),
     addToPortfolioValidation,
@@ -100,13 +118,13 @@ router
  * porque siempre se adscribe desde una empresa concreta; editar un vínculo que
  * ya existe es `/adscripciones/:id` (D-45).
  *
- * Leer: quien ve empleados. Adscribir: exclusivo de `rh_admin`
+ * Leer: quien ve adscripciones. Adscribir: exclusivo de `rh_admin`
  * (`MANAGE_AFFILIATIONS`), igual que en el alta.
  */
 router
   .route('/:id/adscripciones')
   .get(
-    requireCapability(CAPABILITIES.VIEW_EMPLOYEES),
+    requireCapability(CAPABILITIES.VIEW_AFFILIATIONS),
     listAffiliationsValidation,
     validateRequest,
     asyncHandler(affiliationController.list)
@@ -139,13 +157,18 @@ router.get(
  * empleado: no tienen vida fuera de su empresa, así que se administran bajo ella
  * y no en una ruta propia.
  *
- * Mismo permiso que editar la empresa: afectan a todo el grupo.
+ * Casilla propia desde D-92 (`MANAGE_EMPLOYER_REGISTRIES`), que nació donde
+ * estaba: exigiendo alcance global, igual que editar la empresa, porque afectan
+ * a todo el grupo. Va aparte para poder dárselos después a quien lleva el IMSS
+ * sin darle además la empresa entera.
  */
-const administrarEmpresa = requireCapability(CAPABILITIES.MANAGE_COMPANIES)
+const administrarRegistrosPatronales = requireCapability(
+  CAPABILITIES.MANAGE_EMPLOYER_REGISTRIES
+)
 
 router.post(
   '/:id/registros-patronales',
-  administrarEmpresa,
+  administrarRegistrosPatronales,
   addEmployerRegistrationValidation,
   validateRequest,
   asyncHandler(companyController.addRegistroPatronal)
@@ -153,7 +176,7 @@ router.post(
 
 router.patch(
   '/:id/registros-patronales/:rpId',
-  administrarEmpresa,
+  administrarRegistrosPatronales,
   updateEmployerRegistrationValidation,
   validateRequest,
   asyncHandler(companyController.updateRegistroPatronal)
@@ -161,7 +184,7 @@ router.patch(
 
 router.patch(
   '/:id/registros-patronales/:rpId/estado',
-  administrarEmpresa,
+  administrarRegistrosPatronales,
   employerRegistrationEstadoValidation,
   validateRequest,
   asyncHandler(companyController.setEstadoRegistroPatronal)
@@ -173,19 +196,20 @@ router.patch(
  * alcance se decide con el de la empresa. Operar sobre una máquina ya dada de
  * alta es `/maquinas/:id`.
  *
- * Leer: cualquiera con sesión y alcance. Dar de alta: quien gestiona proyectos.
+ * Leer: quien ve maquinaria. Dar de alta: quien administra el catálogo.
  * `recibirArchivo` va antes de las validaciones porque la foto puede venir en
  * el mismo `multipart` del alta (D-80).
  */
 router
   .route('/:id/maquinas')
   .get(
+    requireCapability(CAPABILITIES.VIEW_MACHINES),
     listMachinesValidation,
     validateRequest,
     asyncHandler(machineController.listByCompany)
   )
   .post(
-    requireCapability(CAPABILITIES.MANAGE_PROJECTS),
+    requireCapability(CAPABILITIES.MANAGE_MACHINES),
     recibirArchivo,
     createMachineValidation,
     validateRequest,

@@ -180,7 +180,7 @@ src/
   services/                    Almacenamiento, semillas, arranque
   utils/
     domain/                    ← Lógica de expedientes (modelo-datos.md §6)
-    permissions.js             La matriz de capacidades
+    permissions.js             El catálogo de 40 permisos y la matriz por nivel
 ```
 
 **Cuatro capas por recurso, sin excepciones**, y **los controladores no llevan
@@ -324,6 +324,9 @@ desincronizadas. Índice rápido:
 
 **Lo mínimo que hay que retener antes de leer las rutas:**
 
+- **Cada sección tiene su permiso de VER** (D-92). Son 40 casillas en diez
+  secciones, y `GET /permisos` las publica con su etiqueta, su sección y qué
+  otras exigen. Sin la casilla: **403**; fuera de alcance: **404**.
 - **Empleados, clientes y categorías son catálogos compartidos.** No llevan
   `empresaId`. La pertenencia se expresa con vínculos.
 - **`adscripciones`** lleva la relación laboral: contrato, fecha de ingreso,
