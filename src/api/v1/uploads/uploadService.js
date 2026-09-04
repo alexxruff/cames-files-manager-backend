@@ -56,6 +56,15 @@ const DESTINOS = {
         ? contractService.assertVisible(ref.contratoId, contexto)
         : projectService.getById(ref.proyectoId, contexto)
   },
+  /*
+   * El convenio modificatorio (D-90). A diferencia del contrato, aquí el dueño
+   * SIEMPRE existe: no se modifica un contrato que todavía no se ha capturado.
+   */
+  'contrato-modificacion': {
+    capacidad: CAPABILITIES.MANAGE_PROJECTS,
+    ids: ['contratoId'],
+    comprobar: (ref, contexto) => contractService.assertVisible(ref.contratoId, contexto)
+  },
   'siroc-aviso': {
     capacidad: CAPABILITIES.MANAGE_PROJECTS,
     ids: ['contratoId'],

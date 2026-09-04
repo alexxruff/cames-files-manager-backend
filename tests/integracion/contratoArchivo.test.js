@@ -61,6 +61,7 @@ async function contratoDe(e, datos = {}) {
       nombre: 'Cimentación',
       fechaInicio: '2026-01-01',
       fechaFin: '2027-12-31',
+      monto: 1500000,
       ...datos
     })
   return res.body.data.contrato
@@ -85,6 +86,7 @@ describe('El archivo del contrato', () => {
         .field('nombre', 'Cimentación')
         .field('fechaInicio', '2026-01-01')
         .field('fechaFin', '2027-12-31')
+        .field('monto', '1500000')
         .attach('archivo', PDF, 'contrato firmado (2).pdf')
 
       expect(res.status).toBe(201)
@@ -124,6 +126,7 @@ describe('El archivo del contrato', () => {
         .set(auth(e.token))
         .field('fechaInicio', '2026-01-01')
         .field('fechaFin', '2027-12-31')
+        .field('monto', '1500000')
         .attach('archivo', PDF, 'escaneo.pdf')
 
       expect(res.status).toBe(201)
@@ -146,6 +149,7 @@ describe('El archivo del contrato', () => {
         .set(auth(e.token))
         .field('fechaInicio', '2026-01-01')
         .field('fechaFin', '2027-12-31')
+        .field('monto', '1500000')
         .attach('archivo', grande, 'contrato-grande.pdf')
 
       expect(res.status).toBe(201)
@@ -160,6 +164,7 @@ describe('El archivo del contrato', () => {
         .set(auth(e.token))
         .field('fechaInicio', '2026-01-01')
         .field('fechaFin', '2027-12-31')
+        .field('monto', '1500000')
         .attach('archivo', HEIC, 'contrato.heic')
 
       expect(res.status).toBe(415)
@@ -168,52 +173,51 @@ describe('El archivo del contrato', () => {
   })
 
   describe('adjuntarlo después, que es el caso normal', () => {
-    it('un PATCH con sólo el archivo lo guarda sin tocar ningún otro campo', async () => {
+    it('el PUT con sólo el archivo lo guarda sin tocar ningún otro campo', async () => {
       const e = await escenario()
       const contrato = await contratoDe(e, { fase: 'Fase 1' })
 
       const res = await request(app)
-        .patch(`${CONTRATOS}/${contrato._id}`)
+        .put(`${CONTRATOS}/${contrato._id}/archivo`)
         .set(auth(e.token))
         .attach('archivo', PDF, 'contrato.pdf')
 
       expect(res.status).toBe(200)
-      expect(res.body.message).toBe('Contrato actualizado con su archivo')
+      expect(res.body.message).toBe('Contrato escaneado guardado')
       expect(res.body.data.contrato).toMatchObject({
         nombre: 'Cimentación',
         fase: 'Fase 1',
         fechaInicio: '2026-01-01',
         fechaFin: '2027-12-31',
+        monto: 1500000,
         archivo: { nombre: 'contrato.pdf', previsualizable: true }
       })
     })
 
-    it('se puede mandar junto con los campos, en la misma petición', async () => {
+    it('sin archivo y sin `subidaId` es 400: es lo único que hace esta ruta', async () => {
       const e = await escenario()
       const contrato = await contratoDe(e)
 
       const res = await request(app)
-        .patch(`${CONTRATOS}/${contrato._id}`)
-        .set(auth(e.token))
-        .field('fase', 'Fase 2')
-        .attach('archivo', PDF, 'contrato.pdf')
-
-      expect(res.status).toBe(200)
-      expect(res.body.data.contrato.fase).toBe('Fase 2')
-      expect(res.body.data.contrato.archivo).not.toBeNull()
-    })
-
-    it('un PATCH vacío de verdad —sin campos y sin archivo— sigue siendo 400', async () => {
-      const e = await escenario()
-      const contrato = await contratoDe(e)
-
-      const res = await request(app)
-        .patch(`${CONTRATOS}/${contrato._id}`)
+        .put(`${CONTRATOS}/${contrato._id}/archivo`)
         .set(auth(e.token))
         .send({})
 
       expect(res.status).toBe(400)
-      expect(res.body.errors[0].msg).toBe('No hay nada que actualizar')
+      expect(res.body.errors[0].msg).toMatch(/Envía el archivo/)
+    })
+
+    it('el PATCH de siempre ya no existe: 410 y dice por dónde va cada cosa', async () => {
+      const e = await escenario()
+      const contrato = await contratoDe(e)
+
+      const res = await request(app)
+        .patch(`${CONTRATOS}/${contrato._id}`)
+        .set(auth(e.token))
+        .send({ fase: 'Fase 2' })
+
+      expect(res.status).toBe(410)
+      expect(res.body.message).toMatch(/PUT \/contratos\/:id\/archivo/)
     })
   })
 
@@ -223,13 +227,13 @@ describe('El archivo del contrato', () => {
       const contrato = await contratoDe(e)
 
       await request(app)
-        .patch(`${CONTRATOS}/${contrato._id}`)
+        .put(`${CONTRATOS}/${contrato._id}/archivo`)
         .set(auth(e.token))
         .attach('archivo', PDF, 'primero.pdf')
       const primera = await claveDelContrato(contrato._id)
 
       const res = await request(app)
-        .patch(`${CONTRATOS}/${contrato._id}`)
+        .put(`${CONTRATOS}/${contrato._id}/archivo`)
         .set(auth(e.token))
         .attach('archivo', OTRO_PDF, 'segundo.pdf')
 
@@ -245,23 +249,22 @@ describe('El archivo del contrato', () => {
       expect(storage.contenidoEnMemoria(primera)).toBeNull()
     })
 
-    it('editar los campos SIN archivo no tira el papel que ya estaba', async () => {
+    it('registrar una modificación NO tira el papel del contrato original', async () => {
       const e = await escenario()
       const contrato = await contratoDe(e)
 
       await request(app)
-        .patch(`${CONTRATOS}/${contrato._id}`)
+        .put(`${CONTRATOS}/${contrato._id}/archivo`)
         .set(auth(e.token))
         .attach('archivo', PDF, 'contrato.pdf')
       const clave = await claveDelContrato(contrato._id)
 
       const res = await request(app)
-        .patch(`${CONTRATOS}/${contrato._id}`)
+        .post(`${CONTRATOS}/${contrato._id}/modificaciones`)
         .set(auth(e.token))
-        .send({ fase: 'Fase 3' })
+        .send({ fechaInicio: '2026-01-01', fechaFin: '2027-06-30', monto: 1800000 })
 
-      expect(res.status).toBe(200)
-      expect(res.body.data.contrato.fase).toBe('Fase 3')
+      expect(res.status).toBe(201)
       expect(res.body.data.contrato.archivo.nombre).toBe('contrato.pdf')
       expect(await claveDelContrato(contrato._id)).toBe(clave)
       expect(storage.contenidoEnMemoria(clave)).not.toBeNull()
@@ -280,7 +283,7 @@ describe('El archivo del contrato', () => {
       expect(sinArchivo.body.message).toBe('Ese contrato no tiene archivo')
 
       await request(app)
-        .patch(`${CONTRATOS}/${contrato._id}`)
+        .put(`${CONTRATOS}/${contrato._id}/archivo`)
         .set(auth(e.token))
         .attach('archivo', PDF, 'contrato.pdf')
 
@@ -301,7 +304,7 @@ describe('El archivo del contrato', () => {
       const e = await escenario()
       const contrato = await contratoDe(e)
       await request(app)
-        .patch(`${CONTRATOS}/${contrato._id}`)
+        .put(`${CONTRATOS}/${contrato._id}/archivo`)
         .set(auth(e.token))
         .attach('archivo', PDF, 'contrato.pdf')
 
@@ -315,7 +318,7 @@ describe('El archivo del contrato', () => {
       expect(leido.status).toBe(200)
 
       const prohibido = await request(app)
-        .patch(`${CONTRATOS}/${contrato._id}`)
+        .put(`${CONTRATOS}/${contrato._id}/archivo`)
         .set(auth(lector.token))
         .attach('archivo', PDF, 'contrato.pdf')
       expect(prohibido.status).toBe(403)
@@ -337,7 +340,7 @@ describe('El archivo del contrato', () => {
       const e = await escenario()
       const contrato = await contratoDe(e)
       await request(app)
-        .patch(`${CONTRATOS}/${contrato._id}`)
+        .put(`${CONTRATOS}/${contrato._id}/archivo`)
         .set(auth(e.token))
         .attach('archivo', PDF, 'contrato.pdf')
 
@@ -358,7 +361,7 @@ describe('El archivo del contrato', () => {
       const contrato = await contratoDe(e)
 
       await request(app)
-        .patch(`${CONTRATOS}/${contrato._id}`)
+        .put(`${CONTRATOS}/${contrato._id}/archivo`)
         .set(auth(e.token))
         .attach('archivo', PDF, 'contrato.pdf')
       await request(app)

@@ -28,7 +28,7 @@ tiempo de ejecución**, así que no puede mentir:
 curl -s http://localhost:8080/api/v1 | jq '.data.implementados, .data.pendientes'
 ```
 
-`GET /api/v1` es público. Hoy son **105 rutas** en pie y 6 anunciadas como
+`GET /api/v1` es público. Hoy son **111 rutas** en pie y 6 anunciadas como
 pendientes. Dónde está el detalle de cada familia:
 
 | Familia                                               | Detalle en                                             |
@@ -68,18 +68,19 @@ expedienteId }`), en el alta, la edición, el estado y las tres rutas de acceso.
 
 ## 1. Lo que cambia respecto a lo que tienen hoy
 
-| Hoy en el front                   | Con este backend                                                       |
-| --------------------------------- | ---------------------------------------------------------------------- |
-| `VITE_API_BASE_URL=…:5001/api/v1` | `http://localhost:8080/api/v1`                                         |
-| `GET /users` → `data.users`       | `GET /empleados` → `data.empleados` (paginado)                         |
-| `POST /users` crea un usuario     | `POST /empleados/:id/acceso` da acceso a una **persona que ya existe** |
-| `DELETE /users/:id`               | `DELETE /empleados/:id/acceso` (quita el acceso, no a la persona)      |
-| `role: 'user' \| 'admin'`         | `nivelAcceso` + `alcanceGlobal`                                        |
-| `accessLevelFromRole(user.role)`  | `user.nivelAcceso` directo                                             |
-| `user.area` (una)                 | `user.empresas[].areas` (por empresa)                                  |
-| `user.alcance` / `user.clienteId` | Desaparecen: el alcance sale de las adscripciones                      |
-| `POST /auth/register`             | No existe                                                              |
-| `/usuarios`                       | **410**, con las rutas nuevas en el mensaje                            |
+| Hoy en el front                   | Con este backend                                                                                                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VITE_API_BASE_URL=…:5001/api/v1` | `http://localhost:8080/api/v1`                                                                                                                                      |
+| `GET /users` → `data.users`       | `GET /empleados` → `data.empleados` (paginado)                                                                                                                      |
+| `POST /users` crea un usuario     | `POST /empleados/:id/acceso` da acceso a una **persona que ya existe**                                                                                              |
+| `DELETE /users/:id`               | `DELETE /empleados/:id/acceso` (quita el acceso, no a la persona)                                                                                                   |
+| `role: 'user' \| 'admin'`         | `nivelAcceso` + `alcanceGlobal`                                                                                                                                     |
+| `accessLevelFromRole(user.role)`  | `user.nivelAcceso` directo                                                                                                                                          |
+| `user.area` (una)                 | `user.empresas[].areas` (por empresa)                                                                                                                               |
+| `user.alcance` / `user.clienteId` | Desaparecen: el alcance sale de las adscripciones                                                                                                                   |
+| `POST /auth/register`             | No existe                                                                                                                                                           |
+| `/usuarios`                       | **410**, con las rutas nuevas en el mensaje                                                                                                                         |
+| `PATCH /contratos/:id`            | **410** desde D-90: se repartió en `POST /contratos/:id/modificaciones`, `PUT /contratos/:id/archivo` y `DELETE /contratos/:id` — ver `ENDPOINTS-PROYECTOS.md` §4.4 |
 
 **Archivos del front que hay que tocar:**
 

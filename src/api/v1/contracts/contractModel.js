@@ -3,6 +3,7 @@ const { isCalendarDate, isBefore } = require('../../../utils/dates')
 const { idAString } = require('../../../utils/ids')
 const attachmentSchema = require('../../../models/attachmentSchema')
 const { attachmentToJson } = require('../../../utils/attachments')
+const { MONTO_MAXIMO_CONTRATO } = require('../../../constants')
 
 /**
  * Contrato de un proyecto, con su SIROC embebido (D-70, plan §C4).
@@ -111,6 +112,138 @@ const sirocSchema = new mongoose.Schema(
   { _id: false }
 )
 
+const campoMonto = (etiqueta, { requerido = false } = {}) => ({
+  type: Number,
+  ...(requerido ? { required: [true, `${etiqueta} es requerido`] } : { default: null }),
+  min: [0, `${etiqueta} no puede ser negativo`],
+  max: [MONTO_MAXIMO_CONTRATO, `${etiqueta} no puede exceder ${MONTO_MAXIMO_CONTRATO}`]
+})
+
+/**
+ * Una modificación del contrato (D-90).
+ *
+ * **No es un refrendo del SIROC**: aquélla es una cita con el IMSS cada dos
+ * meses; ésta la provoca algo de afuera —el cliente aplazó la obra, cambió el
+ * precio, se anexaron requerimientos— y trae **términos nuevos**: fechas y
+ * monto. Desde que se registra, lo que vale es lo de aquí, y lo que había queda
+ * en la historia.
+ *
+ * `fechaAcuerdo` es **cuándo se pactó**, que casi nunca es hoy: el convenio se
+ * firma y se captura días después. `archivo` es el convenio escaneado, opcional
+ * al capturarlo por la misma razón que el acuse del reporte bimestral (D-80) —el
+ * papel llega tarde— y se adjunta luego por su propia ruta.
+ */
+const modificacionSchema = new mongoose.Schema(
+  {
+    fechaAcuerdo: {
+      type: String,
+      required: [true, 'La fecha del acuerdo es requerida'],
+      validate: validadorFecha('La fecha del acuerdo')
+    },
+    motivo: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: [300, 'El motivo no puede exceder 300 caracteres']
+    },
+    fechaInicio: {
+      type: String,
+      required: [true, 'La fecha de inicio es requerida'],
+      validate: validadorFecha('La fecha de inicio')
+    },
+    fechaFin: {
+      type: String,
+      required: [true, 'La fecha de fin es requerida'],
+      validate: validadorFecha('La fecha de fin')
+    },
+    monto: campoMonto('El monto de la modificación', { requerido: true }),
+    archivo: { type: attachmentSchema, default: null }
+  },
+  {
+    /*
+     * SIN `_id`, como las renovaciones del SIROC y por lo mismo: cada una se
+     * direcciona por su índice, y es estable porque el arreglo sólo crece y sólo
+     * se quita la última.
+     */
+    _id: false
+  }
+)
+
+/**
+ * Los términos con los que NACIÓ el contrato (D-90).
+ *
+ * `null` mientras nadie lo modifique, que es el caso normal: un contrato que se
+ * cumple como se pactó no tiene historia. Se llena con la fotografía de lo que
+ * había la primera vez que se registra una modificación, y se vacía si se
+ * deshace la última.
+ *
+ * Su papel escaneado NO se copia aquí: sigue siendo `contrato.archivo`, que es
+ * el del contrato original. Cada modificación trae el suyo.
+ */
+const terminosOriginalesSchema = new mongoose.Schema(
+  {
+    fechaInicio: {
+      type: String,
+      required: [true, 'La fecha de inicio original es requerida'],
+      validate: validadorFecha('La fecha de inicio original')
+    },
+    fechaFin: {
+      type: String,
+      required: [true, 'La fecha de fin original es requerida'],
+      validate: validadorFecha('La fecha de fin original')
+    },
+    /** Anulable: los contratos capturados antes del monto no tenían ninguno. */
+    monto: campoMonto('El monto original')
+  },
+  { _id: false }
+)
+
+/**
+ * La línea del tiempo del contrato, derivada al leer (regla #6).
+ *
+ * `modificado: false` y `entradas: []` cuando no hubo modificaciones: un
+ * contrato que se cumplió como se pactó **no tiene historia que mostrar**, y lo
+ * dice él, para que la pantalla no tenga que deducirlo de un arreglo vacío.
+ *
+ * La última entrada es la vigente, y sus valores son los mismos que los campos
+ * del contrato: no hay dos versiones de la verdad, hay una y su pasado.
+ */
+function construirHistoria(ret) {
+  const modificaciones = ret.modificaciones ?? []
+  if (modificaciones.length === 0 || !ret.original) {
+    return { modificado: false, entradas: [] }
+  }
+
+  const entradas = [
+    {
+      tipo: 'original',
+      indice: null,
+      fechaAcuerdo: null,
+      motivo: null,
+      fechaInicio: ret.original.fechaInicio,
+      fechaFin: ret.original.fechaFin,
+      monto: ret.original.monto ?? null,
+      // Sin `url`: firmarla es asíncrono, y la agrega el servicio.
+      archivo: attachmentToJson(ret.archivo),
+      vigente: false
+    },
+    ...modificaciones.map((m, indice) => ({
+      tipo: 'modificacion',
+      indice,
+      fechaAcuerdo: m.fechaAcuerdo,
+      motivo: m.motivo ?? null,
+      fechaInicio: m.fechaInicio,
+      fechaFin: m.fechaFin,
+      monto: m.monto ?? null,
+      archivo: attachmentToJson(m.archivo),
+      vigente: false
+    }))
+  ]
+
+  entradas[entradas.length - 1].vigente = true
+  return { modificado: true, entradas }
+}
+
 const contractSchema = new mongoose.Schema(
   {
     proyectoId: {
@@ -162,6 +295,34 @@ const contractSchema = new mongoose.Schema(
       validate: validadorFecha('La fecha de fin')
     },
 
+    /**
+     * El total del contrato en pesos, **IVA incluido** (D-90). Un solo número: no
+     * se desglosa subtotal ni impuesto, porque lo que se firma y lo que se cobra
+     * es la cifra completa.
+     *
+     * **Sin `required` a propósito**, aunque el alta lo exija: los contratos
+     * capturados antes de que el monto existiera no lo tienen, y un `required`
+     * aquí haría fallar cualquier `save()` sobre ellos —registrar su SIROC,
+     * finalizarlos— por un dato que nadie les pidió. `null` es «no se capturó», y
+     * se distingue de `0`.
+     */
+    monto: campoMonto('El monto'),
+
+    /**
+     * Los términos con los que nació, `null` mientras nadie lo modifique (D-90).
+     * Ver `terminosOriginalesSchema`.
+     */
+    original: { type: terminosOriginalesSchema, default: null },
+
+    /**
+     * Las modificaciones, en orden (D-90). **Las fechas y el monto de arriba son
+     * siempre los VIGENTES** —los de la última modificación, o los del alta si no
+     * hay ninguna—, y por eso el techo del SIROC (D-84), el expediente (D-77) y
+     * los candados del proyecto (G3) no se enteran de que esto existe: siguen
+     * leyendo los mismos campos de siempre.
+     */
+    modificaciones: { type: [modificacionSchema], default: [] },
+
     /** `null` hasta que se registre. Se pone y se corrige por `PUT .../siroc`. */
     siroc: { type: sirocSchema, default: null },
 
@@ -200,6 +361,9 @@ const contractSchema = new mongoose.Schema(
           fase: ret.fase ?? null,
           fechaInicio: ret.fechaInicio,
           fechaFin: ret.fechaFin,
+          // Los VIGENTES. El pasado va en `historia` (D-90).
+          monto: ret.monto ?? null,
+          historia: construirHistoria(ret),
           siroc: ret.siroc
             ? {
                 numero: ret.siroc.numero,
@@ -246,6 +410,24 @@ contractSchema.pre('validate', function forzarInvariantes(next) {
     isBefore(this.fechaFin, this.fechaInicio)
   ) {
     this.invalidate('fechaFin', 'La fecha de fin no puede ser anterior a la de inicio')
+  }
+
+  /*
+   * Cada modificación es un contrato en pequeño y se le exige lo mismo (D-90):
+   * su fecha de fin no puede quedar antes de su inicio. Se comprueba aquí y no
+   * sólo en el servicio porque el arreglo también lo tocan el deshacer y, algún
+   * día, una migración.
+   */
+  for (const [indice, modificacion] of (this.modificaciones ?? []).entries()) {
+    if (!isCalendarDate(modificacion?.fechaInicio)) continue
+    if (!isCalendarDate(modificacion?.fechaFin)) continue
+
+    if (isBefore(modificacion.fechaFin, modificacion.fechaInicio)) {
+      this.invalidate(
+        `modificaciones.${indice}.fechaFin`,
+        'La fecha de fin no puede ser anterior a la de inicio'
+      )
+    }
   }
 
   /*

@@ -123,7 +123,13 @@ lista, no dentro.
 | PATCH  | `/asignaciones/:id/salida`                                 | asignar a proyectos          | `asignacion`                                                                                                                                     | Cierra, no borra                                                                                                                                                   |
 | GET    | `/proyectos/:id/contratos`                                 | sesión                       | `contratos[]`                                                                                                                                    | Contratos del proyecto por número; `?incluirInactivos=true` (D-70)                                                                                                 |
 | POST   | `/proyectos/:id/contratos`                                 | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | El `numero` **lo asigna el servidor**; 400 si el proyecto está finalizado (D-70); acepta `multipart` con el contrato escaneado en `archivo` (D-81)                 |
-| PATCH  | `/contratos/:id`                                           | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Nombre, fase y fechas. El SIROC y el estado van por sus rutas; acepta `multipart`, y **sólo el archivo sin campos** es válido (D-81)                               |
+| PATCH  | `/contratos/:id`                                           | —                            | —                                                                                                                                                | **410 `RUTA_MOVIDA`** (D-90): editar un contrato ya no existe. El `message` dice las tres rutas que lo sustituyen                                                  |
+| DELETE | `/contratos/:id`                                           | `rh_admin` o `jefe_area`     | `eliminado`                                                                                                                                      | **Borra el contrato entero** con su SIROC, sus reportes bimestrales, sus modificaciones y sus archivos; libera los dos números (D-90). No se deshace               |
+| PUT    | `/contratos/:id/archivo`                                   | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Sube el contrato escaneado o lo reemplaza; `multipart` campo `archivo`, o `subidaId` (D-90)                                                                        |
+| POST   | `/contratos/:id/modificaciones`                            | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Repacta fechas y monto: desde aquí valen los nuevos, y el original baja a `historia`. Acepta `multipart` con el convenio en `archivo` (D-90)                       |
+| DELETE | `/contratos/:id/modificaciones/ultima`                     | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Deshace la última y devuelve el contrato a los términos anteriores; 400 si no hay ninguna (D-90)                                                                   |
+| GET    | `/contratos/:id/modificaciones/:indice/archivo`            | sesión y alcance             | `archivo`                                                                                                                                        | El convenio de esa modificación, por posición (D-90)                                                                                                               |
+| PUT    | `/contratos/:id/modificaciones/:indice/archivo`            | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Le pone (o reemplaza) el convenio a una modificación **ya capturada**, sin tocar fechas ni monto (D-90)                                                            |
 | GET    | `/contratos/:id/archivo`                                   | sesión y alcance             | `archivo`                                                                                                                                        | Enlace fresco al contrato escaneado; `?descargar=true` fuerza la descarga (D-81)                                                                                   |
 | PUT    | `/contratos/:id/siroc`                                     | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Registra o corrige el SIROC entero; acepta `multipart` con el aviso en `archivo` (D-80); **409 `SIROC_DUPLICADO`** si el número ya existe (G4)                     |
 | DELETE | `/contratos/:id/siroc`                                     | `rh_admin` o `jefe_area`     | `contrato`                                                                                                                                       | Lo quita y libera el número; 400 si no tenía                                                                                                                       |
@@ -268,9 +274,9 @@ los dos opcionales.
 
 **`nombre` y `fase` son campos distintos del mismo contrato** (D-75): `nombre` es
 cómo se llama el contrato y `fase` el alias con el que la obra lo nombra. Se
-mandan en el alta, se editan por `PATCH /contratos/:id` y se vacían mandando `""`
-o `null` —vuelven a `null`, nunca a cadena vacía—. Los contratos anteriores a
-este cambio salen con `"fase": null`.
+mandan en el alta y **ya no se editan** (D-90): corregirlos se hace eliminando el
+contrato y capturándolo de nuevo. Los dos son opcionales y salen en `null`, nunca
+en cadena vacía.
 
 ```jsonc
 {
@@ -279,8 +285,14 @@ este cambio salen con `"fase": null`.
   "numero": 1, // secuencia dentro del proyecto; la pone el servidor
   "nombre": "Contrato 001-A", // nombre del contrato, o null
   "fase": "Fase 1", // etiqueta de la fase, o null
-  "fechaInicio": "2026-09-01",
-  "fechaFin": "2026-12-31",
+  "fechaInicio": "2026-09-01", // VIGENTE: la de la última modificación, si hubo
+  "fechaFin": "2026-12-31", // VIGENTE, y es el techo del SIROC (D-84)
+  "monto": 1500000.5, // pesos, IVA incluido. `null` = nunca se capturó (D-90)
+  "historia": {
+    // la línea del tiempo, derivada al leer (D-90)
+    "modificado": false, // `false` = este contrato NO tiene historia que mostrar
+    "entradas": [] // vacío cuando `modificado` es false
+  },
   "siroc": null, // o { numero, fechaRegistro, actualizaciones[], archivo }
   "archivo": null, // o el contrato escaneado (D-81); null, nunca ausente
   "estado": "en_curso", // en_curso | finalizado
@@ -296,6 +308,96 @@ este cambio salen con `"fase": null`.
 }
 ```
 
+#### El monto, la historia y eliminar (D-90)
+
+**El monto es obligatorio en el alta**: un número en pesos, **el total con el IVA
+incluido**, sin desglosar. `400` con `errors[0].msg` = `El monto del contrato es
+requerido` si falta. **`null` no es `0`**: `null` son los contratos capturados
+antes de esto, que se quedaron sin monto y hay que enseñar como dato pendiente;
+`0` es una cifra que alguien tecleó.
+
+**Editar un contrato ya no existe.** `PATCH /contratos/:id` responde `410` con
+`code: 'RUTA_MOVIDA'` y un `message` que nombra las tres rutas que lo sustituyen.
+Lo que antes se hacía editando se reparte así:
+
+| Antes, con `PATCH`          | Ahora                                                       |
+| --------------------------- | ----------------------------------------------------------- |
+| cambiar fechas o monto      | `POST /contratos/:id/modificaciones` — queda en la historia |
+| adjuntar el papel escaneado | `PUT /contratos/:id/archivo`                                |
+| corregir `nombre` o `fase`  | `DELETE /contratos/:id` y capturarlo de nuevo               |
+
+**La modificación** lleva `fechaInicio`, `fechaFin` y `monto` —los tres
+obligatorios: es el nuevo estado completo de lo pactado, no un parche—, y
+opcionalmente `motivo`, `fechaAcuerdo` (el día en que se firmó; sin ella se asume
+hoy, y **no puede ser futura**) y el convenio escaneado en `archivo` o su
+`subidaId` (destino `contrato-modificacion`). Desde que se registra, los campos
+del contrato **son los nuevos**, incluido el techo del SIROC. No se modifica un
+contrato `finalizado` ni uno dado de baja: `400` diciendo cuál de los dos
+destraba.
+
+**`historia`** es la línea del tiempo, derivada en cada lectura. Cuando no hubo
+modificaciones responde `{ "modificado": false, "entradas": [] }` — **el contrato
+lo dice, no hay que deducirlo del arreglo vacío**. Cuando sí:
+
+```jsonc
+{
+  "modificado": true,
+  "entradas": [
+    {
+      "tipo": "original", // los términos del alta
+      "indice": null,
+      "fechaAcuerdo": null,
+      "motivo": null,
+      "fechaInicio": "2026-01-01",
+      "fechaFin": "2026-03-31",
+      "monto": 1500000,
+      "archivo": null, // el contrato escaneado, firmado si lo hay
+      "vigente": false
+    },
+    {
+      "tipo": "modificacion",
+      "indice": 0, // con el que se pide o se sube su convenio
+      "fechaAcuerdo": "2026-03-20",
+      "motivo": "El cliente aplazó la obra",
+      "fechaInicio": "2026-01-01",
+      "fechaFin": "2026-12-31",
+      "monto": 2100000.5,
+      "archivo": null, // el convenio modificatorio, firmado si lo hay
+      "vigente": true // la última: sus valores son los del contrato
+    }
+  ]
+}
+```
+
+`DELETE /contratos/:id/modificaciones/ultima` deshace **sólo la última** y
+devuelve el contrato a los términos anteriores; si era la única, vuelve a quedar
+sin historia.
+
+**Eliminar** (`DELETE /contratos/:id`) borra de verdad: el contrato, su SIROC,
+sus reportes bimestrales, sus modificaciones y **todos sus archivos**. No se
+deshace. Responde `200` con lo que se llevó, para confirmarlo y para advertirlo
+antes:
+
+```jsonc
+{
+  "eliminado": {
+    "_id": "66f...",
+    "numero": 1,
+    "nombre": "Contrato 001-A",
+    "fase": null,
+    "sirocNumero": "SIR-2026-0001", // o null
+    "reportesBimestrales": 2,
+    "modificaciones": 1,
+    "archivos": 4
+  }
+}
+```
+
+Libera **los dos números**: el del SIROC, que es único en todo el sistema, y el
+del contrato dentro del proyecto —el siguiente alta toma el hueco libre más
+bajo—. **Dar de baja no es eliminar**: un contrato con `activo: false` sigue
+existiendo, sigue en el listado con `incluirInactivos=true` y se reactiva.
+
 **`estado` y `activo` no son lo mismo.** `finalizado` es un contrato que terminó
 bien; `activo: false` es uno capturado por error o cancelado. Van por rutas
 distintas a propósito: `POST /contratos/:id/finalizar` mueve el primero,
@@ -306,8 +408,8 @@ que entra** —lo ya capturado no se toca—, cada uno con su `400` en `message`
 
 | Dónde                                      | Rango                                                          | `message`                                                                                                   |
 | ------------------------------------------ | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `POST`/`PATCH` contrato, `fechaInicio`     | ≥ `proyecto.fechaInicio`                                       | `La fecha de inicio del contrato no puede ser anterior al inicio del proyecto (AAAA-MM-DD)`                 |
-| `POST`/`PATCH` contrato, `fechaFin`        | ≤ `proyecto.fechaFinReal ?? fechaFinEstimada`                  | `La fecha de fin del contrato no puede ser posterior al fin del proyecto (AAAA-MM-DD)`                      |
+| Alta o modificación, `fechaInicio`         | ≥ `proyecto.fechaInicio`                                       | `La fecha de inicio del contrato no puede ser anterior al inicio del proyecto (AAAA-MM-DD)`                 |
+| Alta o modificación, `fechaFin`            | ≤ `proyecto.fechaFinReal ?? fechaFinEstimada`                  | `La fecha de fin del contrato no puede ser posterior al fin del proyecto (AAAA-MM-DD)`                      |
 | `PUT …/siroc`, `fechaRegistro` (si cambia) | `contrato.fechaInicio` … +7 días, incluidos                    | `La fecha de registro del SIROC debe estar entre el AAAA-MM-DD y el AAAA-MM-DD: …`                          |
 | `POST …/siroc/actualizaciones`, `fecha`    | ≥ movimiento anterior + 1 mes (fin de mes recortado) + 25 días | `El SIROC se registró el AAAA-MM-DD: el siguiente reporte bimestral no puede fecharse antes del AAAA-MM-DD` |
 
@@ -558,7 +660,7 @@ se lleva el aviso entero.
 `contrato.archivo` es el contrato firmado, con la misma forma de `Archivo` que el
 resto de los adjuntos. **Uno solo y se reemplaza**, al revés que los del SIROC.
 
-**Cómo se sube.** `POST /proyectos/:id/contratos` y `PATCH /contratos/:id`
+**Cómo se sube.** `POST /proyectos/:id/contratos` y `PUT /contratos/:id/archivo`
 aceptan `multipart/form-data` con el campo `archivo`, opcional, además de seguir
 aceptando el JSON de siempre. Un `PATCH` con **sólo el archivo y ningún campo**
 es válido —así se adjunta el papel a un contrato ya capturado, que es el caso

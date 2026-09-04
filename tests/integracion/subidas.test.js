@@ -81,7 +81,12 @@ async function contratoDe(e) {
   const res = await request(app)
     .post(`${PROYECTOS}/${e.proyecto._id}/contratos`)
     .set(auth(e.token))
-    .send({ nombre: 'Cimentación', fechaInicio: '2026-01-01', fechaFin: '2027-12-31' })
+    .send({
+      nombre: 'Cimentación',
+      fechaInicio: '2026-01-01',
+      fechaFin: '2027-12-31',
+      monto: 1500000
+    })
   return res.body.data.contrato
 }
 
@@ -209,7 +214,7 @@ describe('Confirmar la subida en la ruta del recurso', () => {
     await subirComoNavegador(permiso.body.data.subida.url, PDF)
 
     const res = await request(app)
-      .patch(`${CONTRATOS}/${contrato._id}`)
+      .put(`${CONTRATOS}/${contrato._id}/archivo`)
       .set(auth(e.token))
       .send({ subidaId: permiso.body.data.subida._id })
 
@@ -220,7 +225,7 @@ describe('Confirmar la subida en la ruta del recurso', () => {
       tamanoBytes: PDF.length,
       previsualizable: true
     })
-    expect(res.body.message).toMatch(/con su archivo/i)
+    expect(res.body.message).toBe('Contrato escaneado guardado')
 
     // El archivo ya no está en `pendientes/`: se movió a su carpeta definitiva.
     const guardado = await Contract.findById(contrato._id)
@@ -247,11 +252,11 @@ describe('Confirmar la subida en la ruta del recurso', () => {
     await subirComoNavegador(permiso.body.data.subida.url, PDF)
 
     const primera = await request(app)
-      .patch(`${CONTRATOS}/${contrato._id}`)
+      .put(`${CONTRATOS}/${contrato._id}/archivo`)
       .set(auth(e.token))
       .send({ subidaId: permiso.body.data.subida._id })
     const segunda = await request(app)
-      .patch(`${CONTRATOS}/${contrato._id}`)
+      .put(`${CONTRATOS}/${contrato._id}/archivo`)
       .set(auth(e.token))
       .send({ subidaId: permiso.body.data.subida._id })
 
@@ -266,7 +271,12 @@ describe('Confirmar la subida en la ruta del recurso', () => {
     const otro = await request(app)
       .post(`${PROYECTOS}/${e.proyecto._id}/contratos`)
       .set(auth(e.token))
-      .send({ nombre: 'Otra fase', fechaInicio: '2026-02-01', fechaFin: '2027-12-31' })
+      .send({
+        nombre: 'Otra fase',
+        fechaInicio: '2026-02-01',
+        fechaFin: '2027-12-31',
+        monto: 900000
+      })
 
     const permiso = await pedirPermiso(e.token, {
       destino: 'contrato',
@@ -277,7 +287,7 @@ describe('Confirmar la subida en la ruta del recurso', () => {
     await subirComoNavegador(permiso.body.data.subida.url, PDF)
 
     const res = await request(app)
-      .patch(`${CONTRATOS}/${otro.body.data.contrato._id}`)
+      .put(`${CONTRATOS}/${otro.body.data.contrato._id}/archivo`)
       .set(auth(e.token))
       .send({ subidaId: permiso.body.data.subida._id })
 
@@ -298,7 +308,7 @@ describe('Confirmar la subida en la ruta del recurso', () => {
     await subirComoNavegador(permiso.body.data.subida.url, PDF)
 
     const res = await request(app)
-      .patch(`${CONTRATOS}/${contrato._id}`)
+      .put(`${CONTRATOS}/${contrato._id}/archivo`)
       .set(auth(e.token))
       .send({ subidaId: permiso.body.data.subida._id })
 
@@ -320,7 +330,7 @@ describe('Confirmar la subida en la ruta del recurso', () => {
     await subirComoNavegador(permiso.body.data.subida.url, HEIC)
 
     const res = await request(app)
-      .patch(`${CONTRATOS}/${contrato._id}`)
+      .put(`${CONTRATOS}/${contrato._id}/archivo`)
       .set(auth(e.token))
       .send({ subidaId: permiso.body.data.subida._id })
 
@@ -344,7 +354,7 @@ describe('Confirmar la subida en la ruta del recurso', () => {
     })
 
     const res = await request(app)
-      .patch(`${CONTRATOS}/${contrato._id}`)
+      .put(`${CONTRATOS}/${contrato._id}/archivo`)
       .set(auth(e.token))
       .send({ subidaId: permiso.body.data.subida._id })
 
@@ -369,7 +379,7 @@ describe('Confirmar la subida en la ruta del recurso', () => {
     )
 
     const res = await request(app)
-      .patch(`${CONTRATOS}/${contrato._id}`)
+      .put(`${CONTRATOS}/${contrato._id}/archivo`)
       .set(auth(e.token))
       .send({ subidaId: permiso.body.data.subida._id })
 
@@ -394,7 +404,7 @@ describe('Confirmar la subida en la ruta del recurso', () => {
     )
 
     const res = await request(app)
-      .patch(`${CONTRATOS}/${contrato._id}`)
+      .put(`${CONTRATOS}/${contrato._id}/archivo`)
       .set(auth(e.token))
       .send({ subidaId: permiso.body.data.subida._id })
 
@@ -407,7 +417,7 @@ describe('Confirmar la subida en la ruta del recurso', () => {
     const contrato = await contratoDe(e)
 
     const res = await request(app)
-      .patch(`${CONTRATOS}/${contrato._id}`)
+      .put(`${CONTRATOS}/${contrato._id}/archivo`)
       .set(auth(e.token))
       .send({ subidaId: new mongoose.Types.ObjectId().toString() })
 
@@ -416,7 +426,7 @@ describe('Confirmar la subida en la ruta del recurso', () => {
   })
 })
 
-describe('Los cinco destinos llegan a su sitio', () => {
+describe('Cada destino llega a su sitio', () => {
   it('el aviso del SIROC y el acuse de un refrendo', async () => {
     const e = await escenario()
     const contrato = await contratoDe(e)
@@ -514,6 +524,7 @@ describe('Los cinco destinos llegan a su sitio', () => {
         nombre: 'Con papel desde el principio',
         fechaInicio: '2026-01-01',
         fechaFin: '2027-12-31',
+        monto: 1500000,
         subidaId: permiso.body.data.subida._id
       })
 
@@ -522,6 +533,37 @@ describe('Los cinco destinos llegan a su sitio', () => {
       nombre: 'contrato-nuevo.pdf',
       tamanoBytes: PDF.length
     })
+  })
+
+  it('el convenio de una modificación del contrato (D-90)', async () => {
+    const e = await escenario()
+    const contrato = await contratoDe(e)
+    await request(app)
+      .post(`${CONTRATOS}/${contrato._id}/modificaciones`)
+      .set(auth(e.token))
+      .send({ fechaInicio: '2026-01-01', fechaFin: '2027-06-30', monto: 1800000 })
+
+    const permiso = await pedirPermiso(e.token, {
+      destino: 'contrato-modificacion',
+      referencia: { contratoId: contrato._id },
+      nombre: 'convenio.pdf',
+      tamanoBytes: PDF.length
+    })
+    await subirComoNavegador(permiso.body.data.subida.url, PDF)
+
+    const res = await request(app)
+      .put(`${CONTRATOS}/${contrato._id}/modificaciones/0/archivo`)
+      .set(auth(e.token))
+      .send({ subidaId: permiso.body.data.subida._id })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.contrato.historia.entradas[1].archivo).toMatchObject({
+      nombre: 'convenio.pdf',
+      tamanoBytes: PDF.length
+    })
+
+    const guardado = await Contract.findById(contrato._id)
+    expect(guardado.modificaciones[0].archivo.claveAlmacenamiento).toMatch(/contratos\//)
   })
 
   it('el registro de obra, al crearlo y al reemplazarlo', async () => {

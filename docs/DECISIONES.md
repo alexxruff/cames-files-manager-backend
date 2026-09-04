@@ -4241,3 +4241,107 @@ bimestral: es el alta del aviso de obra. Lo confirmó Urbacames en la misma
 petición.
 
 **Sin migración.** No se guardó nunca ninguno de estos textos: se arman al leer.
+
+## D-90 · El contrato con monto, su historia de modificaciones, y eliminarlo
+
+**Contexto.** Tarea #39, 3 sept 2026, a pedido de Urbacames
+(`cames-ops/plan/propuestas/2026-09-03-contratos-modificaciones.md`). Tres cosas
+que llegaron juntas porque se estorbaban entre sí: el contrato no guardaba
+**cuánto se va a cobrar**; lo que se repacta con el cliente —aplazó la obra,
+cambió el precio, se anexaron requerimientos— no tenía dónde quedar; y lo único
+que había para corregir era **editar**, que se confundía con modificar y borraba
+lo anterior sin dejar rastro.
+
+### El monto
+
+Un solo número, en pesos y **con el IVA incluido**: no se desglosa subtotal ni
+impuesto, porque lo que se firma y lo que se cobra es la cifra completa
+(decisión del usuario, 3 sept). Es **obligatorio al dar de alta**.
+
+Y aun así el esquema **no lo declara `required`**. Los contratos capturados antes
+de esto no lo tienen, y un `required` en el modelo haría fallar cualquier
+`save()` sobre ellos —registrar su SIROC, finalizarlos, darlos de baja— por un
+dato que nadie les pidió el día que se capturaron. La obligación vive en la
+validación del alta, que es donde de verdad aplica. `null` es «no se capturó» y
+**no es lo mismo que `0`**, que es una cifra que alguien tecleó: por eso no se
+inventó un cero al migrar, y por eso no hay migración.
+
+### La modificación, y por qué el contrato sigue teniendo una sola verdad
+
+Cada modificación trae **fechas y monto nuevos** y **su propio convenio
+escaneado**, más el motivo y la `fechaAcuerdo` —el día en que se firmó, que casi
+nunca es hoy—. Desde que se registra, lo que vale es lo nuevo.
+
+Lo que se guarda es esto: `modificaciones[]` con lo pactado en cada una,
+`original` con los términos del alta —`null` mientras no haya ninguna—, y **los
+campos del contrato pisados con los vigentes**. La alternativa era dejar
+`fechaInicio`/`fechaFin`/`monto` congelados en lo original y hacer que todo el
+mundo mirara la última modificación; se descartó porque el techo del SIROC
+(D-84), las obras del expediente (D-77), los candados del proyecto (G3) y el
+listado leen esos campos desde hace meses, y cada uno de ellos habría tenido que
+aprender qué es una modificación para seguir respondiendo lo mismo. Con esta
+forma **ninguno se enteró**: hay una verdad vigente y su pasado, no dos versiones
+compitiendo.
+
+`historia` —la línea del tiempo que sale en la respuesta— **se deriva al leer**
+(regla #6) y dice `modificado: false` con `entradas: []` cuando no hubo ninguna:
+un contrato que se cumplió como se pactó no tiene historia que mostrar, **y lo
+dice él**, para que la pantalla no tenga que deducirlo de un arreglo vacío. La
+última entrada lleva `vigente: true` y sus valores son exactamente los campos del
+contrato.
+
+**El convenio es opcional al capturar**, como el acuse del reporte bimestral
+(D-80) y por la misma razón: el papel firmado llega días después que el acuerdo,
+y exigirlo obligaría a no capturar nada mientras tanto. Se adjunta luego con
+`PUT /contratos/:id/modificaciones/:indice/archivo`, que toca **sólo el
+archivo**. El papel del contrato original **no se toca nunca**: sigue en
+`contrato.archivo`, y los dos se abren.
+
+**Se deshace sólo la última**, como en los refrendos: el contrato vuelve a los
+términos de la anterior o, si era la única, a los del alta, y entonces se queda
+otra vez sin historia. Borrar una de en medio dejaría al contrato con términos
+que nadie pactó.
+
+**No se modifica un contrato finalizado ni uno dado de baja.** Lo que se repacta
+se repacta sobre algo vivo; el mensaje dice cuál de las dos salidas destraba cada
+caso, porque reabrir no es reactivar y desde fuera no se adivina.
+
+### Editar desaparece, eliminar aparece
+
+`PATCH /contratos/:id` responde **410**, no 404, y dice en qué tres se repartió:
+`POST /modificaciones` para repactar, `PUT /archivo` para el papel —que antes
+viajaba justamente en ese `PATCH` (D-81), y sin ruta propia se habría quedado sin
+salida—, y `DELETE` para recapturar. 404 diría «esto nunca existió»; lo que pasó
+es que se movió, y el front lo descubre en la primera llamada. Corregir el
+`nombre` o la `fase` también pasa por eliminar y volver a capturar: son datos del
+alta, no algo que se repacte.
+
+**Eliminar borra de verdad**, y es lo único en todo el modelo que lo hace: el
+documento, su SIROC, sus reportes bimestrales, sus modificaciones y **todos sus
+objetos de R2**. Se puede eliminar un contrato que ya tiene todo cargado —es
+justo el caso que lo motiva: se capturó en el proyecto equivocado y hay que
+rehacerlo—. La respuesta dice qué se llevó, que es con lo que la pantalla
+confirma y advierte.
+
+Libera **los dos números**. El del SIROC es único en todo el sistema (G4): sin
+esto, un aviso capturado en el contrato equivocado dejaba ese número muerto para
+siempre y no había forma de registrarlo donde iba. Y el del contrato dentro del
+proyecto: `#siguienteNumero` pasó de «el último más uno» al **hueco libre más
+bajo**, porque quien elimina para recapturar espera recuperar su número, no el
+siguiente. Los **dados de baja siguen ocupando el suyo** —existen— y eso no
+cambió.
+
+Lo puede quien gestiona proyectos (`manageProjects`: `rh_admin` y `jefe_area`),
+la misma capacidad que da de alta un contrato — decisión del usuario, 3 sept.
+`rh_consulta` no. **No pide nada más**: la confirmación explícita es de la
+pantalla, y meterle una segunda llave a la API no habría evitado el error que
+esto viene a arreglar.
+
+**La baja se quedó igual.** `activo: false` es un contrato que existió y se
+canceló: sigue en la historia del proyecto y se reactiva. La diferencia con
+eliminar la explica la pantalla; aquí son dos rutas distintas a propósito, como
+`finalizar` y la baja lo son desde D-70.
+
+**Sin migración.** Los contratos que ya existen leen `monto: null`,
+`modificaciones: []` e `historia: { modificado: false, entradas: [] }` sin tocar
+un solo documento.

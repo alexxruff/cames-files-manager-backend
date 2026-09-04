@@ -57,19 +57,22 @@ misma que la ruta que va a confirmar.
 }
 ```
 
-### Los seis destinos
+### Los siete destinos
 
-| `destino`             | `referencia` que exige           | Se confirma en                                                                                           |
-| --------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `expediente`          | `expedienteId` + `tipoDocumento` | `POST /expedientes/:id/documentos/:tipo`                                                                 |
-| `contrato`            | `contratoId` **o** `proyectoId`  | `PATCH /contratos/:id` · `POST /proyectos/:id/contratos`                                                 |
-| `siroc-aviso`         | `contratoId`                     | `PUT /contratos/:id/siroc`                                                                               |
-| `siroc-actualizacion` | `contratoId`                     | `POST /contratos/:id/siroc/actualizaciones` · `PUT /contratos/:id/siroc/actualizaciones/:indice/archivo` |
-| `registro-obra`       | `clienteId`                      | `POST /clientes/:id/registros-obra` · `PATCH /clientes/:id/registros-obra/:roId`                         |
-| `maquina`             | `maquinaId` **o** `empresaId`    | `PATCH /maquinas/:id` · `POST /empresas/:id/maquinas` (D-86)                                             |
+| `destino`               | `referencia` que exige           | Se confirma en                                                                                           |
+| ----------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `expediente`            | `expedienteId` + `tipoDocumento` | `POST /expedientes/:id/documentos/:tipo`                                                                 |
+| `contrato`              | `contratoId` **o** `proyectoId`  | `PUT /contratos/:id/archivo` · `POST /proyectos/:id/contratos`                                           |
+| `contrato-modificacion` | `contratoId`                     | `POST /contratos/:id/modificaciones` · `PUT /contratos/:id/modificaciones/:indice/archivo` (D-90)        |
+| `siroc-aviso`           | `contratoId`                     | `PUT /contratos/:id/siroc`                                                                               |
+| `siroc-actualizacion`   | `contratoId`                     | `POST /contratos/:id/siroc/actualizaciones` · `PUT /contratos/:id/siroc/actualizaciones/:indice/archivo` |
+| `registro-obra`         | `clienteId`                      | `POST /clientes/:id/registros-obra` · `PATCH /clientes/:id/registros-obra/:roId`                         |
+| `maquina`               | `maquinaId` **o** `empresaId`    | `PATCH /maquinas/:id` · `POST /empresas/:id/maquinas` (D-86)                                             |
 
 En `contrato` va `proyectoId` cuando el contrato **todavía no existe** —el papel
-viaja en el alta— y `contratoId` cuando ya está capturado. `maquina` funciona
+viaja en el alta— y `contratoId` cuando ya está capturado. En
+`contrato-modificacion` siempre va `contratoId`: no se modifica un contrato que
+aún no existe. `maquina` funciona
 igual: `empresaId` para la foto que viaja en el alta, `maquinaId` para
 reemplazarla. Y es el único destino que **sólo admite imágenes** (JPG, PNG,
 WEBP): al confirmar con un PDF responde `415`, y borra el objeto y el permiso.
@@ -122,12 +125,12 @@ R2 contesta `200` con el cuerpo vacío. La `url` caduca a los **15 minutos**.
 El mismo endpoint de siempre, con JSON:
 
 ```jsonc
-// PATCH /api/v1/contratos/6a98…
+// PUT /api/v1/contratos/6a98…/archivo
 { "subidaId": "6a98…" }
 ```
 
 Y la respuesta es la de siempre: el contrato con su `archivo`, ya firmado y listo
-para abrir. Igual en los seis destinos:
+para abrir. Igual en los siete destinos:
 
 ```jsonc
 // POST /expedientes/:id/documentos/ine
@@ -138,6 +141,9 @@ para abrir. Igual en los seis destinos:
 
 // POST /contratos/:id/siroc/actualizaciones
 { "fecha": "2026-04-01", "subidaId": "…" }
+
+// POST /contratos/:id/modificaciones
+{ "fechaInicio": "2026-01-01", "fechaFin": "2026-12-31", "monto": 2100000, "subidaId": "…" }
 
 // PUT /contratos/:id/siroc/actualizaciones/0/archivo
 { "subidaId": "…" }

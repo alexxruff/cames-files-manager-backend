@@ -42,7 +42,8 @@ const crearContrato = (e, fechaInicio = addMonths(HOY, -1)) =>
     .send({
       nombre: 'Cimentación',
       fechaInicio,
-      fechaFin: addMonths(HOY, 23)
+      fechaFin: addMonths(HOY, 23),
+      monto: 1500000
     })
 
 const registrarSiroc = (e, contratoId, fechaRegistro, numero = 'SIR-2026-9001') =>
@@ -63,7 +64,7 @@ const conFechas = async (e, fechaInicio, fechaFin) =>
     await request(app)
       .post(`${PROYECTOS}/${e.proyecto._id}/contratos`)
       .set(auth(e.token))
-      .send({ nombre: 'Cimentación', fechaInicio, fechaFin })
+      .send({ nombre: 'Cimentación', fechaInicio, fechaFin, monto: 1500000 })
   ).body.data.contrato
 
 /** Contrato con SIROC registrado hace `mesesAtras` meses. */
@@ -100,7 +101,12 @@ describe('Actualización del SIROC cada dos meses', () => {
       const res = await request(app)
         .post(`${PROYECTOS}/${e.proyecto._id}/contratos`)
         .set(auth(e.token))
-        .send({ nombre: 'Breve', fechaInicio: HOY, fechaFin: addMonths(HOY, 2) })
+        .send({
+          nombre: 'Breve',
+          fechaInicio: HOY,
+          fechaFin: addMonths(HOY, 2),
+          monto: 500000
+        })
 
       expect(res.body.data.contrato.seguimientoSiroc.actualizacionesRequeridas).toBe(0)
     })
@@ -393,19 +399,25 @@ describe('Actualización del SIROC cada dos meses', () => {
       return contrato
     }
 
-    const moverFin = (e, contratoId, fechaFin) =>
+    /*
+     * Mover la fecha de fin es, desde D-90, **registrar una modificación**:
+     * editar un contrato ya no existe. Lo que se comprueba aquí no cambia —que
+     * el seguimiento se recalcule contando los refrendos que ya hay—, porque la
+     * modificación pisa `fechaFin` y todo se sigue derivando al leer.
+     */
+    const moverFin = (e, contrato, fechaFin) =>
       request(app)
-        .patch(`${CONTRATOS}/${contratoId}`)
+        .post(`${CONTRATOS}/${contrato._id}/modificaciones`)
         .set(auth(e.token))
-        .send({ fechaFin })
+        .send({ fechaInicio: contrato.fechaInicio, fechaFin, monto: 1500000 })
 
     it('aplazarla vuelve a pedir, contando los refrendos que ya están registrados', async () => {
       const e = await escenario()
       const contrato = await enCursoConDosRefrendos(e)
 
-      const res = await moverFin(e, contrato._id, addMonths(HOY, 12))
+      const res = await moverFin(e, contrato, addMonths(HOY, 12))
 
-      expect(res.status).toBe(200)
+      expect(res.status).toBe(201)
       const seguimiento = res.body.data.contrato.seguimientoSiroc
       expect(seguimiento.actualizacionesRegistradas).toBe(2)
       // Desde donde va el aviso —dentro de un mes— hasta dentro de doce.
@@ -417,9 +429,9 @@ describe('Actualización del SIROC cada dos meses', () => {
       const e = await escenario()
       const contrato = await enCursoConDosRefrendos(e)
 
-      const res = await moverFin(e, contrato._id, addDays(HOY, 15))
+      const res = await moverFin(e, contrato, addDays(HOY, 15))
 
-      expect(res.status).toBe(200)
+      expect(res.status).toBe(201)
       expect(res.body.data.contrato.seguimientoSiroc).toMatchObject({
         estado: 'no_requiere',
         actualizacionesPendientes: 0,
@@ -432,9 +444,9 @@ describe('Actualización del SIROC cada dos meses', () => {
       const e = await escenario()
       const contrato = await enCursoConDosRefrendos(e)
 
-      const res = await moverFin(e, contrato._id, addMonths(HOY, -4))
+      const res = await moverFin(e, contrato, addMonths(HOY, -4))
 
-      expect(res.status).toBe(200)
+      expect(res.status).toBe(201)
       const seguimiento = res.body.data.contrato.seguimientoSiroc
       // Se presentaron de verdad ante el IMSS: se dicen como lo que son.
       expect(seguimiento.actualizacionesRegistradas).toBe(2)

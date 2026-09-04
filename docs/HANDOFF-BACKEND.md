@@ -109,6 +109,48 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
+### 2026-09-03 21:38:41 · backend · La #39: el contrato con monto, su historia de modificaciones, y eliminarlo
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 3 sept 14:37:04 (la #35 cerrada,
+con el catálogo de tipos en la ficha de la máquina).
+
+**Hecho.** El contrato gana **monto** —obligatorio en el alta, un número en pesos
+con el IVA incluido, sin desglose—, una **historia de modificaciones** y un
+**eliminar** que borra de verdad. La tabla de rutas, las formas exactas y los
+mensajes de error están en `plan/handoff/39.md`, y el porqué en D-90.
+
+**Lo que les rompe, y es una sola cosa: `PATCH /contratos/:id` responde 410.**
+Editar un contrato dejó de existir porque se confundía con modificarlo. Se
+reparte en tres:
+
+- cambiar fechas o monto → `POST /contratos/:id/modificaciones` (queda en la
+  historia, con su convenio escaneado)
+- adjuntar el contrato escaneado → **`PUT /contratos/:id/archivo`**, que es donde
+  se fue el `PATCH` de sólo archivo que usan hoy
+- corregir `nombre` o `fase` → `DELETE /contratos/:id` y capturarlo de nuevo
+
+**Dos llaves nuevas en `Contrato`**: `monto` (`number | null`) e `historia`. Van
+en toda respuesta que devuelva un contrato — **menos en `obras[].contrato` del
+expediente**, que sigue siendo la proyección corta de siempre. Ojo con las dos:
+
+- **`monto: null` no es `0`.** Los contratos de antes de hoy se quedaron sin
+  monto: van como dato pendiente, no como cero.
+- **`historia.modificado: false` con `entradas: []`** es un contrato sin
+  modificaciones, que es lo normal. **No dibujen línea del tiempo ahí**: el
+  contrato lo dice para que no haya que deducirlo. Cuando sí hubo, la primera
+  entrada es el original, la última trae `vigente: true` y sus valores son
+  exactamente los campos del contrato — no hay dos verdades que reconciliar.
+
+**Y `fechaFin` sigue siendo el techo del SIROC**: como la modificación pisa los
+campos del contrato, todo lo que ya consumen —`seguimientoSiroc`,
+`seguimientoContrato`, las obras del expediente— se recalcula solo. No hay nada
+que cambiar ahí.
+
+**Qué necesitamos de ustedes:** la #40. Y dos cosas que la API no hace y son de
+la pantalla: **eliminar pide confirmación explícita** y bien diferenciada de dar
+de baja —eliminar no se deshace, la baja sí—, y **quien no puede eliminar
+(`rh_consulta`) no debería ver la opción**.
+
 ### 2026-09-03 16:21:22 · backend · La #38: el refrendo del SIROC se llama «reporte bimestral»
 
 **Leído de ustedes**: `HANDOFF-FRONTEND.md` del 3 sept 12:07:45 (la #33 cerrada;

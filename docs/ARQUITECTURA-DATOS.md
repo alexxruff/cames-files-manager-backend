@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-89)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-90)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -399,8 +399,26 @@ fase no tiene fases: **son la misma entidad** y por eso hay una sola colección
 dos opcionales y ninguno derivado del otro (D-75).
 
 - `numero` es una **secuencia dentro del proyecto que asigna el servidor**, no un
-  dato que se captura. Cuenta también los dados de baja: reusar un número
-  chocaría contra el índice único.
+  dato que se captura. Es el **hueco libre más bajo**: los dados de baja siguen
+  ocupando el suyo —existen, y reusarlo chocaría contra el índice único—, pero el
+  de un contrato **eliminado** (D-90) queda libre y el siguiente alta lo toma.
+- `monto` es el total del contrato en pesos, **IVA incluido y sin desglosar**
+  (D-90). Es obligatorio en el alta, pero **no lleva `required` en el esquema**:
+  los contratos capturados antes de D-90 no lo tienen, y exigirlo haría fallar
+  cualquier `save()` sobre ellos. `null` es «no se capturó» y **no es lo mismo que
+  `0`**.
+- `modificaciones` es la historia de lo repactado (D-90): cada una con sus
+  `fechaInicio`, `fechaFin`, `monto`, su `fechaAcuerdo` —el día en que se firmó,
+  casi nunca hoy—, un `motivo` opcional y **su propio convenio escaneado**.
+  `original` guarda los términos con los que nació el contrato y es `null`
+  mientras no haya ninguna. **Los campos de arriba son siempre los VIGENTES**: la
+  modificación los pisa y el pasado baja a la historia, y por eso el techo del
+  SIROC, el expediente y los candados del proyecto siguen leyendo `fechaFin` sin
+  enterarse de que esto existe. `historia` —la línea del tiempo que sale en la
+  respuesta— se **deriva al leer** y dice `modificado: false` cuando no hubo
+  ninguna, para que la pantalla no lo deduzca de un arreglo vacío. Las
+  modificaciones **no tienen `_id`**: se direccionan por posición, como los
+  refrendos, y sólo se puede deshacer la última.
 - `siroc` va **embebido** porque es 1:1 con el contrato y no tiene ciclo de vida
   propio. Nace en `null`.
 - **El aviso guarda una sola fecha, la de registro** (D-76). No hay
@@ -431,14 +449,20 @@ dos opcionales y ninguno derivado del otro (D-75).
 - **El contrato también lleva el suyo** (D-81): `archivo`, con el mismo
   `attachmentSchema`, es el contrato firmado escaneado. Es **uno y se
   reemplaza** —al revés que los del SIROC, que se suman—, y se adjunta al
-  capturar o después, con el `PATCH` de siempre: el papel llega días más tarde
-  que las fechas.
+  capturar o después, con `PUT /contratos/:id/archivo`: el papel llega días más
+  tarde que las fechas. Antes de D-90 eso lo hacía el `PATCH`, que ya no existe.
 - **Las renovaciones siguen sin `_id`**, así que su archivo se pide **por
   posición**. Dárselo obligaría a migrar las ya capturadas y Mongoose les
   inventaría uno distinto en cada lectura mientras tanto.
 - `estado` (`en_curso` | `finalizado`) y `activo` **no son lo mismo**: el primero
   es un contrato que terminó bien, el segundo uno capturado por error. Van por
   rutas distintas.
+- **Eliminar sí borra** (D-90), y es la única cosa de este modelo que lo hace:
+  `DELETE /contratos/:id` se lleva el documento, su SIROC, sus refrendos, sus
+  modificaciones y **todos sus objetos de R2**. Es para el contrato que nunca
+  debió existir, y libera los dos números —el suyo y el del SIROC, que si no
+  quedaba bloqueado para siempre en todo el sistema—. La **baja** (`activo`) es
+  otra cosa y se queda: ésa sí es historia.
 
 **Los contratos traban al proyecto.** En cuanto existe uno, el proyecto no cambia
 de cliente ni de registro patronal; en cuanto uno tiene SIROC, tampoco de
@@ -545,6 +569,8 @@ colección: `records.documentos[].tipo` apunta a `DOCUMENT_TYPES` en
 | **`contracts.fechaFin`**                         | Es el techo del SIROC (D-84): moverla recalcula al leer cuántos refrendos pide, y decide `seguimientoContrato`  |
 | **Quitar el SIROC o su última renovación**       | Sus archivos **se borran de R2** (D-80): el del aviso y el acuse de cada refrendo. No hay versiones             |
 | **Reemplazar el archivo de un contrato**         | El anterior **se borra de R2** (D-81): uno solo, sin versiones. El tope de subida son 30 MB, salvo la nómina    |
+| **Registrar una modificación de contrato**       | Pisa `fechaInicio`, `fechaFin` y `monto` (D-90): mueve el techo del SIROC y lo que ve el expediente             |
+| **Eliminar un contrato**                         | Borra de verdad (D-90): documento, SIROC, refrendos, modificaciones y sus objetos de R2. Libera los dos números |
 | **Reemplazar la imagen de una máquina**          | Lo mismo (D-86): la anterior se borra de R2. Y sólo entra una imagen: un PDF responde 415                       |
 | **`machines.identificador`**                     | Único por empresa sobre la forma normalizada: cambiarlo puede chocar con otra máquina (409)                     |
 | **Dar de baja una máquina asignada**             | Cierra su tramo vigente (D-87): sale de la obra y de las manos de quien la tenía, y queda en su historia        |

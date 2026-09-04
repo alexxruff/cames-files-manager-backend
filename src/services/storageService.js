@@ -262,6 +262,46 @@ async function firmarSiroc(siroc, sirocOriginal) {
   }
 }
 
+/**
+ * La línea del tiempo del contrato con el papel de cada entrada firmado (D-90).
+ *
+ * Igual que `firmarSiroc`, y por lo mismo: la forma pública nunca trae la clave
+ * de almacenamiento, así que hay que volver al documento para firmarla. El papel
+ * del original es el del contrato —no se copia a ninguna parte—; el de cada
+ * modificación es el suyo, y se cruza por **posición**.
+ */
+async function firmarHistoria(historia, contratoOriginal) {
+  if (!historia?.modificado) return historia
+
+  const entradas = await Promise.all(
+    (historia.entradas ?? []).map(async (entrada) => {
+      const esOriginal = entrada.tipo === 'original'
+      return {
+        ...entrada,
+        archivo: await firmarAdjunto(
+          esOriginal
+            ? contratoOriginal?.archivo
+            : contratoOriginal?.modificaciones?.[entrada.indice]?.archivo,
+          esOriginal
+            ? nombreDeContrato(contratoOriginal)
+            : nombreDeModificacion(contratoOriginal, entrada)
+        )
+      }
+    })
+  )
+
+  return { ...historia, entradas }
+}
+
+/**
+ * Con qué nombre baja el convenio modificatorio: el del contrato y la fecha en
+ * que se acordó, para que dos modificaciones no caigan con el mismo nombre en la
+ * carpeta de descargas.
+ */
+function nombreDeModificacion(contrato, modificacion) {
+  return `${nombreDeContrato(contrato)}-modificacion-${modificacion?.fechaAcuerdo ?? ''}`
+}
+
 /** Con qué nombre baja el acuse de un reporte bimestral. */
 function nombreDeReporteBimestral(numero, fecha) {
   return `${numero}-reporte-bimestral-${fecha}`
@@ -456,7 +496,9 @@ module.exports = {
   firmarAdjunto,
   firmarRegistro,
   firmarSiroc,
+  firmarHistoria,
   nombreDeReporteBimestral,
+  nombreDeModificacion,
   nombreDeContrato,
   subir,
   urlDeSubida,

@@ -11,6 +11,7 @@ module.exports = {
   ...require('./accessLevels'),
   ...require('./employeeTypes'),
   ...require('./contractTypes'),
+  ...require('./contractAmounts'),
   ...require('./documentTypes'),
   ...require('./statuses'),
   ...require('./alertTypes'),

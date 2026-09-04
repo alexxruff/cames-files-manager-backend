@@ -35,6 +35,7 @@ const cuerpo = (extra = {}) => ({
   nombre: 'Cimentación',
   fechaInicio: '2026-09-01',
   fechaFin: '2026-12-31',
+  monto: 1500000,
   ...extra
 })
 
@@ -60,6 +61,9 @@ describe('Contratos de un proyecto', () => {
         fase: null,
         fechaInicio: '2026-09-01',
         fechaFin: '2026-12-31',
+        monto: 1500000,
+        // Sin modificaciones no hay historia que mostrar (D-90).
+        historia: { modificado: false, entradas: [] },
         siroc: null,
         estado: 'en_curso',
         activo: true
@@ -167,23 +171,22 @@ describe('Contratos de un proyecto', () => {
         expect(res.body.message).toMatch(/fin del proyecto \(2026-11-30\)/)
       })
 
-      it('al editar se revisa sólo la fecha que viene: lo ya capturado no se toca', async () => {
+      it('las fechas de una modificación se revisan igual que las del alta', async () => {
         const e = await escenario()
         const contrato = (await crear(e)).body.data.contrato
-        // Un contrato viejo que quedó fuera de rango por la base.
-        await Contract.updateOne({ _id: contrato._id }, { fechaInicio: '2026-01-01' })
 
-        const soloFin = await request(app)
-          .patch(`${CONTRATOS}/${contrato._id}`)
+        const dentro = await request(app)
+          .post(`${CONTRATOS}/${contrato._id}/modificaciones`)
           .set(auth(e.token))
-          .send({ fechaFin: '2027-01-31' })
-        expect(soloFin.status).toBe(200)
+          .send({ fechaInicio: '2026-09-01', fechaFin: '2027-01-31', monto: 1600000 })
+        expect(dentro.status).toBe(201)
 
-        const finFuera = await request(app)
-          .patch(`${CONTRATOS}/${contrato._id}`)
+        const fuera = await request(app)
+          .post(`${CONTRATOS}/${contrato._id}/modificaciones`)
           .set(auth(e.token))
-          .send({ fechaFin: '2027-04-01' })
-        expect(finFuera.status).toBe(400)
+          .send({ fechaInicio: '2026-09-01', fechaFin: '2027-04-01', monto: 1600000 })
+        expect(fuera.status).toBe(400)
+        expect(fuera.body.message).toMatch(/fin del proyecto/)
       })
     })
 
@@ -223,49 +226,6 @@ describe('Contratos de un proyecto', () => {
       const vacia = await crear(e, { fase: '   ' })
       expect(vacia.status).toBe(201)
       expect(vacia.body.data.contrato.fase).toBeNull()
-    })
-
-    it('se edita, y se vacía con cadena vacía o con null', async () => {
-      const e = await escenario()
-      const id = (await crear(e, { fase: 'Fase 1' })).body.data.contrato._id
-
-      const editada = await request(app)
-        .patch(`${CONTRATOS}/${id}`)
-        .set(auth(e.token))
-        .send({ fase: 'Fase 2' })
-      expect(editada.status).toBe(200)
-      expect(editada.body.data.contrato.fase).toBe('Fase 2')
-
-      const vaciada = await request(app)
-        .patch(`${CONTRATOS}/${id}`)
-        .set(auth(e.token))
-        .send({ fase: '' })
-      expect(vaciada.status).toBe(200)
-      expect(vaciada.body.data.contrato.fase).toBeNull()
-
-      const conNull = await request(app)
-        .patch(`${CONTRATOS}/${id}`)
-        .set(auth(e.token))
-        .send({ fase: null })
-      expect(conNull.status).toBe(200)
-      expect(conNull.body.data.contrato.fase).toBeNull()
-    })
-
-    it('editar sólo la fase no toca el nombre ni las fechas', async () => {
-      const e = await escenario()
-      const id = (await crear(e, { nombre: 'Contrato 001-A' })).body.data.contrato._id
-
-      const res = await request(app)
-        .patch(`${CONTRATOS}/${id}`)
-        .set(auth(e.token))
-        .send({ fase: 'Fase 1' })
-
-      expect(res.body.data.contrato).toMatchObject({
-        nombre: 'Contrato 001-A',
-        fase: 'Fase 1',
-        fechaInicio: '2026-09-01',
-        fechaFin: '2026-12-31'
-      })
     })
 
     it('viene en el listado de contratos del proyecto', async () => {
@@ -331,17 +291,17 @@ describe('Contratos de un proyecto', () => {
       })
 
       const res = await request(app)
-        .patch(`${CONTRATOS}/${contrato._id}`)
+        .post(`${CONTRATOS}/${contrato._id}/modificaciones`)
         .set(auth(ajeno.token))
-        .send({ nombre: 'Otro' })
+        .send({ fechaInicio: '2026-09-01', fechaFin: '2027-01-31', monto: 1 })
 
       expect(res.status).toBe(404)
       expect(res.body.message).toMatch(/no existe/i)
     })
   })
 
-  describe('edición', () => {
-    it('cambia nombre y fechas', async () => {
+  describe('editar un contrato ya no existe (D-90)', () => {
+    it('410, con las tres rutas que lo sustituyen', async () => {
       const e = await escenario()
       const contrato = (await crear(e)).body.data.contrato
 
@@ -350,23 +310,23 @@ describe('Contratos de un proyecto', () => {
         .set(auth(e.token))
         .send({ nombre: 'Cimentación y estructura', fechaFin: '2027-01-31' })
 
-      expect(res.status).toBe(200)
-      expect(res.body.data.contrato.nombre).toBe('Cimentación y estructura')
-      expect(res.body.data.contrato.fechaFin).toBe('2027-01-31')
+      expect(res.status).toBe(410)
+      expect(res.body.message).toMatch(/POST \/contratos\/:id\/modificaciones/)
+      expect(res.body.message).toMatch(/PUT \/contratos\/:id\/archivo/)
+      expect(res.body.message).toMatch(/DELETE \/contratos\/:id/)
     })
 
-    it('rechaza por aquí el SIROC, el estado y el número, y dice por dónde van', async () => {
+    it('y no toca nada: el contrato sigue como estaba', async () => {
       const e = await escenario()
       const contrato = (await crear(e)).body.data.contrato
 
-      const res = await request(app)
+      await request(app)
         .patch(`${CONTRATOS}/${contrato._id}`)
         .set(auth(e.token))
-        .send({ siroc: SIROC, numero: 5 })
+        .send({ nombre: 'Otro nombre' })
 
-      expect(res.status).toBe(400)
-      expect(res.body.errors[0].msg).toMatch(/PUT \/contratos\/:id\/siroc/)
-      expect(res.body.errors[0].msg).toMatch(/lo asigna el servidor/)
+      const guardado = await Contract.findById(contrato._id)
+      expect(guardado.nombre).toBe('Cimentación')
     })
   })
 

@@ -474,8 +474,9 @@ const sirocSchema = new mongoose.Schema({
 const contratoSchema = new mongoose.Schema({
   proyectoId: { type: ObjectId, ref: 'Proyecto', required: true },
 
-  // Secuencia dentro del proyecto (max + 1, contando también los dados de
-  // baja). LA PONE EL SERVIDOR: no se manda al crear ni se puede corregir.
+  // Secuencia dentro del proyecto: el HUECO LIBRE MÁS BAJO. Los dados de baja
+  // siguen ocupando el suyo; el de un contrato ELIMINADO queda libre y se reusa
+  // (D-90). LA PONE EL SERVIDOR: no se manda al crear ni se puede corregir.
   numero: { type: Number, required: true },
 
   // Los dos opcionales y ninguno derivado del otro (D-75):
@@ -483,8 +484,21 @@ const contratoSchema = new mongoose.Schema({
   //   fase   → la etiqueta de obra ('Fase 1', 'Cimentación')
   nombre:      { type: String, default: null, maxlength: 120 },
   fase:        { type: String, default: null, maxlength: 120 },
+  // Los VIGENTES: una modificación los pisa y lo anterior baja a la historia.
   fechaInicio: { type: String, required: true },   // YYYY-MM-DD
   fechaFin:    { type: String, required: true },   // posterior al inicio
+
+  // El total en pesos, IVA incluido (3 sept 2026, D-90). SIN `required` aunque
+  // el alta lo exija: los contratos anteriores no lo tienen, y exigirlo aquí
+  // haría fallar cualquier save() sobre ellos. `null` ≠ `0`.
+  monto: { type: Number, default: null, min: 0 },
+
+  // La historia de lo repactado (D-90). `original` son los términos del alta y
+  // es null mientras no haya ninguna modificación; cada modificación trae los
+  // suyos y su propio convenio escaneado. `historia` —la línea del tiempo que
+  // sale en la respuesta— se DERIVA al leer.
+  original:       { type: terminosOriginalesSchema, default: null },
+  modificaciones: { type: [modificacionSchema], default: [] },
 
   siroc: { type: sirocSchema, default: null },
 
@@ -503,10 +517,10 @@ const contratoSchema = new mongoose.Schema({
 }, { timestamps: true });
 ```
 
-**Lo que el contrato NO tiene**, porque son las tres suposiciones naturales: no
-tiene `clienteId` (es el del proyecto), no tiene `empresaId` (sale del proyecto)
-y **no tiene monto, importe ni moneda** — el backend no modela dinero en ninguna
-parte de la obra.
+**Lo que el contrato NO tiene**: no tiene `clienteId` (es el del proyecto) ni
+`empresaId` (sale del proyecto). Monto **sí tiene** desde D-90, y es lo único que
+el backend modela como dinero: un número en pesos, IVA incluido, sin desglose ni
+moneda.
 
 Reglas:
 
@@ -515,8 +529,14 @@ Reglas:
   el `registroObraId`, y con un umbral más bajo: basta uno, porque el aviso ante
   el IMSS ya salió con esa obra.
 - Un contrato **dado de baja sale de esa cuenta**: si era el único, el proyecto
-  vuelve a poder cambiar de cliente y de registro patronal. Su número no se
-  reutiliza.
+  vuelve a poder cambiar de cliente y de registro patronal. Su número **sigue
+  ocupado**: el documento existe.
+- **Eliminar un contrato lo borra de verdad** (D-90), con su SIROC, sus refrendos,
+  sus modificaciones y todos sus archivos, y **libera los dos números**: el suyo y
+  el del SIROC. Es lo único de este modelo que borra; todo lo demás se da de baja.
+- **Una modificación no edita el contrato: lo repacta.** Fechas y monto nuevos
+  pisan a los vigentes, lo anterior queda en la historia con su papel, y **editar
+  un contrato ya no existe** (`PATCH` → 410).
 - **Quitar el SIROC libera su número.** Existe por eso: con el número único
   global, uno capturado en el contrato equivocado lo bloquearía para siempre.
 - No se puede crear un contrato en un proyecto **finalizado**, ni reabrir un

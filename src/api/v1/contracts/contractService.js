@@ -87,6 +87,7 @@ class ContractService {
           fase: datos.fase || null,
           fechaInicio: datos.fechaInicio,
           fechaFin: datos.fechaFin,
+          monto: this.#normalizarMonto(datos.monto),
           archivo
         })
         return { contrato: await this.#serializar(contrato) }
@@ -102,51 +103,248 @@ class ContractService {
   }
 
   /**
-   * PATCH /contratos/:id — nombre, fase, fechas y el contrato escaneado. El
-   * SIROC y el estado, no.
+   * PUT /contratos/:id/archivo — subir el contrato escaneado, o reemplazarlo.
    *
-   * Acepta `multipart` con **sólo** el archivo y ningún campo: así se adjunta el
-   * papel a un contrato ya capturado, que es el caso normal —las fechas se
-   * teclean el día que se firma y el escaneo llega después— y evita una ruta
-   * aparte para lo mismo (D-81).
+   * Existe porque **editar un contrato dejó de existir** (D-90) y era el `PATCH`
+   * quien recibía el papel (D-81): quien captura casi nunca tiene el escaneo a
+   * la mano el día que teclea las fechas, y sin esta ruta la única salida sería
+   * eliminar el contrato y volver a capturarlo entero.
+   *
+   * Toca **sólo el archivo**, y el que toca es el del contrato ORIGINAL: el
+   * papel de cada modificación es suyo y se sube por su propia ruta.
    */
-  async update(id, datos, contexto = {}) {
-    const { contrato, proyecto } = await this.#buscarVisible(id, contexto)
+  async reemplazarArchivoContrato(id, datos, contexto = {}) {
+    const { contrato } = await this.#buscarVisible(id, contexto)
 
-    // `|| null`: mandar cadena vacía es cómo se borra la etiqueta (regla 5).
-    if (datos.nombre !== undefined) contrato.nombre = datos.nombre || null
-    if (datos.fase !== undefined) contrato.fase = datos.fase || null
-
-    // Sólo las fechas que vienen: lo ya capturado no se revisa (D-85).
-    this.#validarFechasEnProyecto(proyecto, datos)
-    if (datos.fechaInicio !== undefined) contrato.fechaInicio = datos.fechaInicio
-    if (datos.fechaFin !== undefined) contrato.fechaFin = datos.fechaFin
-
-    /*
-     * El papel se reemplaza, no se versiona (D-79), y sólo si viene uno nuevo:
-     * corregir la fase no puede costar el escaneo. El anterior se borra al
-     * final, cuando la base ya no lo referencia.
-     */
     const anterior = contrato.archivo?.claveAlmacenamiento ?? null
     const entrada = await intake.resolver(datos, {
       destino: 'contrato',
       referencia: { contratoId: contrato._id }
     })
-    const nuevo = entrada
-      ? await this.#guardarAdjunto(contrato, entrada, 'contrato', contexto)
-      : null
-    if (nuevo) contrato.archivo = nuevo
+    if (!entrada) {
+      throw AppError.validation('Adjunta el contrato escaneado', [
+        { msg: 'El archivo es requerido', path: 'archivo' }
+      ])
+    }
+
+    const nuevo = await this.#guardarAdjunto(contrato, entrada, 'contrato', contexto)
+    contrato.archivo = nuevo
 
     try {
       await contrato.save()
     } catch (error) {
-      if (nuevo) await storage.borrar(nuevo.claveAlmacenamiento)
+      await storage.borrar(nuevo.claveAlmacenamiento)
       throw error
     }
 
-    if (nuevo && anterior && anterior !== nuevo.claveAlmacenamiento) {
-      await storage.borrar(anterior)
+    // El anterior, hasta que la base ya no lo referencia. No se versiona (D-79).
+    if (anterior && anterior !== nuevo.claveAlmacenamiento) await storage.borrar(anterior)
+
+    return { contrato: await this.#serializar(contrato) }
+  }
+
+  // ─── Las modificaciones del contrato (D-90) ────────────────────────────────
+
+  /**
+   * POST /contratos/:id/modificaciones — registrar una.
+   *
+   * **No es editar el contrato**, que ya no se puede: es un hecho nuevo. El
+   * cliente aplazó la obra, cambió el precio o se anexaron requerimientos, se
+   * firmó un convenio modificatorio, y desde ese día valen otras fechas y otro
+   * monto.
+   *
+   * Lo que hace, en orden: fotografía los términos originales —la primera vez, y
+   * sólo la primera—, agrega la modificación con los suyos, y **pisa los campos
+   * del contrato con los nuevos**. Por eso el techo del SIROC (D-84), el
+   * expediente (D-77) y los candados del proyecto (G3) siguen leyendo
+   * `fechaInicio`/`fechaFin` y no se enteran de nada: hay una verdad vigente y su
+   * pasado, no dos versiones.
+   */
+  async registrarModificacion(id, datos, contexto = {}) {
+    const { contrato, proyecto } = await this.#buscarVisible(id, contexto)
+
+    /*
+     * Un contrato cerrado no se modifica: lo que se pacta de nuevo se pacta
+     * sobre algo vivo. Se dice con qué se destraba, porque las dos salidas son
+     * distintas —reabrir no es reactivar— y desde fuera no se adivina.
+     */
+    if (!contrato.activo) {
+      throw new AppError(
+        400,
+        'Ese contrato está dado de baja: reactívalo antes de registrar una modificación'
+      )
     }
+    if (contrato.estado === 'finalizado') {
+      throw new AppError(
+        400,
+        'Ese contrato ya está finalizado: reábrelo antes de registrar una modificación'
+      )
+    }
+
+    // Sin fecha se asume hoy. Casi nunca lo es: el convenio se firma y se
+    // captura días después, y la que vale es la del papel.
+    const hoy = today()
+    const fechaAcuerdo = datos.fechaAcuerdo ?? hoy
+    if (isAfter(fechaAcuerdo, hoy)) {
+      throw new AppError(400, 'La fecha del acuerdo no puede ser futura')
+    }
+
+    // Las fechas nuevas caben en el proyecto, igual que las del alta (D-85).
+    this.#validarFechasEnProyecto(proyecto, datos)
+    if (isBefore(datos.fechaFin, datos.fechaInicio)) {
+      throw new AppError(400, 'La fecha de fin no puede ser anterior a la de inicio')
+    }
+
+    // El convenio escaneado, si vino. Opcional al capturar, como el acuse del
+    // reporte bimestral (D-80): el papel llega después.
+    const entrada = await intake.resolver(datos, {
+      destino: 'contrato-modificacion',
+      referencia: { contratoId: contrato._id }
+    })
+    const archivo = entrada
+      ? await this.#guardarAdjunto(contrato, entrada, 'modificacion', contexto)
+      : null
+
+    /*
+     * La fotografía del original se toma UNA vez, al modificar por primera vez:
+     * después, lo anterior a cada modificación es la modificación de antes.
+     */
+    if ((contrato.modificaciones ?? []).length === 0) {
+      contrato.original = {
+        fechaInicio: contrato.fechaInicio,
+        fechaFin: contrato.fechaFin,
+        monto: contrato.monto ?? null
+      }
+    }
+
+    const monto = this.#normalizarMonto(datos.monto)
+    contrato.modificaciones.push({
+      fechaAcuerdo,
+      motivo: datos.motivo || null,
+      fechaInicio: datos.fechaInicio,
+      fechaFin: datos.fechaFin,
+      monto,
+      archivo
+    })
+    contrato.markModified('modificaciones')
+
+    // Desde aquí, lo que vale es lo nuevo.
+    contrato.fechaInicio = datos.fechaInicio
+    contrato.fechaFin = datos.fechaFin
+    contrato.monto = monto
+
+    try {
+      await contrato.save()
+    } catch (error) {
+      if (archivo) await storage.borrar(archivo.claveAlmacenamiento)
+      throw error
+    }
+
+    return { contrato: await this.#serializar(contrato) }
+  }
+
+  /**
+   * DELETE /contratos/:id/modificaciones/ultima — deshacer la última.
+   *
+   * Sólo la última, como en los reportes bimestrales: el contrato vuelve a los
+   * términos de la modificación anterior o, si era la única, a los del alta —y
+   * entonces se queda otra vez sin historia—. Borrar una de en medio reescribiría
+   * el pasado y dejaría al contrato con términos que nadie pactó.
+   */
+  async quitarUltimaModificacion(id, contexto = {}) {
+    const { contrato } = await this.#buscarVisible(id, contexto)
+
+    if (!contrato.modificaciones?.length) {
+      throw new AppError(400, 'Ese contrato no tiene modificaciones registradas')
+    }
+
+    const quitada = contrato.modificaciones.pop()
+    const previa = contrato.modificaciones[contrato.modificaciones.length - 1] ?? null
+    const vigentes = previa ?? contrato.original
+
+    if (vigentes) {
+      contrato.fechaInicio = vigentes.fechaInicio
+      contrato.fechaFin = vigentes.fechaFin
+      contrato.monto = vigentes.monto ?? null
+    }
+    // Sin modificaciones no hay original que guardar: vuelve a no tener historia.
+    if (contrato.modificaciones.length === 0) contrato.original = null
+
+    contrato.markModified('modificaciones')
+    await contrato.save()
+
+    // Su convenio se va con ella: era de esa modificación, no del contrato.
+    if (quitada?.archivo?.claveAlmacenamiento) {
+      await storage.borrar(quitada.archivo.claveAlmacenamiento)
+    }
+
+    return { contrato: await this.#serializar(contrato) }
+  }
+
+  /**
+   * GET /contratos/:id/modificaciones/:indice/archivo — el convenio de una.
+   *
+   * Se direcciona por **posición**, como los reportes bimestrales: las
+   * modificaciones no tienen `_id`, el arreglo va en orden y sólo se quita la
+   * última.
+   */
+  async urlDeArchivoModificacion(id, indice, contexto = {}) {
+    const { contrato } = await this.#buscarVisible(id, contexto)
+
+    const modificacion = (contrato.modificaciones ?? [])[indice]
+    if (!modificacion) throw AppError.notFound('Esa modificación no existe')
+    if (!modificacion.archivo) {
+      throw AppError.notFound('Esa modificación no tiene convenio adjunto')
+    }
+
+    return {
+      archivo: await storage.firmarAdjunto(
+        modificacion.archivo,
+        storage.nombreDeModificacion(contrato, modificacion),
+        { descargar: contexto.descargar === true ? true : null }
+      )
+    }
+  }
+
+  /**
+   * PUT /contratos/:id/modificaciones/:indice/archivo — adjuntar el convenio a
+   * una modificación ya capturada, o reemplazar el que tenga.
+   *
+   * Igual que el acuse del reporte bimestral (D-80) y por lo mismo: el papel
+   * firmado casi siempre llega después, y sin esto la única salida sería deshacer
+   * la modificación —que devuelve el contrato a sus términos viejos— para volver
+   * a capturarla. Toca **sólo el archivo**: ni las fechas, ni el monto, ni el
+   * orden. Y sirve para cualquiera, no sólo la última.
+   */
+  async reemplazarArchivoModificacion(id, indice, datos, contexto = {}) {
+    const { contrato } = await this.#buscarVisible(id, contexto)
+
+    const modificacion = (contrato.modificaciones ?? [])[indice]
+    if (!modificacion) throw AppError.notFound('Esa modificación no existe')
+
+    const anterior = modificacion.archivo?.claveAlmacenamiento ?? null
+    const entrada = await intake.resolver(datos, {
+      destino: 'contrato-modificacion',
+      referencia: { contratoId: contrato._id }
+    })
+    if (!entrada) {
+      throw AppError.validation('Adjunta el convenio modificatorio', [
+        { msg: 'El archivo es requerido', path: 'archivo' }
+      ])
+    }
+
+    const nuevo = await this.#guardarAdjunto(contrato, entrada, 'modificacion', contexto)
+    modificacion.archivo = nuevo
+    contrato.markModified('modificaciones')
+
+    try {
+      await contrato.save()
+    } catch (error) {
+      await storage.borrar(nuevo.claveAlmacenamiento)
+      throw error
+    }
+
+    if (anterior && anterior !== nuevo.claveAlmacenamiento) await storage.borrar(anterior)
 
     return { contrato: await this.#serializar(contrato) }
   }
@@ -446,6 +644,47 @@ class ContractService {
     return { contrato: await this.#serializar(contrato) }
   }
 
+  /**
+   * DELETE /contratos/:id — borrarlo de verdad (D-90).
+   *
+   * **No es la baja.** `activo: false` es un contrato que existió y se canceló:
+   * sigue en la historia del proyecto y se puede reactivar. Esto es para el
+   * contrato que **nunca debió existir** —se capturó en el proyecto equivocado, o
+   * con el número de otro—, y por eso se lleva todo: el SIROC con sus reportes
+   * bimestrales, las modificaciones, y **cada archivo** de los tres.
+   *
+   * Con eso se liberan las dos cosas que bloqueaban: el **número de SIROC**, que
+   * es único en todo el sistema (G4) y sin esto quedaba muerto para siempre, y el
+   * **número del contrato** dentro del proyecto, que el siguiente alta reusa.
+   *
+   * No se puede deshacer, y a propósito no pide nada más que la capacidad de
+   * gestionar proyectos: quien captura un contrato es quien corrige su error. El
+   * aviso previo es de la pantalla, y para eso la respuesta dice qué se llevó.
+   */
+  async eliminar(id, contexto = {}) {
+    const { contrato } = await this.#buscarVisible(id, contexto)
+
+    const claves = this.#clavesDelContrato(contrato)
+    const eliminado = {
+      _id: contrato._id.toString(),
+      numero: contrato.numero,
+      nombre: contrato.nombre ?? null,
+      fase: contrato.fase ?? null,
+      sirocNumero: contrato.siroc?.numero ?? null,
+      reportesBimestrales: contrato.siroc?.actualizaciones?.length ?? 0,
+      modificaciones: contrato.modificaciones?.length ?? 0,
+      archivos: claves.length
+    }
+
+    await contrato.deleteOne()
+
+    // Después de la base, como en `quitarSiroc`: si esto falla queda un objeto
+    // huérfano —que nadie alcanza— y no un contrato apuntando a la nada.
+    for (const clave of claves) await storage.borrar(clave)
+
+    return { eliminado }
+  }
+
   // ─── El papel del contrato (D-81) ──────────────────────────────────────────
 
   /**
@@ -623,6 +862,8 @@ class ContractService {
         contrato.archivo,
         storage.nombreDeContrato(json)
       ),
+      // Y su línea del tiempo, con el papel de cada entrada firmado (D-90).
+      historia: await storage.firmarHistoria(json.historia, contrato),
       seguimientoSiroc: deriveSirocTracking(json),
       seguimientoContrato: deriveContractTracking(json)
     }
@@ -639,8 +880,8 @@ class ContractService {
    * registro de obra: si la base falla, quien llama borra el objeto recién
    * guardado en vez de dejarlo huérfano.
    *
-   * @param {'aviso'|'actualizacion'|'contrato'} clase qué papel es, para la ruta
-   *   en R2
+   * @param {'aviso'|'actualizacion'|'contrato'|'modificacion'} clase qué papel
+   *   es, para la ruta en R2
    */
   async #guardarAdjunto(contrato, entrada, clase, contexto = {}) {
     /*
@@ -648,7 +889,8 @@ class ContractService {
      * `contratos/{contratoId}/`: son papeles distintos —uno es del IMSS y el
      * otro del cliente— y separarlos hace legible el bucket.
      */
-    const esDelContrato = clase === 'contrato'
+    // El convenio modificatorio es papel del contrato, no del IMSS: va con él.
+    const esDelContrato = clase === 'contrato' || clase === 'modificacion'
     const clave = storage.construirClaveAdjunto({
       carpeta: esDelContrato ? 'contratos' : 'siroc',
       ids: [contrato._id, clase],
@@ -660,7 +902,7 @@ class ContractService {
     return {
       nombre:
         entrada.nombreOriginal ||
-        `${esDelContrato ? 'contrato' : 'siroc'}.${entrada.tipoReal.extension}`,
+        `${esDelContrato ? clase : 'siroc'}.${entrada.tipoReal.extension}`,
       mime: entrada.tipoReal.mime,
       tamanoBytes: entrada.tamanoBytes,
       subidoPor: contexto.user?.nombre || 'Sistema',
@@ -683,6 +925,19 @@ class ContractService {
     return typeof archivo.toObject === 'function' ? archivo.toObject() : archivo
   }
 
+  /**
+   * Las claves de TODO lo que cuelga de un contrato: su papel, el del aviso, el
+   * acuse de cada reporte bimestral y el convenio de cada modificación. Es lo
+   * que hay que borrar del almacenamiento al eliminarlo (D-90).
+   */
+  #clavesDelContrato(contrato) {
+    return [
+      contrato.archivo?.claveAlmacenamiento,
+      ...this.#clavesDelSiroc(contrato.siroc),
+      ...(contrato.modificaciones ?? []).map((m) => m?.archivo?.claveAlmacenamiento)
+    ].filter(Boolean)
+  }
+
   /** Las claves de todo lo que cuelga de un SIROC: el aviso y cada acuse. */
   #clavesDelSiroc(siroc) {
     const claves = [siroc?.archivo?.claveAlmacenamiento]
@@ -691,12 +946,33 @@ class ContractService {
     return claves.filter(Boolean)
   }
 
+  /**
+   * El número más bajo que nadie usa en el proyecto.
+   *
+   * Los dados de baja **siguen ocupando el suyo**: existen, y reusarlo chocaría
+   * contra el índice único. El que sí queda libre es el de un contrato
+   * **eliminado** (D-90), y por eso esto es el hueco más bajo y no el último más
+   * uno: eliminar y volver a capturar es justo lo que motiva el borrado, y quien
+   * lo hace espera recuperar el número, no el siguiente.
+   */
   async #siguienteNumero(proyectoId) {
-    // Incluye los dados de baja: reusar su número chocaría contra el índice.
-    const ultimo = await Contract.findOne({ proyectoId })
-      .sort({ numero: -1 })
-      .select('numero')
-    return (ultimo?.numero ?? 0) + 1
+    const usados = await Contract.find({ proyectoId }).select('numero').lean()
+    const ocupados = new Set(usados.map((c) => c.numero))
+
+    let numero = 1
+    while (ocupados.has(numero)) numero += 1
+    return numero
+  }
+
+  /**
+   * El monto como se guarda: pesos con centavos y ni un decimal más, o `null`.
+   *
+   * `null` es «no se capturó» —los contratos anteriores a D-90— y no es lo mismo
+   * que `0`, que es una cifra que alguien tecleó.
+   */
+  #normalizarMonto(monto) {
+    if (monto === undefined || monto === null || monto === '') return null
+    return Math.round(Number(monto) * 100) / 100
   }
 
   #esChoqueDeSiroc(error) {

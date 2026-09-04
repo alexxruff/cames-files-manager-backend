@@ -54,24 +54,78 @@ class ContractController {
   }
 
   /**
-   * PATCH /contratos/:id
+   * PUT /contratos/:id/archivo
    *
-   * También por `multipart`: mandar sólo el archivo, sin ningún campo, es cómo
-   * se le adjunta el papel a un contrato ya capturado (D-81).
+   * Sube el contrato escaneado, o reemplaza el que tenga. Es lo que quedó del
+   * `PATCH` que se fue (D-90): quien captura no siempre tiene el papel a la mano.
    */
-  update = async (req, res) => {
-    const datos = await contractService.update(
+  subirArchivoContrato = async (req, res) => {
+    const datos = await contractService.reemplazarArchivoContrato(
       req.params.id,
       { ...req.body, archivo: this.#archivo(req) },
       this.#contexto(req)
     )
-    return ok(
-      res,
-      datos,
-      this.#trajoArchivo(req)
-        ? 'Contrato actualizado con su archivo'
-        : 'Contrato actualizado'
+    req.log.info('Contrato escaneado guardado', { contratoId: req.params.id })
+    return ok(res, datos, 'Contrato escaneado guardado')
+  }
+
+  /**
+   * POST /contratos/:id/modificaciones
+   *
+   * Acepta `multipart` con el convenio modificatorio en el campo `archivo`,
+   * opcional (D-90), y el mismo JSON sin él.
+   */
+  registrarModificacion = async (req, res) => {
+    const datos = await contractService.registrarModificacion(
+      req.params.id,
+      { ...req.body, archivo: this.#archivo(req) },
+      this.#contexto(req)
     )
+    req.log.info('Contrato modificado', {
+      contratoId: req.params.id,
+      modificaciones: datos.contrato.historia?.entradas?.length
+    })
+    return created(res, datos, 'Modificación del contrato registrada')
+  }
+
+  /** DELETE /contratos/:id/modificaciones/ultima */
+  quitarUltimaModificacion = async (req, res) => {
+    const datos = await contractService.quitarUltimaModificacion(
+      req.params.id,
+      this.#contexto(req)
+    )
+    req.log.info('Modificación del contrato deshecha', { contratoId: req.params.id })
+    return ok(res, datos, 'Última modificación del contrato deshecha')
+  }
+
+  /** GET /contratos/:id/modificaciones/:indice/archivo */
+  urlArchivoModificacion = async (req, res) => {
+    const datos = await contractService.urlDeArchivoModificacion(
+      req.params.id,
+      Number(req.params.indice),
+      { ...this.#contexto(req), descargar: req.query.descargar === 'true' }
+    )
+    return ok(res, datos)
+  }
+
+  /**
+   * PUT /contratos/:id/modificaciones/:indice/archivo
+   *
+   * Le pone el convenio a una modificación ya capturada, o reemplaza el que
+   * tenga. No toca ningún otro dato de la modificación.
+   */
+  subirArchivoModificacion = async (req, res) => {
+    const datos = await contractService.reemplazarArchivoModificacion(
+      req.params.id,
+      Number(req.params.indice),
+      { ...req.body, archivo: this.#archivo(req) },
+      this.#contexto(req)
+    )
+    req.log.info('Convenio modificatorio guardado', {
+      contratoId: req.params.id,
+      indice: req.params.indice
+    })
+    return ok(res, datos, 'Convenio modificatorio guardado')
   }
 
   /**
@@ -203,6 +257,22 @@ class ContractController {
   reabrir = async (req, res) => {
     const datos = await contractService.reabrir(req.params.id, this.#contexto(req))
     return ok(res, datos, 'Contrato reabierto')
+  }
+
+  /**
+   * DELETE /contratos/:id — borrarlo de verdad, con todo lo suyo (D-90).
+   *
+   * Devuelve **qué se llevó** —el SIROC, cuántos reportes bimestrales, cuántas
+   * modificaciones y cuántos archivos—: es lo que la pantalla necesita para
+   * advertirlo antes y para confirmarlo después.
+   */
+  eliminar = async (req, res) => {
+    const datos = await contractService.eliminar(req.params.id, this.#contexto(req))
+    req.log.warn('Contrato eliminado', {
+      contratoId: req.params.id,
+      ...datos.eliminado
+    })
+    return ok(res, datos, 'Contrato eliminado')
   }
 
   /** PATCH /contratos/:id/estado — la baja, no el ciclo de vida. */

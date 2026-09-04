@@ -51,10 +51,12 @@ async function escenario(datos = {}) {
 }
 
 const crearContrato = (e) =>
-  request(app)
-    .post(`${PROYECTOS}/${e.proyecto._id}/contratos`)
-    .set(auth(e.token))
-    .send({ nombre: 'Cimentación', fechaInicio: '2026-01-01', fechaFin: '2027-12-31' })
+  request(app).post(`${PROYECTOS}/${e.proyecto._id}/contratos`).set(auth(e.token)).send({
+    nombre: 'Cimentación',
+    fechaInicio: '2026-01-01',
+    fechaFin: '2027-12-31',
+    monto: 1500000
+  })
 
 /** Contrato recién creado, sin SIROC. */
 async function contratoDe(e) {

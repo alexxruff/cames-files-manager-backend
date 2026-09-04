@@ -1,6 +1,7 @@
 const { body, param, query } = require('express-validator')
 const { isCalendarDate } = require('../utils/dates')
 const { subidaIdOpcional } = require('./uploadValidation')
+const { MONTO_MAXIMO_CONTRATO } = require('../constants')
 
 /**
  * Contratos y SIROC (D-70).
@@ -8,8 +9,6 @@ const { subidaIdOpcional } = require('./uploadValidation')
  * `numero` NO se valida en ninguna parte porque **no llega del cliente**: es una
  * secuencia dentro del proyecto y la asigna el servidor.
  */
-
-const CAMPOS_EDITABLES = ['nombre', 'fase', 'fechaInicio', 'fechaFin']
 
 const fecha = (campo, etiqueta, { obligatoria = true } = {}) => {
   const regla = body(campo)
@@ -21,6 +20,29 @@ const fecha = (campo, etiqueta, { obligatoria = true } = {}) => {
     return true
   })
 }
+
+/**
+ * El monto en pesos, IVA incluido (D-90). Llega como número en JSON y como
+ * cadena en `multipart`, así que se convierte antes de mirarlo. `0` es una cifra
+ * válida —alguien la tecleó— y por eso `exists` no usa `falsy`: lo que no se
+ * acepta es que falte.
+ */
+const monto = (etiqueta) =>
+  body('monto')
+    .exists({ values: 'null' })
+    .withMessage(`${etiqueta} es requerido`)
+    .bail()
+    .customSanitizer((v) => (v === '' ? null : Number(v)))
+    .custom((valor) => {
+      if (!Number.isFinite(valor)) {
+        throw new Error(`${etiqueta} debe ser un número en pesos`)
+      }
+      if (valor < 0) throw new Error(`${etiqueta} no puede ser negativo`)
+      if (valor > MONTO_MAXIMO_CONTRATO) {
+        throw new Error(`${etiqueta} no puede exceder ${MONTO_MAXIMO_CONTRATO}`)
+      }
+      return true
+    })
 
 /**
  * `nombre` y `fase` se validan igual: opcionales, se recortan, y el vacío es una
@@ -54,6 +76,7 @@ exports.createContractValidation = [
   faseContrato(),
   fecha('fechaInicio', 'La fecha de inicio'),
   fecha('fechaFin', 'La fecha de fin'),
+  monto('El monto del contrato'),
   subidaIdOpcional
 ]
 
@@ -73,41 +96,102 @@ exports.contractIdValidation = [
   param('id').isMongoId().withMessage('El contrato indicado no es válido')
 ]
 
-exports.updateContractValidation = [
+/**
+ * Subir el contrato escaneado (D-90). El archivo es **obligatorio**: es lo único
+ * que hace esta ruta, que es lo que quedó del `PATCH` que se fue.
+ */
+exports.contractFileUploadValidation = [
   param('id').isMongoId().withMessage('El contrato indicado no es válido'),
   body().custom((cuerpo, { req }) => {
-    const campos = Object.keys(cuerpo || {})
-    /*
-     * Un `multipart` con SÓLO el archivo no trae campos, y es una petición
-     * legítima: así se le adjunta el papel a un contrato ya capturado (D-81).
-     * Con la subida directa (D-83) el equivalente es un cuerpo con sólo
-     * `subidaId`, que tampoco es «nada que actualizar».
-     */
-    if (campos.length === 0 && !req.file) throw new Error('No hay nada que actualizar')
+    if (!req.file && !cuerpo?.subidaId) {
+      throw new Error('Envía el archivo en el campo "archivo", o su `subidaId`')
+    }
+    return true
+  }),
+  subidaIdOpcional
+]
 
-    // `subidaId` dice de dónde sale el archivo; no es un campo del contrato.
-    const invalidos = campos
-      .filter((c) => c !== 'subidaId')
-      .filter((c) => !CAMPOS_EDITABLES.includes(c))
+/**
+ * Registrar una modificación del contrato (D-90).
+ *
+ * Las tres cosas que se repactan —fechas y monto— son **obligatorias**: una
+ * modificación es el nuevo estado completo de lo pactado, no un parche de un
+ * campo. `fechaAcuerdo` es opcional y sin ella se asume hoy; `motivo` también.
+ */
+exports.contractModificacionValidation = [
+  param('id').isMongoId().withMessage('El contrato indicado no es válido'),
+  body().custom((cuerpo) => {
+    const permitidos = [
+      'fechaInicio',
+      'fechaFin',
+      'monto',
+      'motivo',
+      'fechaAcuerdo',
+      // `subidaId` no es un dato de la modificación: dice dónde está su convenio.
+      'subidaId'
+    ]
+    const invalidos = Object.keys(cuerpo || {}).filter((c) => !permitidos.includes(c))
     if (invalidos.length > 0) {
       const pistas = {
-        siroc: 'usa PUT /contratos/:id/siroc',
-        estado: 'usa POST /contratos/:id/finalizar o /reabrir',
-        activo: 'usa PATCH /contratos/:id/estado',
+        nombre:
+          'el nombre y la fase no se modifican: elimina el contrato y captúralo de nuevo',
+        fase: 'el nombre y la fase no se modifican: elimina el contrato y captúralo de nuevo',
         numero: 'el número lo asigna el servidor y no se cambia',
-        proyectoId: 'un contrato no cambia de proyecto'
+        siroc: 'usa PUT /contratos/:id/siroc'
       }
       const detalle = invalidos
         .map((c) => (pistas[c] ? `${c} (${pistas[c]})` : c))
         .join(', ')
-      throw new Error(`Estos campos no se pueden actualizar aquí: ${detalle}`)
+      throw new Error(`Estos campos no se pueden enviar aquí: ${detalle}`)
     }
     return true
   }),
-  nombreContrato(),
-  faseContrato(),
-  fecha('fechaInicio', 'La fecha de inicio', { obligatoria: false }),
-  fecha('fechaFin', 'La fecha de fin', { obligatoria: false }),
+  fecha('fechaInicio', 'La fecha de inicio'),
+  fecha('fechaFin', 'La fecha de fin'),
+  monto('El monto de la modificación'),
+  fecha('fechaAcuerdo', 'La fecha del acuerdo', { obligatoria: false }),
+  body('motivo')
+    .optional({ values: 'null' })
+    .customSanitizer((v) => (typeof v === 'string' ? v.trim() : v))
+    .custom((valor) => {
+      if (valor === null || valor === undefined || valor === '') return true
+      if (String(valor).length > 300) {
+        throw new Error('El motivo no puede exceder 300 caracteres')
+      }
+      return true
+    }),
+  subidaIdOpcional
+]
+
+/**
+ * El convenio de una modificación concreta. Se direcciona por **posición**,
+ * igual que el acuse de un reporte bimestral.
+ */
+exports.contractModificacionFileValidation = [
+  param('id').isMongoId().withMessage('El contrato indicado no es válido'),
+  param('indice')
+    .isInt({ min: 0 })
+    .withMessage('La modificación indicada no es válida')
+    .toInt(),
+  query('descargar')
+    .optional()
+    .isBoolean()
+    .withMessage('descargar debe ser verdadero o falso')
+]
+
+/** Adjuntarle el convenio a una modificación ya capturada. El archivo manda. */
+exports.contractModificacionFileUploadValidation = [
+  param('id').isMongoId().withMessage('El contrato indicado no es válido'),
+  param('indice')
+    .isInt({ min: 0 })
+    .withMessage('La modificación indicada no es válida')
+    .toInt(),
+  body().custom((cuerpo, { req }) => {
+    if (!req.file && !cuerpo?.subidaId) {
+      throw new Error('Envía el archivo en el campo "archivo", o su `subidaId`')
+    }
+    return true
+  }),
   subidaIdOpcional
 ]
 
@@ -222,5 +306,3 @@ exports.sirocUpdateFileUploadValidation = [
   }),
   subidaIdOpcional
 ]
-
-exports.CAMPOS_EDITABLES = CAMPOS_EDITABLES

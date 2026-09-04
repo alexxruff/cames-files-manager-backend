@@ -8,6 +8,7 @@
 const UPLOAD_TARGETS = Object.freeze([
   'expediente',
   'contrato',
+  'contrato-modificacion',
   'siroc-aviso',
   'siroc-actualizacion',
   'registro-obra',
