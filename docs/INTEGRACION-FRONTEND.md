@@ -28,7 +28,7 @@ tiempo de ejecución**, así que no puede mentir:
 curl -s http://localhost:8080/api/v1 | jq '.data.implementados, .data.pendientes'
 ```
 
-`GET /api/v1` es público. Hoy son **119 rutas** en pie y 6 anunciadas como
+`GET /api/v1` es público. Hoy son **122 rutas** en pie y 6 anunciadas como
 pendientes. Dónde está el detalle de cada familia:
 
 | Familia                                               | Detalle en                                             |
@@ -46,6 +46,7 @@ pendientes. Dónde está el detalle de cada familia:
 | `/subidas` — subir un archivo sin pasar por aquí      | `ENDPOINTS-SUBIDAS.md`                                 |
 | `/maquinas` y su asignación a la obra — la maquinaria | `ENDPOINTS-MAQUINAS.md`                                |
 | `/maquinas/:id/incidencias` y `/tipos-incidencia`     | `ENDPOINTS-MAQUINAS.md`, §12 a §18                     |
+| `/modulos`, `/empresas/:id/modulos` — qué usa cada empresa | **Este documento**, §5                            |
 | `/usuarios*`                                          | Responde **410**: se movió, y el mensaje dice a dónde  |
 
 > **`data.empleado` significa siempre lo mismo:** el **RenglonEmpleado**
@@ -502,7 +503,7 @@ Query, todos opcionales:
 
 // data
 {
-  "empresa": { "_id": "…", "nombre": "…", "rfc": "…", "activo": true, "branding": {…}, "configuracion": {…}, "createdAt": "…", "updatedAt": "…" },
+  "empresa": { "_id": "…", "nombre": "…", "rfc": "…", "activo": true, "modulos": ["empresas", "personal", "…"], "branding": {…}, "configuracion": {…}, "createdAt": "…", "updatedAt": "…" },
   "conteos": { "empleados": 0, "clientes": null, "proyectosActivos": null, "alertasPendientes": null }
 }
 ```
@@ -530,6 +531,44 @@ agregación: `empleados` (adscripciones activas), `clientes` (cartera activa) y
 `proyectosActivos` (sólo los **en curso**) son reales. `alertasPendientes` sigue en
 `null` porque ese módulo no existe — `null` significa «todavía no se sabe», no
 «cero». Una empresa ajena da `404`.
+
+### Los módulos de cada empresa (D-95)
+
+**Es un eje distinto de los permisos, y conviene no mezclarlos.** El permiso es
+de la persona; el **módulo es de la empresa** y se apaga para todos, incluido el
+administrador de plataforma. Una pestaña se pinta si el módulo está activo en esa
+empresa **y** la persona tiene la casilla.
+
+Hoy **la única sección opcional es Maquinaria**, con sus incidencias. Todo lo
+demás es obligatorio y la pantalla no debe ofrecerlo siquiera.
+
+```
+GET   /api/v1/modulos                 → catálogo: qué existe y qué es opcional
+GET   /api/v1/empresas/:id/modulos    → qué usa esta empresa, y cuánto hay dentro
+PATCH /api/v1/empresas/:id/modulos    → encender y apagar (admin de plataforma)
+POST  /api/v1/empresas                → acepta `modulos` en el alta
+```
+
+**Para pintar las pestañas no hace falta pedir nada**: la sesión ya trae
+`user.empresas[].modulos` con los activos de cada empresa. Quien está en dos ve
+las de cada una según lo que cada una tenga.
+
+**Antes de apagar, avisen qué se va a ocultar.** `GET /empresas/:id/modulos` trae
+`contenido` con los conteos, y la etiqueta ya viene en singular o plural:
+«Maquinaria tiene 12 máquinas y 30 incidencias». Apagar **no borra nada**: al
+encenderlo otra vez vuelve tal cual.
+
+**Lo que hay que tratar en el cliente HTTP:** una sección apagada responde
+**`404`**, no un error propio. Es la misma regla de «fuera de alcance» de
+siempre, así que si alguien llega por URL a `/maquinaria` de una empresa que no la
+usa, verá el mismo «no existe» que ya manejan.
+
+El cuerpo del `PATCH` es **la lista completa de los activos**, no un cambio:
+`{ "modulos": ["personal", "proyectos", …] }`. Los obligatorios se ignoran, lo
+que no venga y sea opcional queda apagado, y una clave inventada responde `400`.
+
+La forma exacta de las respuestas está en `CONTRATO-API.md`
+§«Los módulos activos de cada empresa».
 
 ### `GET /categorias` · `POST /categorias` · `PATCH /categorias/:id/estado`
 

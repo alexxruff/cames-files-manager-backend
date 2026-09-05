@@ -8,6 +8,7 @@ const storage = require('../../../services/storageService')
 const env = require('../../../config/env')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { can, CAPABILITIES } = require('../../../utils/permissions')
+const { alcanceSinModulo } = require('../../../middlewares/scopeMiddleware')
 
 /**
  * Permisos de subida directa (D-83).
@@ -113,6 +114,16 @@ class UploadService {
     if (!can(contexto.user?.acceso, destino.capacidad)) {
       throw AppError.forbidden('No tienes permiso para adjuntar archivos aquí')
     }
+
+    /*
+     * El módulo apagado recorta el alcance ANTES de comprobar el dueño (D-95).
+     * En las demás rutas eso lo hace `requireCapability`; aquí no puede, porque
+     * la casilla depende del destino y sólo se conoce al llegar hasta aquí. Sin
+     * esto, pedir el permiso de subida sería el rodeo para tocar la imagen de una
+     * máquina de una empresa que apagó maquinaria.
+     */
+    const acotado = alcanceSinModulo(contexto, destino.capacidad)
+    if (acotado !== null) contexto = { ...contexto, empresasVisibles: acotado }
 
     const referencia = this.#referenciaDe(datos)
     for (const id of destino.ids) {

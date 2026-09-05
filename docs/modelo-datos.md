@@ -250,6 +250,13 @@ const empresaSchema = new mongoose.Schema({
     documentosSensibles:   [{ type: String, enum: TIPOS_DOCUMENTO }]
   },
 
+  // Qué secciones NO usa esta empresa (D-95). Se guarda lo APAGADO y no lo
+  // activo a propósito: un módulo que nadie mencionó tiene que existir, así que
+  // el campo vacío significa «todo encendido» y las empresas que ya existían no
+  // necesitaron migración. El enum son sólo los opcionales — hoy, `maquinaria`.
+  // El contrato publica lo contrario, `modulos`, derivado al leer.
+  modulosApagados: [{ type: String, enum: MODULOS_OPCIONALES }],
+
   activo: { type: Boolean, default: true }
 }, { timestamps: true });
 ```
@@ -1190,6 +1197,13 @@ Reglas que no se negocian:
   recurso existe.
 - Una prueba por endpoint que verifique que un usuario de la Empresa A no alcanza
   datos de la Empresa B.
+
+**Y un tercer eje encima, desde D-95:** los **módulos activos de la empresa**.
+El permiso dice qué puede una persona; el módulo dice **qué existe en esa
+empresa**, se apaga para todos —el administrador de plataforma incluido— y lo que
+queda apagado responde `404`, igual que lo que está fuera de alcance.
+`requireCapability` lo aplica derivando el módulo de la sección de la casilla, así
+que ninguna ruta lleva un candado propio.
 
 > **El caso que hay que pensar:** un empleado adscrito a las dos empresas es
 > visible desde las dos, y **su expediente es el mismo**. Es el comportamiento

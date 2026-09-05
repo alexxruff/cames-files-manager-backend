@@ -3,8 +3,11 @@ const Company = require('./companyModel')
 const Affiliation = require('../affiliations/affiliationModel')
 const Portfolio = require('../portfolios/portfolioModel')
 const Project = require('../projects/projectModel')
+const Machine = require('../machines/machineModel')
+const MachineIncident = require('../machineIncidents/machineIncidentModel')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { normalize } = require('../../../utils/text')
+const { MODULES, offModulesFrom } = require('../../../utils/modules')
 
 /**
  * Empresas (backend-spec §6.3). La entidad raíz del grupo.
@@ -93,6 +96,11 @@ class CompanyService {
       nombre: datos.nombre,
       rfc: datos.rfc || null,
       registrosPatronales: datos.registrosPatronales || [],
+      /*
+       * Los módulos se eligen desde el alta (D-95). Si no vienen, la empresa
+       * nace con TODOS activos: un módulo que nadie mencionó tiene que existir.
+       */
+      modulosApagados: datos.modulos ? offModulesFrom(datos.modulos) : [],
       activo: datos.activo ?? true
     })
 
@@ -192,6 +200,99 @@ class CompanyService {
 
     const [conteos] = await this.#conteosPorEmpresa([empresa._id])
     return { empresa: empresa.toJSON(), conteos: conteos || this.#conteosVacios() }
+  }
+
+  // ─── Módulos activos (D-95) ───────────────────────────────────────────────
+
+  /**
+   * `GET /empresas/:id/modulos` — qué secciones usa esta empresa, y **cuánto hay
+   * dentro de cada una**.
+   *
+   * El conteo es la mitad de para qué sirve la pantalla: apagar maquinaria sin
+   * saber que tiene 12 máquinas y 30 incidencias es justo lo que no debe pasar.
+   * Sólo se cuenta lo de los módulos OPCIONALES: los obligatorios no se pueden
+   * apagar, así que contarlos sería consultar por gusto.
+   *
+   * Se lee con `viewCompanies` y **no** se apaga con el módulo: quien no pueda
+   * ver una sección apagada tampoco podría volver a encenderla.
+   */
+  async modulos(id, { empresasVisibles = null } = {}) {
+    const empresa = await this.#buscarEnAlcance(id, empresasVisibles)
+    return this.#respuestaModulos(empresa)
+  }
+
+  /**
+   * `PATCH /empresas/:id/modulos` — encender y apagar secciones.
+   *
+   * `modulos` es la lista COMPLETA de los que quedan activos, como las jefaturas
+   * y los registros patronales: la pantalla guarda lo que muestra sin llevar la
+   * cuenta de qué cambió. Los obligatorios se ignoran —están siempre activos,
+   * vengan o no—, y lo que se guarda es lo apagado.
+   *
+   * **No borra nada**: apagar oculta, encender devuelve lo que había tal cual.
+   */
+  async setModulos(id, modulosActivos) {
+    const empresa = await this.#buscar(id)
+
+    empresa.modulosApagados = offModulesFrom(modulosActivos)
+    await empresa.save()
+
+    return this.#respuestaModulos(empresa)
+  }
+
+  async #respuestaModulos(empresa) {
+    const apagados = new Set(empresa.modulosApagados || [])
+    const contenido = await this.#contenidoPorModulo(empresa._id)
+
+    return {
+      empresa: empresa.toJSON(),
+      modulos: MODULES.map((modulo) => ({
+        clave: modulo.clave,
+        etiqueta: modulo.etiqueta,
+        descripcion: modulo.descripcion,
+        opcional: modulo.opcional,
+        activo: !apagados.has(modulo.clave),
+        contenido: contenido[modulo.clave] || []
+      }))
+    }
+  }
+
+  /**
+   * Qué hay dentro de cada módulo opcional de esta empresa. Se cuenta TODO lo
+   * que existe, activo o no: lo que se va a ocultar al apagarlo.
+   */
+  async #contenidoPorModulo(empresaId) {
+    const [maquinas, incidencias] = await Promise.all([
+      Machine.countDocuments({ empresaId }),
+      MachineIncident.countDocuments({ empresaId })
+    ])
+
+    return {
+      maquinaria: [
+        {
+          clave: 'maquinas',
+          etiqueta: maquinas === 1 ? 'máquina' : 'máquinas',
+          total: maquinas
+        },
+        {
+          clave: 'incidencias',
+          etiqueta: incidencias === 1 ? 'incidencia' : 'incidencias',
+          total: incidencias
+        }
+      ]
+    }
+  }
+
+  /** La empresa, o 404 si queda fuera del alcance de quien pregunta. */
+  async #buscarEnAlcance(id, empresasVisibles) {
+    if (!mongoose.isValidObjectId(id)) {
+      throw new AppError(400, 'La empresa indicada no es válida')
+    }
+    if (empresasVisibles !== null && !empresasVisibles.includes(String(id))) {
+      // Fuera de alcance: 404, no 403.
+      throw AppError.notFound('La empresa no existe')
+    }
+    return this.#buscar(id)
   }
 
   // ─── Registros patronales (D-65) ──────────────────────────────────────────

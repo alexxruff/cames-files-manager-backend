@@ -1,6 +1,7 @@
 const Affiliation = require('../affiliations/affiliationModel')
 const Role = require('../roles/roleModel')
 const { permissionsOf, permissionKeysOf } = require('../../../utils/permissions')
+const { activeModuleKeys } = require('../../../utils/modules')
 // Se requiere aunque no se use directamente: `populate('empresaId')` resuelve el
 // modelo por nombre y sin esto lanza MissingSchemaError.
 require('../companies/companyModel')
@@ -21,6 +22,11 @@ require('../companies/companyModel')
  * pantalla apague su menú con lo que dice el servidor y deje de mantener su
  * propia copia de la matriz — hoy son dos listas que ya difieren en un caso.
  *
+ * Cada empresa trae además sus **módulos activos** (D-95): qué secciones existen
+ * ahí. Son un eje distinto de los permisos —el módulo lo apaga la empresa para
+ * todos, la casilla es de la persona— y la pestaña se pinta sólo si están las
+ * dos cosas.
+ *
  * Desde D-94 cada empresa trae **los suyos**, porque el rol puede ser distinto en
  * cada una. El `permisos` de arriba se queda como la **unión** de todas: es lo
  * que el front ya lee, y sirve para decidir si una sección se ofrece siquiera.
@@ -31,7 +37,7 @@ async function construirAuthUser(empleado, { ultimoAccesoEn = null } = {}) {
     empleadoId: empleado._id,
     activo: true
   })
-    .populate({ path: 'empresaId', select: 'nombre activo' })
+    .populate({ path: 'empresaId', select: 'nombre activo modulosApagados' })
     .populate({
       path: 'rolId',
       select: 'nombre permisos todosLosPermisos soloSusAreas activo'
@@ -66,7 +72,15 @@ async function construirAuthUser(empleado, { ultimoAccesoEn = null } = {}) {
        * deduce nada.
        */
       rol: a.rolId ? { _id: a.rolId._id.toString(), nombre: a.rolId.nombre } : null,
-      permisos: permissionKeysOf(acceso, { rolDeLaEmpresa: a.rolId })
+      permisos: permissionKeysOf(acceso, { rolDeLaEmpresa: a.rolId }),
+      /*
+       * Los módulos ACTIVOS de esa empresa (D-95). Es lo que decide qué pestañas
+       * se pintan, y va por empresa porque quien está en dos ve las de cada una:
+       * si una tiene maquinaria y la otra no, la sección aparece sólo donde
+       * corresponde. Se compone con `permisos`: la pestaña se ve si el módulo
+       * está activo **y** la persona tiene la casilla.
+       */
+      modulos: activeModuleKeys(a.empresaId.modulosApagados)
     }))
 
   return {

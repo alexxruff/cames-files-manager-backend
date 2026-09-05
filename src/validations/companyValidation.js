@@ -1,4 +1,5 @@
 const { body, param, query } = require('express-validator')
+const { MODULE_KEYS } = require('../utils/modules')
 
 // RFC de persona moral (12) o física (13).
 const PATRON_RFC = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/
@@ -68,6 +69,33 @@ exports.employerRegistrationEstadoValidation = [
   body('activo').isBoolean().withMessage('activo debe ser verdadero o falso')
 ]
 
+/**
+ * Los módulos ACTIVOS que manda la pantalla (D-95). Es la lista completa, no un
+ * cambio: lo que no venga y sea opcional queda apagado.
+ *
+ * Se validan contra el catálogo para que una clave inventada no se guarde en
+ * silencio y deje una sección apagada que nadie sabe encender.
+ */
+const reglasModulos = (obligatorio) => {
+  const regla = body('modulos')
+  return (obligatorio ? regla : regla.optional())
+    .isArray()
+    .withMessage('modulos debe ser una lista')
+    .bail()
+    .custom((lista) => {
+      const invalidos = (lista || []).filter((clave) => !MODULE_KEYS.includes(clave))
+      if (invalidos.length > 0) {
+        throw new Error(`Estos módulos no existen: ${invalidos.join(', ')}`)
+      }
+      return true
+    })
+}
+
+exports.companyModulesValidation = [
+  param('id').isMongoId().withMessage('La empresa indicada no es válida'),
+  reglasModulos(true)
+]
+
 exports.listCompaniesValidation = [
   query('incluirInactivas')
     .optional()
@@ -99,7 +127,8 @@ exports.createCompanyValidation = [
     .matches(PATRON_RFC)
     .withMessage('El RFC no tiene un formato válido'),
   body('activo').optional().isBoolean().withMessage('activo debe ser verdadero o falso'),
-  reglasRegistros()
+  reglasRegistros(),
+  reglasModulos(false)
 ]
 
 exports.updateCompanyValidation = [
@@ -113,6 +142,8 @@ exports.updateCompanyValidation = [
     if (invalidos.length > 0) {
       const pistas = {
         activo: 'PATCH /empresas/:id/estado',
+        // D-95: se encienden y apagan en su propia ruta.
+        modulos: 'PATCH /empresas/:id/modulos',
         // D-65: dejaron de ser una lista de cadenas y tienen sus propias rutas.
         registrosPatronales: 'POST /empresas/:id/registros-patronales'
       }

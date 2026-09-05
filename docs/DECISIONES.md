@@ -4773,3 +4773,95 @@ nunca este fallo.
 
 **Sin migración**: `rolId` es nuevo y anulable sobre adscripciones que ya existen,
 y `null` significa exactamente lo de hoy.
+
+---
+
+## D-95 · Cada empresa decide qué módulos usa, y lo que se guarda es lo apagado
+
+**Contexto.** Tarea #48, 4 sept 2026, a pedido de Urbacames
+(`cames-ops/plan/propuestas/2026-09-04-modulos-activos-por-empresa.md`). No todas
+las empresas del grupo hacen lo mismo: una constructora sin maquinaria propia
+cargaba igual con la pestaña, con el catálogo vacío y con una sección que nadie
+iba a abrir.
+
+### Es un tercer eje, y conviene no confundirlo con los dos que ya había
+
+| Eje                 | Contesta                       | Es de           |
+| ------------------- | ------------------------------ | --------------- |
+| Permisos (D-92/93)  | ¿qué puede hacer esta persona? | del usuario     |
+| Alcance (§8.1)      | ¿sobre qué empresas y áreas?   | del usuario     |
+| **Módulos activos** | ¿qué existe en esta empresa?   | **de la empresa** |
+
+**Se componen:** una pestaña se ve si el módulo está activo en esa empresa **y**
+la persona tiene la casilla. Apagar un módulo lo apaga para todos —el
+administrador de plataforma incluido—; quitarle un permiso a alguien no se lo
+quita a nadie más.
+
+### Lo que se guarda es lo APAGADO, y por eso no hay migración
+
+Los valores por omisión de los dos ejes son **opuestos a propósito**: un permiso
+que nadie concedió tiene que **negar**; un módulo que nadie mencionó tiene que
+**existir**. Así que `companies.modulosApagados` es la lista de lo que no se usa,
+con `default: []`:
+
+- Las 20 empresas que ya existen siguen con todo **sin tocar un solo documento**.
+- Un módulo que se construya después **nace encendido en todas**, para que se
+  descubra en vez de esconderse.
+- El `enum` del campo son sólo los **opcionales**: apagar uno obligatorio no se
+  puede expresar ni por la ruta, ni por un script, ni a mano en la base.
+
+Lo que publica el contrato es lo contrario —`empresa.modulos`, los **activos**—,
+derivado al leer: es lo que la pantalla pinta, y nadie tiene que invertir una
+lista mentalmente.
+
+### Un módulo son SECCIONES de permisos, no una lista de rutas
+
+`src/utils/modules.js` declara siete módulos y, en cada uno, las secciones del
+catálogo de permisos que agrupa (D-92). De ahí sale **una sola regla de
+autorización**: la ruta pide su casilla, la casilla pertenece a una sección, la
+sección a un módulo, y el módulo puede estar apagado.
+
+Por eso **no se tocó ninguna de las quince rutas de maquinaria**:
+`requireCapability`, después de autorizar, saca de `req.empresasVisibles` las
+empresas que tienen apagada la sección de esa casilla. Lo demás lo hace el camino
+de alcance de siempre — el mismo movimiento de D-94, con otra entrada. Una prueba
+unitaria falla si alguna sección se queda sin módulo, que es el único modo de que
+esto se rompa en silencio.
+
+**Contesta 404**, no un error propio que diga «ese módulo está apagado»: lo que no
+está activo **no existe** para esa empresa, que es la regla de toda la casa. Se
+descartó el mensaje más explícito a sabiendas: una sola regla para toda la API
+vale más que un caso especial mejor redactado.
+
+### Las tres piezas que costaron algo
+
+1. **El administrador de plataforma también obedece.** Su `empresasVisibles` es
+   `null` = todas, y a «todas» no se le puede restar una. `applyScope` le carga
+   la lista completa de ids **sólo cuando hay algo apagado en el grupo**: mientras
+   nadie apague nada, no paga ni una consulta de más.
+2. **`POST /subidas` no lleva `requireCapability`** —la casilla depende del
+   destino del archivo—, así que el recorte lo aplica `uploadService` en cuanto
+   sabe a dónde va. Sin eso, pedir el permiso de subida era el rodeo para tocar la
+   imagen de una máquina de una empresa que apagó maquinaria.
+3. **La pantalla de módulos NO obedece al módulo.** Se lee con `viewCompanies` y
+   se cambia con `manageCompanies`: si obedeciera, una sección apagada no se
+   podría volver a encender nunca.
+
+### Antes de apagar se dice cuánto hay dentro
+
+`GET /empresas/:id/modulos` devuelve cada módulo con su `contenido` —«1 máquina,
+1 incidencia»— para que nadie lo apague creyéndolo vacío. Sólo se cuenta lo de
+los **opcionales**: contar lo que no se puede apagar sería consultar por gusto.
+
+**Apagar no borra nada.** Lo que había queda tal cual y vuelve a aparecer al
+encenderlo: es un filtro de lectura, nunca una baja.
+
+### Sólo el administrador de plataforma decide
+
+`PATCH /empresas/:id/modulos` pide `manageCompanies`, que ya exige `alcanceGlobal`
+(D-93). Va en su propia ruta y no en el `PATCH` de la empresa, como `/estado` y
+los registros patronales: qué usa una empresa no es un dato que se corrija junto
+al RFC.
+
+**Sin migración.** El campo es nuevo, anulable, y su ausencia significa
+exactamente lo que valía hasta hoy.

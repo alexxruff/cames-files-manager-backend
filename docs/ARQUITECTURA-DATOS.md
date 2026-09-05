@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-94)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-95)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -42,6 +42,14 @@ de baja, **nunca se borran**.
 | `areas`          | Áreas de la organización                 | `clave`, nombre normalizado | `activa: false`, bloqueada si en uso              |
 | `incident_types` | Tipos de incidencia de maquinaria (D-88) | nombre normalizado          | `activo: false`, **permitida aunque esté en uso** |
 | `roles`          | Perfiles de permisos (D-93)              | nombre normalizado + dueño  | `activo: false`; **borrado real si nadie lo usa**, bloqueado si alguien lo tiene |
+
+Desde **D-95**, `companies` lleva además **`modulosApagados`**: qué secciones NO
+usa esa empresa. Se guarda lo apagado y no lo activo a propósito —un módulo que
+nadie mencionó tiene que existir—, así que el campo ausente o vacío significa
+«todo encendido» y las empresas que ya existían no necesitaron migración. El
+`enum` son sólo los **opcionales** (hoy, `maquinaria`): apagar uno obligatorio no
+se puede ni a mano en la base. El contrato publica lo contrario, `modulos`, que
+son los activos derivados al leer.
 
 **Dentro de dos de ellos viven subdocumentos con identidad propia** (D-65, D-66),
 y esto importa más de lo que parece:
@@ -633,6 +641,8 @@ colección: `records.documentos[].tipo` apunta a `DOCUMENT_TYPES` en
 | **`categories.tipo`**                            | El `tipo` de todos los que tienen ese puesto                                                                    |
 | **`checklist_templates`**                        | El checklist de **todos** los que caigan en esa plantilla; hay que re-sincronizar expedientes                   |
 | **`companies.activo`**                           | Nadie puede importar ni adscribir a una empresa de baja                                                         |
+| **`companies.modulosApagados`**                  | La sección entera deja de responder en esa empresa (404) y desaparece de sus pestañas, para todos (D-95). **No borra nada**: encenderla la devuelve tal cual |
+| **Marcar otro módulo como opcional**             | `src/utils/modules.js`. Basta con eso: ninguna empresa cambia, porque lo que se guarda es lo apagado            |
 | **Dar de baja un registro patronal o de obra**   | Bloqueado si un proyecto **en curso** lo usa. Hay que cerrarlos o cambiárselo primero                           |
 | **Crear un contrato**                            | Traba el `clienteId` y el `registroPatronalId` de su proyecto (D-70)                                            |
 | **Registrar un SIROC**                           | Traba además el `registroObraId`. Quitarlo lo libera                                                            |
@@ -689,18 +699,25 @@ Administrador de plataforma (acceso.alcanceGlobal)
      req.permisosPorEmpresa = null   → lo que pueda, lo puede en todas
 ```
 
-Y después, en cada ruta que exige una capacidad (D-94):
+Y después, en cada ruta que exige una capacidad (D-94, D-95):
 
 ```
 requireCapability(x)
-  ├─ ¿la tiene en NINGUNA empresa?  → 403  «no puedes hacer esto»
-  └─ ¿en algunas?                   → ACOTA req.empresasVisibles a ésas
-                                       y lo de las demás pasa a ser 404
+  ├─ ¿la tiene en NINGUNA empresa?      → 403  «no puedes hacer esto»
+  ├─ ¿en algunas?                       → ACOTA req.empresasVisibles a ésas
+  └─ ¿alguna apagó la sección de x?     → la QUITA de req.empresasVisibles
+      └─ ¿no queda ninguna?             → 404  «esa sección no existe»
 ```
 
-Ahí está la razón de que el rol por empresa no obligara a tocar los 68 sitios que
-leen `empresasVisibles`: el permiso **acota el alcance**, y el alcance ya sabía
-responder 404.
+Ahí está la razón de que ni el rol por empresa ni los módulos obligaran a tocar
+los 68 sitios que leen `empresasVisibles`: el permiso **acota el alcance**, el
+módulo apagado también, y el alcance ya sabía responder 404.
+
+El tercer eje, en una línea: **el permiso es de la persona, el módulo es de la
+empresa**, y una sección se ve si están los dos. `applyScope` deja
+`req.modulosApagadosPorEmpresa` con las empresas que tienen algo apagado —que
+normalmente son ninguna— y, sólo en ese caso, la lista completa de ids para poder
+restarle empresas al `null` del administrador de plataforma.
 
 Tres reglas que no se negocian:
 

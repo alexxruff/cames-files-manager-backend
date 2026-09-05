@@ -6,6 +6,8 @@ const {
 } = require('../utils/permissions')
 const { CAPABILITIES } = require('../utils/permissions')
 const Affiliation = require('../api/v1/affiliations/affiliationModel')
+const Company = require('../api/v1/companies/companyModel')
+const { moduleOfCapability } = require('../utils/modules')
 
 /**
  * Alcance (modelo-datos §8.1). LA PIEZA CRÍTICA DE SEGURIDAD.
@@ -21,6 +23,14 @@ const Affiliation = require('../api/v1/affiliations/affiliationModel')
  *   rol puede ser distinto en cada empresa, tener un permiso dejó de ser sí/no y
  *   pasó a ser **en cuáles**. Quien lo usa es `requireCapability`, que con esto
  *   acota `empresasVisibles` a las empresas donde de verdad lo tiene.
+ * - `req.modulosApagadosPorEmpresa` — `{ empresaId: [claves] }` (D-95). Sólo las
+ *   empresas que tienen ALGO apagado, que normalmente son ninguna. Quien lo usa
+ *   es `requireCapability`, que saca del alcance a las empresas donde la sección
+ *   que pide la ruta no existe.
+ * - `req.todasLasEmpresas` — la lista completa de ids, o `null`. Se carga sólo
+ *   para el administrador de plataforma **y sólo si hay algún módulo apagado**:
+ *   es lo único con lo que se le puede restar una empresa a un `null` que
+ *   significa «todas».
  * - `req.esAdminPlataforma`.
  *
  * Reglas que no se negocian:
@@ -37,6 +47,22 @@ async function applyScope(req, res, next) {
 
     const acceso = req.user.acceso
 
+    /*
+     * Los módulos apagados del grupo (D-95). Va antes del reparto porque el
+     * administrador de plataforma también los obedece: apagar una sección la
+     * apaga para todos.
+     */
+    const conApagados = await Company.find({
+      // Sólo las que tienen ALGO apagado: `$ne: []` también traería las que no
+      // tienen el campo, que son todas las de antes de D-95.
+      'modulosApagados.0': { $exists: true }
+    }).select('_id modulosApagados')
+
+    req.modulosApagadosPorEmpresa = Object.fromEntries(
+      conApagados.map((e) => [String(e._id), [...e.modulosApagados]])
+    )
+    req.todasLasEmpresas = null
+
     if (isPlatformAdmin(acceso)) {
       req.esAdminPlataforma = true
       req.empresasVisibles = null // null = todas
@@ -47,6 +73,17 @@ async function applyScope(req, res, next) {
        * igual que `empresasVisibles`.
        */
       req.permisosPorEmpresa = null
+
+      /*
+       * `null` = todas no se puede filtrar, así que cuando hay algo apagado se
+       * materializa la lista para poder restarle esas empresas. La consulta sólo
+       * ocurre a partir de que alguien apaga un módulo; mientras nadie lo haga,
+       * el administrador de plataforma no paga nada.
+       */
+      if (conApagados.length > 0) {
+        const todas = await Company.find().select('_id')
+        req.todasLasEmpresas = todas.map((e) => String(e._id))
+      }
       return next()
     }
 
@@ -141,12 +178,66 @@ function areasVisibles(req, empresaId) {
  * deciden por el cuerpo de la petición y no por la ruta.
  */
 function empresasCon(req, capability) {
+  const apagada = empresaConModuloApagado(req, capability)
   const porEmpresa = req.permisosPorEmpresa
-  if (!porEmpresa) return null // administrador de plataforma
+
+  if (!porEmpresa) {
+    // Administrador de plataforma: todas, menos donde la sección no existe.
+    const apagadas = empresasSinModulo(req, capability)
+    if (apagadas.length === 0) return null
+    return (req.todasLasEmpresas || []).filter((id) => !apagadas.includes(id))
+  }
 
   return Object.entries(porEmpresa)
-    .filter(([, claves]) => claves.has(capability))
+    .filter(([empresaId, claves]) => claves.has(capability) && !apagada(empresaId))
     .map(([empresaId]) => empresaId)
+}
+
+/**
+ * Las empresas donde la sección que exige esta casilla está APAGADA (D-95).
+ *
+ * Vive aquí, junto al resto del alcance, porque es lo mismo con otro nombre: una
+ * empresa que apagó maquinaria queda fuera del alcance de todo lo que pida una
+ * casilla de maquinaria, y de ahí sale el 404 de siempre.
+ */
+function empresasSinModulo(req, capability) {
+  const modulo = moduleOfCapability(capability)
+  if (!modulo?.opcional) return []
+
+  return Object.entries(req.modulosApagadosPorEmpresa || {})
+    .filter(([, claves]) => claves.includes(modulo.clave))
+    .map(([empresaId]) => empresaId)
+}
+
+/** `(empresaId) => boolean` para la casilla dada. */
+function empresaConModuloApagado(req, capability) {
+  const apagadas = new Set(empresasSinModulo(req, capability))
+  return (empresaId) => apagadas.has(String(empresaId))
+}
+
+/**
+ * El alcance de siempre, menos las empresas que tienen apagada la sección de
+ * esta casilla (D-95). `null` cuando no hay nada que quitar.
+ *
+ * Vive aquí porque lo usan dos: `requireCapability`, que lo aplica en la ruta, y
+ * `uploadService`, que decide la casilla por el destino del archivo y no por la
+ * ruta (`POST /subidas` no lleva `requireCapability`).
+ *
+ * Un `empresasVisibles` en `null` —administrador de plataforma— se materializa
+ * con `todasLasEmpresas`: a «todas» no se le puede restar una.
+ *
+ * @returns {string[]|null}
+ */
+function alcanceSinModulo(reqLike, capability) {
+  const apagadas = empresasSinModulo(reqLike, capability)
+  if (apagadas.length === 0) return null
+
+  const visibles =
+    reqLike.empresasVisibles === null
+      ? reqLike.todasLasEmpresas || []
+      : reqLike.empresasVisibles
+
+  return visibles.map(String).filter((id) => !apagadas.includes(id))
 }
 
 module.exports = {
@@ -154,5 +245,7 @@ module.exports = {
   empresaFiltro,
   empresaEsVisible,
   areasVisibles,
-  empresasCon
+  empresasCon,
+  empresasSinModulo,
+  alcanceSinModulo
 }

@@ -7,7 +7,14 @@ class UploadController {
     return {
       user: req.user,
       empresasVisibles: req.empresasVisibles,
-      areasPorEmpresa: req.areasPorEmpresa
+      areasPorEmpresa: req.areasPorEmpresa,
+      /*
+       * Los módulos apagados viajan con el alcance (D-95): esta ruta no lleva
+       * `requireCapability` —la casilla depende del destino— así que el recorte
+       * lo hace el servicio, cuando ya sabe a dónde va el archivo.
+       */
+      modulosApagadosPorEmpresa: req.modulosApagadosPorEmpresa,
+      todasLasEmpresas: req.todasLasEmpresas
     }
   }
 

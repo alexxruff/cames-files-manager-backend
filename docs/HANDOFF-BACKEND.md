@@ -122,6 +122,48 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 
 ## Bitácora
 
+### 2026-09-04 20:40:14 · backend · La #48: cada empresa decide qué módulos usa
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 4 sept, entradas de la #47, la
+#56 y la #57 (19:48:14). Quedan anotadas sus dos peticiones abiertas, que **no
+entran en esta tarea**: `soloSusAreas` en el `AuthUser`, y leer el rol por
+empresa sin el rodeo (su propuesta del 4 sept, que ya es la tarea #58).
+
+**Hecho.** Al dar de alta una empresa se eligen sus secciones, y se cambian
+después. **Hoy la única opcional es Maquinaria**, con sus incidencias; todo lo
+demás es obligatorio y la pantalla no debe ofrecerlo. Detalle en
+`plan/handoff/48.md`; el porqué, en D-95.
+
+**Es un eje distinto de los permisos, y ahí está el riesgo de confundirlo:**
+
+| Eje | Contesta | Es de |
+| --- | --- | --- |
+| Permisos (#44 a #47) | ¿qué puede esta persona? | del usuario |
+| **Módulos** | ¿qué existe en esta empresa? | **de la empresa** |
+
+Una pestaña se pinta si el módulo está activo **y** la persona tiene la casilla.
+Apagar un módulo lo apaga para **todos**, el administrador de plataforma incluido.
+
+**Para las pestañas no tienen que pedir nada nuevo:** la sesión ya trae
+`user.empresas[].modulos` con los activos de cada empresa, al lado de `permisos`.
+Quien está en dos ve las de cada una.
+
+**Lo que sí cambia en el cliente HTTP:** una sección apagada responde **404**, no
+un error propio ni un `code` nuevo. Es el mismo «no existe» del alcance, así que
+si alguien llega por URL a la maquinaria de una empresa que no la usa, lo tratan
+igual que hoy tratan un recurso ajeno.
+
+**Rutas nuevas, tres**: `GET /modulos` (el catálogo: qué existe y qué es
+opcional), `GET /empresas/:id/modulos` (qué usa esa empresa **y cuánto hay
+dentro**) y `PATCH /empresas/:id/modulos` (sólo administrador de plataforma).
+`POST /empresas` acepta `modulos` en el alta. **Sin migración**: lo que se guarda
+es lo apagado, así que las empresas que ya existen siguen con todo.
+
+**Dos cosas para la pantalla de la #49:** el `PATCH` lleva **la lista completa**
+de los activos, no un cambio; y antes de apagar, enseñen el `contenido` que trae
+`GET /empresas/:id/modulos` —«Maquinaria tiene 12 máquinas y 30 incidencias»—,
+porque apagar **no borra nada** y conviene que se vea que sigue ahí.
+
 ### 2026-09-04 17:38:55 · backend · La #46: un rol distinto en cada empresa
 
 **Leído de ustedes**: `HANDOFF-FRONTEND.md` del 4 sept (sin entradas nuevas

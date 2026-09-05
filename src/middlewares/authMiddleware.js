@@ -2,6 +2,8 @@ const jwt = require('jsonwebtoken')
 const env = require('../config/env')
 const { AppError } = require('./errorHandler')
 const { can } = require('../utils/permissions')
+const { moduleOfCapability } = require('../utils/modules')
+const { alcanceSinModulo } = require('./scopeMiddleware')
 const Employee = require('../api/v1/employees/employeeModel')
 
 /**
@@ -83,6 +85,10 @@ async function protect(req, res, next) {
  * hacer esto» y «esto no es tuyo» son dos respuestas distintas a propósito, y
  * mezclarlas dejaría al front sin forma de saber si esconder el botón o la
  * sección entera.
+ *
+ * Y **después** de autorizar aplica los módulos apagados de cada empresa (D-95),
+ * que es lo contrario: una sección que la empresa no usa **no existe**, así que
+ * sale del alcance y responde 404.
  */
 function requireCapability(capability) {
   function verificar(req, res, next) {
@@ -127,13 +133,13 @@ function requireCapability(capability) {
       if (req.empresasVisibles !== null) {
         req.empresasVisibles = req.empresasVisibles.filter((id) => empresas.includes(id))
       }
-      return next()
+      return aplicarModulo(req, capability, next)
     }
 
     if (!can(req.user.acceso, capability)) {
       return next(new AppError(403, 'No tienes permiso para realizar esta acción'))
     }
-    return next()
+    return aplicarModulo(req, capability, next)
   }
 
   /*
@@ -145,6 +151,46 @@ function requireCapability(capability) {
    */
   verificar.capability = capability
   return verificar
+}
+
+/**
+ * Saca del alcance a las empresas que tienen APAGADA la sección de esta casilla
+ * (D-95), y responde 404 si no queda ninguna.
+ *
+ * Es una sola regla para toda la API en vez de un candado por ruta: la casilla
+ * que pide la ruta pertenece a una sección, la sección a un módulo, y el módulo
+ * puede estar apagado en una empresa. Con eso las quince rutas de maquinaria
+ * dejan de responder en la empresa que no la usa **sin tocar ninguna**, y las
+ * demás empresas de la misma persona siguen igual.
+ *
+ * Los módulos obligatorios no entran aquí: no se pueden apagar.
+ */
+function aplicarModulo(req, capability, next) {
+  /*
+   * `applyScope` deja lo que hace falta —qué empresa apagó qué, y la lista
+   * completa para el administrador de plataforma, a quien no se le puede restar
+   * una empresa a un `null` que significa «todas»—. Si la ruta no lleva
+   * `applyScope`, no hay nada que acotar y esto no hace nada.
+   */
+  const acotado = alcanceSinModulo(req, capability)
+  if (acotado === null) return next()
+
+  req.empresasVisibles = acotado
+
+  if (req.empresasVisibles.length === 0) {
+    const modulo = moduleOfCapability(capability)
+    /*
+     * Ni una sola empresa con esa sección: no hay nada que quede fuera de
+     * alcance porque no hay alcance. Es el mismo 404 de siempre —lo que no está
+     * activo no existe— y no un error propio que diga «ese módulo está apagado»:
+     * una sola regla para toda la API vale más que un mensaje más explícito.
+     */
+    return next(
+      AppError.notFound(`La sección de ${modulo.etiqueta.toLowerCase()} no existe`)
+    )
+  }
+
+  return next()
 }
 
 /** Exige ser administrador de plataforma (catálogos compartidos). */

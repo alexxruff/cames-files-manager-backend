@@ -91,6 +91,9 @@ lista, no dentro.
 | PATCH  | `/empresas/:id/registros-patronales/:rpId`                 | admin de plataforma          | `empresa` · `registro`                                                                                                                           | Número y descripción                                                                                                                                                                      |
 | PATCH  | `/empresas/:id/registros-patronales/:rpId/estado`          | admin de plataforma          | `empresa` · `registro`                                                                                                                           | Baja y reactivación; 400 si un proyecto en curso lo usa                                                                                                                                   |
 | PATCH  | `/empresas/:id/estado`                                     | admin de plataforma          | `empresa` · `conteos`                                                                                                                            | Baja y reactivación; 400 si tiene gente adscrita o proyectos abiertos (D-64)                                                                                                              |
+| GET    | `/modulos`                                                 | sesión                       | `modulos[]`                                                                                                                                      | Catálogo: qué secciones existen y **cuáles se pueden apagar** (D-95)                                                                                                                      |
+| GET    | `/empresas/:id/modulos`                                    | ver empresas                 | `empresa` · `modulos[]`                                                                                                                          | Qué usa esta empresa y **cuánto hay dentro** de cada módulo opcional (D-95)                                                                                                               |
+| PATCH  | `/empresas/:id/modulos`                                    | admin de plataforma          | `empresa` · `modulos[]`                                                                                                                          | Enciende y apaga secciones. La lista es **completa**, no un cambio; los obligatorios se ignoran (D-95)                                                                                    |
 | GET    | `/categorias`                                              | sesión                       | `categorias[]`                                                                                                                                   | Pueblan el desplegable del alta; filtro `?tipo=`                                                                                                                                          |
 | POST   | `/categorias`                                              | admin de plataforma          | `categoria`                                                                                                                                      | Idempotente por nombre: 200 si ya existía                                                                                                                                                 |
 | PATCH  | `/categorias/:id/estado`                                   | admin de plataforma          | `categoria`                                                                                                                                      | 400 si hay personas con ese puesto                                                                                                                                                        |
@@ -1164,7 +1167,22 @@ mensaje del `415` explica que hay que convertirlo.
    * `/auth/cambiar-password`. Ver D-49.
    */
   passwordTemporal: boolean
-  empresas: { _id: string; nombre: string; areas: Area[] }[]
+  /**
+   * Sus empresas, con lo que puede y lo que existe EN CADA UNA: `rol` y
+   * `permisos` son suyos (D-93, D-94); `modulos` son las secciones que esa
+   * empresa usa (D-95). La pestaña se pinta si están las dos cosas.
+   */
+  empresas: {
+    _id: string
+    nombre: string
+    areas: Area[]
+    rol: { _id: string; nombre: string } | null
+    permisos: string[]
+    modulos: string[]
+  }[]
+  /** La UNIÓN de los permisos de todas sus empresas. */
+  permisos: string[]
+  rol: { _id: string; nombre: string } | null
   active: boolean
   ultimoAccesoEn: string | null
   createdAt: string
@@ -1418,6 +1436,143 @@ Es la regla #7 de siempre: el `403` es del permiso, el `404` es del alcance.
 Y una consecuencia que conviene tener presente: **cambiar un rol le cambia los
 permisos a su gente en la siguiente petición**, sin que vuelva a entrar. El token
 no guarda permisos.
+
+### Los módulos activos de cada empresa (D-95)
+
+**Un tercer eje, y no es el de los permisos.** El permiso es de la persona; el
+módulo es **de la empresa** y se apaga para todos, incluido el administrador de
+plataforma. Una pestaña se pinta si el módulo está activo en esa empresa **y** la
+persona tiene la casilla.
+
+Por ahora **la única sección opcional es Maquinaria** (con sus incidencias y su
+catálogo de tipos). Todo lo demás es obligatorio y la pantalla ni siquiera debe
+ofrecerlo.
+
+#### El catálogo: qué se puede apagar
+
+```
+GET /api/v1/modulos             → 200 (sólo sesión)
+```
+
+```jsonc
+{
+  "status": "success",
+  "data": {
+    "modulos": [
+      {
+        "clave": "maquinaria",
+        "etiqueta": "Maquinaria",
+        "descripcion": "El catálogo de máquinas, sus asignaciones y sus incidencias",
+        "opcional": true,
+        "secciones": ["maquinaria"] // secciones del catálogo de permisos que agrupa
+      }
+      // … 7 en total: empresas, personal, expedientes, proyectos, clientes,
+      //   maquinaria, plataforma. Sólo `maquinaria` es opcional hoy.
+    ]
+  }
+}
+```
+
+#### Qué usa cada empresa
+
+`empresa.modulos` es la lista de los **activos**, y viaja en toda respuesta que
+lleve una empresa (`GET /empresas`, `GET /empresas/:id`, el alta, la edición…).
+Una empresa que nunca tocó nada los trae todos.
+
+En la sesión, cada empresa trae los suyos:
+
+```jsonc
+{
+  "empresas": [
+    {
+      "_id": "…",
+      "nombre": "Urbanizadora",
+      "areas": [],
+      "rol": null,
+      "permisos": ["viewEmployees", "viewMachines"],
+      "modulos": ["empresas", "personal", "expedientes", "proyectos", "clientes", "plataforma"]
+    }
+  ]
+}
+```
+
+Ahí falta `maquinaria`: esa empresa la tiene apagada, así que **su pestaña no se
+pinta aunque la persona tenga `viewMachines`**. Quien está en dos empresas ve las
+pestañas de cada una según lo que cada una tenga activo.
+
+#### La pantalla de configuración, con el aviso de qué se va a ocultar
+
+```
+GET /api/v1/empresas/:id/modulos       → 200 (viewCompanies)
+```
+
+```jsonc
+{
+  "status": "success",
+  "data": {
+    "empresa": { "_id": "…", "nombre": "Urbanizadora", "modulos": ["…"] },
+    "modulos": [
+      {
+        "clave": "maquinaria",
+        "etiqueta": "Maquinaria",
+        "descripcion": "El catálogo de máquinas, sus asignaciones y sus incidencias",
+        "opcional": true,
+        "activo": true,
+        // Lo que se va a ocultar si se apaga. La etiqueta ya viene en singular o
+        // plural según el total: «Maquinaria tiene 12 máquinas y 30 incidencias».
+        "contenido": [
+          { "clave": "maquinas", "etiqueta": "máquinas", "total": 12 },
+          { "clave": "incidencias", "etiqueta": "incidencias", "total": 30 }
+        ]
+      },
+      {
+        "clave": "personal",
+        "etiqueta": "Personal",
+        "opcional": false,
+        "activo": true,
+        "contenido": [] // los obligatorios no se cuentan: no se pueden apagar
+      }
+    ]
+  }
+}
+```
+
+Esta ruta **no obedece al módulo apagado**: si obedeciera, una sección apagada no
+se podría volver a encender.
+
+```
+PATCH /api/v1/empresas/:id/modulos     → 200 (manageCompanies + alcanceGlobal)
+POST  /api/v1/empresas                 → 201 (acepta `modulos` en el alta)
+```
+
+Cuerpo: `{ "modulos": ["personal", "proyectos", …] }` — **la lista completa de
+los que quedan activos**, como los registros patronales y las jefaturas: se manda
+lo que se muestra, sin llevar la cuenta de qué cambió. Los obligatorios se
+ignoran (están siempre activos, vengan o no); lo que no venga y sea opcional
+queda apagado. Una clave que no existe responde `400`
+(`Estos módulos no existen: contabilidad`).
+
+En el alta, omitir `modulos` deja la empresa **con todo activo**.
+
+#### Qué responde un módulo apagado
+
+**404**, la misma regla del resto de la casa: lo que no está activo no existe
+para esa empresa. No hay un error propio ni un `code` nuevo que diga «ese módulo
+está apagado» — se descartó a sabiendas.
+
+| Situación | Respuesta |
+| --------- | --------- |
+| No tienes el permiso en ninguna empresa | `403` |
+| Lo tienes, pero pides datos de una empresa que apagó esa sección | `404` |
+| Lo tienes, y **ninguna** de tus empresas usa esa sección | `404` — `La sección de maquinaria no existe` |
+
+Alcanza a todo lo que pide una casilla de esa sección, sin excepciones:
+`/empresas/:id/maquinas`, `/maquinas/:id` y todo lo que cuelga de ella,
+`/proyectos/:id/maquinas`, `/empleados/:id/maquinas`, resolver una incidencia,
+`/tipos-incidencia` y el permiso de subida de la imagen de una máquina.
+
+**Apagar no borra nada.** Lo que había queda guardado y vuelve tal cual al
+encenderlo otra vez.
 
 ## Pendiente
 

@@ -1,6 +1,7 @@
 const mongoose = require('mongoose')
 const { DOCUMENT_TYPES } = require('../../../constants')
 const { normalize } = require('../../../utils/text')
+const { OPTIONAL_MODULE_KEYS, activeModuleKeys } = require('../../../utils/modules')
 
 /**
  * Empresa: la entidad raíz del grupo (modelo-datos §5.1).
@@ -95,6 +96,23 @@ const companySchema = new mongoose.Schema(
       }
     },
 
+    /**
+     * Los módulos que esta empresa NO usa (D-95).
+     *
+     * Se guarda lo **apagado**, no lo activo, y eso es lo que hace que no haga
+     * falta migración: una empresa sin el campo tiene todo encendido, que es
+     * justo lo que valía hasta hoy. Un módulo nuevo nace activo en todas.
+     *
+     * El `enum` son sólo los OPCIONALES: apagar uno obligatorio no se puede
+     * expresar ni por una ruta, ni por un script, ni a mano en la base.
+     *
+     * No se serializa tal cual: el contrato publica `modulos`, los activos.
+     */
+    modulosApagados: {
+      type: [{ type: String, enum: OPTIONAL_MODULE_KEYS }],
+      default: []
+    },
+
     activo: { type: Boolean, default: true },
 
     /** Interno: unicidad y búsqueda sin acentos. No se expone. */
@@ -139,6 +157,13 @@ const companySchema = new mongoose.Schema(
             diasAlertaProyecto: ret.configuracion?.diasAlertaProyecto ?? null,
             documentosSensibles: ret.configuracion?.documentosSensibles ?? null
           },
+          /*
+           * Los módulos ACTIVOS (D-95), no los apagados: es lo que la pantalla
+           * pinta y lo que decide qué pestañas se ofrecen. Se derivan al leer,
+           * así que un módulo nuevo aparece encendido sin tocar un solo
+           * documento.
+           */
+          modulos: activeModuleKeys(ret.modulosApagados),
           activo: ret.activo,
           createdAt: ret.createdAt,
           updatedAt: ret.updatedAt

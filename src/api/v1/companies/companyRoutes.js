@@ -12,6 +12,7 @@ const {
   createCompanyValidation,
   updateCompanyValidation,
   companyEstadoValidation,
+  companyModulesValidation,
   addEmployerRegistrationValidation,
   updateEmployerRegistrationValidation,
   employerRegistrationEstadoValidation
@@ -90,6 +91,31 @@ router.get(
   validateRequest,
   asyncHandler(companyController.getById)
 )
+
+/*
+ * Los MÓDULOS de la empresa (D-95): qué secciones usa. Es un eje distinto de los
+ * permisos —el módulo se apaga para toda la empresa, el permiso es de cada
+ * persona—, así que vive bajo la empresa y no en `/roles`.
+ *
+ * Leer pide `viewCompanies` y **no obedece al módulo apagado**: si obedeciera,
+ * una sección apagada no se podría volver a encender. Cambiarlos pide
+ * `manageCompanies`, que ya exige alcance global: sólo el administrador de
+ * plataforma decide qué usa cada empresa.
+ */
+router
+  .route('/:id/modulos')
+  .get(
+    verEmpresas,
+    companyIdValidation,
+    validateRequest,
+    asyncHandler(companyController.modulos)
+  )
+  .patch(
+    administrarEmpresas,
+    companyModulesValidation,
+    validateRequest,
+    asyncHandler(companyController.setModulos)
+  )
 
 /*
  * La CARTERA de la empresa: qué clientes del catálogo global usa.

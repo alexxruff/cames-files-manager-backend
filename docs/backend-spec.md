@@ -334,6 +334,11 @@ desincronizadas. Índice rápido:
   permiso que sólo se tiene en una empresa **acota el alcance** a ésa, así que en
   las demás los datos responden `404`; si no se tiene en ninguna, la ruta
   responde `403`.
+- **Cada empresa decide qué secciones usa** (D-95), y es un eje distinto del
+  permiso: el módulo lo apaga la **empresa** para todos y lo apagado responde
+  **404**. Hoy la única opcional es **maquinaria**. `GET /modulos` publica el
+  catálogo; `empresa.modulos` y `user.empresas[].modulos` dicen qué tiene activo
+  cada una.
 - **Empleados, clientes y categorías son catálogos compartidos.** No llevan
   `empresaId`. La pertenencia se expresa con vínculos.
 - **`adscripciones`** lleva la relación laboral: contrato, fecha de ingreso,
@@ -521,6 +526,8 @@ del final devuelve lista vacía y el `total` real, no un `404`.
 | `GET` `POST` | `/empresas` | Las del alcance del usuario. `POST` sólo admin de plataforma: `{ nombre, rfc? }` |
 | `GET` `PATCH` | `/empresas/:id` | El `PATCH` es sólo admin de plataforma: ver abajo |
 | `PATCH` | `/empresas/:id/estado` | `{ activo }` — sólo admin de plataforma, ver abajo |
+| `GET` | `/modulos` | El catálogo de módulos: qué secciones existen y cuáles son opcionales (D-95) |
+| `GET` `PATCH` | `/empresas/:id/modulos` | Qué usa la empresa, con el conteo de lo que hay dentro. El `PATCH` es sólo admin de plataforma |
 | `GET` | `/organizacion` | **Por construir.** Árbol empresa → áreas (sólo administrativos) y proyectos |
 
 #### Editar y dar de baja una empresa (28 ago 2026)

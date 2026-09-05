@@ -160,6 +160,8 @@ src/
     incidentTypes/      catálogo compartido de tipos de incidencia (D-88)
     permissions/        el catálogo de los 41 permisos: qué casillas existen, a
                         qué sección pertenecen y cuáles trae quien pregunta (D-92)
+    modules/            el catálogo de módulos: qué secciones existen y cuáles
+                        puede apagar una empresa (D-95). Hoy sólo maquinaria
     roles/              los perfiles, que son DATOS: un nombre y sus casillas
                         marcadas (D-93). Los tres de siempre se siembran
     assignments/        proyecto ↔ empleado; avisa si el registro patronal no
@@ -180,8 +182,8 @@ src/
                         validateRequest · errorHandler · requestContext ·
                         rateLimiters · uploadMiddleware
   utils/                response (envelope) · asyncHandler · dates · text ·
-                        permissions · logger · routeInventory · spreadsheet ·
-                        schemaSkeleton (el esqueleto real, derivado del código)
+                        permissions · modules (D-95) · logger · routeInventory ·
+                        spreadsheet · schemaSkeleton (derivado del código)
   utils/domain/         reglas PURAS: documentStatus · progress · alerts ·
                         checklist · expiry · employeeImport · registries ·
                         machineTime · machineIncidents
@@ -248,6 +250,13 @@ imposible acabar con dos registros de la misma persona.
   `PERMISSION_MATRIX` por su `nivelAcceso`, que sigue siendo el respaldo y por eso
   la matriz no desapareció: pasó a ser **la semilla** de los tres roles de
   sistema. `can()` sigue síncrona porque `protect` trae el rol poblado.
+- **Y encima está lo que la EMPRESA usa** (D-95, `companies.modulosApagados`): un
+  tercer eje, no un permiso. El módulo se apaga para toda la empresa —el
+  administrador de plataforma incluido— y lo apagado responde **404**. Se guarda
+  lo apagado, no lo activo, así que las empresas de siempre siguen con todo. Lo
+  aplica `requireCapability` derivando el módulo de la sección de la casilla: no
+  hay candado por ruta, y `tests/unitarias/modules.test.js` falla si una sección
+  se queda sin módulo.
 - **Y el rol puede ser distinto en cada empresa** (D-94, `adscripciones.rolId`).
   Por eso `requireCapability` hace dos cosas: **403** si no tienes la casilla en
   ninguna empresa, y si la tienes en algunas **acota `req.empresasVisibles` a
@@ -331,6 +340,11 @@ Y desde D-72 la adscripción **se vincula a su registro patronal** por id
 reemplazarlo: donde hay vínculo, el número sale del catálogo de la empresa; donde
 no, del texto. Se llena con `npm run migrate:vinculo-rp` y con cada importación,
 y **nada lo pisa** una vez corregido a mano.
+
+Y **cada empresa decide qué módulos usa** (D-95): al darla de alta se eligen sus
+secciones y se cambian después, hoy la única opcional es maquinaria con sus
+incidencias. Apagar no borra nada —lo que había vuelve tal cual al encender— y
+antes de apagar se dice cuánto hay dentro.
 
 **Pendiente:** métricas, reportes, plantillas de checklist, el árbol de
 `/organizacion` y el job diario de vigencias — ver `docs/ESTADO.md` para el

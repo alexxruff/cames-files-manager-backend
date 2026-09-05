@@ -43,6 +43,7 @@ const SIN_CASILLA = Object.freeze({
   'GET /api/v1/auth/me': 'quién soy: basta con la sesión',
   'POST /api/v1/auth/cambiar-password': 'la contraseña propia, con sesión',
   'GET /api/v1/permisos': 'el catálogo de casillas: no dice quién tiene qué',
+  'GET /api/v1/modulos': 'el catálogo de módulos: no dice qué usa ninguna empresa',
   // Los catálogos que llenan los desplegables de TODOS los formularios.
   'GET /api/v1/areas': 'puebla los desplegables de todos los formularios',
   'GET /api/v1/categorias': 'puebla los desplegables de todos los formularios',

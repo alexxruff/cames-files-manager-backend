@@ -44,6 +44,27 @@ class CompanyController {
     return ok(res, datos, 'Empresa actualizada')
   }
 
+  // ─── Módulos activos (D-95) ───────────────────────────────────────────────
+
+  /** GET /empresas/:id/modulos — qué usa la empresa y cuánto hay dentro */
+  modulos = async (req, res) => {
+    const datos = await companyService.modulos(req.params.id, {
+      empresasVisibles: req.empresasVisibles
+    })
+    return ok(res, datos)
+  }
+
+  /** PATCH /empresas/:id/modulos — sólo administrador de plataforma */
+  setModulos = async (req, res) => {
+    const datos = await companyService.setModulos(req.params.id, req.body.modulos)
+
+    req.log.info('Módulos de la empresa actualizados', {
+      empresaId: req.params.id,
+      modulos: datos.empresa.modulos
+    })
+    return ok(res, datos, 'Módulos actualizados')
+  }
+
   // ─── Registros patronales (D-65) ──────────────────────────────────────────
 
   /**
