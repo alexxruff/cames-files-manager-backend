@@ -1368,6 +1368,53 @@ esto?».
 **`permisos` es lo que debe apagar el menú y los botones.** `nivelAcceso` y
 `alcanceGlobal` siguen viajando sin cambios mientras el front migra.
 
+#### Un rol distinto en cada empresa (D-94)
+
+`AuthUser.empresas[]` gana `rol` y `permisos` **de esa empresa**:
+
+```jsonc
+{
+  "empresas": [
+    {
+      "_id": "…",
+      "nombre": "Urbanizadora",
+      "areas": ["operaciones_urbanizadora"],
+      "rol": { "_id": "…", "nombre": "Operaciones" },   // null = manda su rol base
+      "permisos": ["viewEmployees", "viewMachines", "manageMachines"]
+    },
+    {
+      "_id": "…",
+      "nombre": "Maquinaria CAMES",
+      "areas": [],
+      "rol": { "_id": "…", "nombre": "Consulta" },
+      "permisos": ["viewEmployees"]
+    }
+  ],
+  // La UNIÓN de todas. Sirve para decidir si una sección se ofrece siquiera.
+  "permisos": ["viewEmployees", "viewMachines", "manageMachines"]
+}
+```
+
+**Para saber qué se puede hacer DENTRO de una empresa, el `permisos` de esa
+empresa; el de arriba es la unión.** Un botón que se pinta con la unión y se usa
+en la empresa equivocada recibe un `404`.
+
+```
+PATCH /api/v1/adscripciones/:id/rol   → 200   (manageAccess)
+```
+
+Cuerpo: `{ "rolId": "…" }` o `{ "rolId": null }` para devolverla a su rol base.
+`404` si el rol no existe, `400` si está dado de baja.
+
+**Y la regla que hay que entender para no confundir dos errores:**
+
+| Situación | Respuesta |
+| --------- | --------- |
+| No tienes el permiso en **ninguna** empresa | `403` — «no puedes hacer esto» |
+| Lo tienes en unas y pides datos de **otra** | `404` — esos datos quedan fuera de tu alcance |
+
+Es la regla #7 de siempre: el `403` es del permiso, el `404` es del alcance.
+
 Y una consecuencia que conviene tener presente: **cambiar un rol le cambia los
 permisos a su gente en la siguiente petición**, sin que vuelva a entrar. El token
 no guarda permisos.

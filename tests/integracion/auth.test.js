@@ -31,13 +31,17 @@ describe('POST /api/v1/auth/login', () => {
       alcanceGlobal: false,
       active: true
     })
-    expect(user.empresas).toEqual([
-      {
-        _id: empresa._id.toString(),
-        nombre: 'Urbacames Edificación',
-        areas: ['recursos_humanos']
-      }
-    ])
+    expect(user.empresas).toHaveLength(1)
+    expect(user.empresas[0]).toMatchObject({
+      _id: empresa._id.toString(),
+      nombre: 'Urbacames Edificación',
+      areas: ['recursos_humanos'],
+      // Sin rol en la adscripción: manda su rol base, o su nivel (D-94).
+      rol: null
+    })
+    // Y cada empresa dice qué puede hacer ahí, ya resuelto (D-93, D-94).
+    expect(user.empresas[0].permisos).toContain('viewEmployees')
+    expect(user.permisos).toContain('viewEmployees')
     // Campos del modelo anterior que ya no existen.
     expect(user.role).toBeUndefined()
     expect(user.alcance).toBeUndefined()

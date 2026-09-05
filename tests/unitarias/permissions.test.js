@@ -1,6 +1,8 @@
 const {
   CAPABILITIES,
   can,
+  permissionKeysOf,
+  permissionsOf,
   canManageEmployeeType,
   isLimitedToOwnArea,
   isPlatformAdmin
@@ -163,6 +165,64 @@ describe('utils/permissions — matriz de modelo-datos §8.2', () => {
     expect(can(admin, CAPABILITIES.MANAGE_ACCESS)).toBe(true)
     expect(can(consulta, CAPABILITIES.MANAGE_ACCESS)).toBe(false)
     expect(can(jefe, CAPABILITIES.MANAGE_ACCESS)).toBe(false)
+  })
+
+  describe('el acceso puede venir como subdocumento de Mongoose (D-94)', () => {
+    /*
+     * Esta trampa costó una tarde y no se ve leyendo el código: `acceso` casi
+     * siempre es un subdocumento de Mongoose, y `{ ...acceso }` NO copia sus
+     * campos —devuelve `$__`, `_doc` y compañía—. Con eso, `nivelAcceso` y
+     * `permisosExtra` salían `undefined` y el respaldo por nivel contestaba que
+     * no a todo.
+     *
+     * Y sólo fallaba cuando NO había rol, que es justo el caso que el respaldo
+     * existe para cubrir: con rol, la respuesta salía del rol y todo parecía
+     * bien. Por eso la prueba usa un documento de verdad y no un objeto plano.
+     */
+    const Employee = require('../../src/api/v1/employees/employeeModel')
+
+    const accesoReal = (datos) =>
+      new Employee({
+        nombre: 'Persona de prueba',
+        acceso: { email: 'x@urbacames.com', ...datos }
+      }).acceso
+
+    it('sin rol, resuelve por su nivel de acceso', () => {
+      const claves = permissionKeysOf(accesoReal({ nivelAcceso: 'jefe_area' }))
+
+      expect(claves).toContain('viewMachines')
+      expect(claves).toContain('manageProjects')
+      expect(claves).not.toContain('uploadDocuments')
+    })
+
+    it('sin rol, sus excepciones también cuentan', () => {
+      const claves = permissionKeysOf(
+        accesoReal({ nivelAcceso: 'jefe_area', permisosExtra: ['uploadDocuments'] })
+      )
+
+      expect(claves).toContain('uploadDocuments')
+    })
+
+    it('el rol de la empresa manda sobre el nivel de acceso', () => {
+      const claves = permissionKeysOf(accesoReal({ nivelAcceso: 'rh_admin' }), {
+        rolDeLaEmpresa: { permisos: ['viewMachines'], activo: true }
+      })
+
+      expect(claves).toEqual(['viewMachines'])
+    })
+
+    it('y el origen de cada permiso se calcula bien sin rol', () => {
+      const acceso = accesoReal({
+        nivelAcceso: 'jefe_area',
+        permisosExtra: ['uploadDocuments']
+      })
+      const porClave = Object.fromEntries(
+        permissionsOf(acceso).map((p) => [p.clave, p.origen])
+      )
+
+      expect(porClave.uploadDocuments).toBe('excepcion')
+      expect(porClave.viewMachines).toBe('rol')
+    })
   })
 
   it('un nivel, una capacidad o un acceso inexistentes no otorgan nada', () => {

@@ -1,6 +1,6 @@
 # Adscripciones: vincular a alguien que ya existe a una empresa
 
-Referencia de los **6 endpoints** de este dominio.
+Referencia de los **7 endpoints** de este dominio.
 
 Base: `/api/v1`. Envelope, códigos y convenciones generales:
 [`INTEGRACION-FRONTEND.md`](./INTEGRACION-FRONTEND.md).
@@ -13,6 +13,7 @@ Base: `/api/v1`. Envelope, códigos y convenciones generales:
 | 4   | `PATCH /adscripciones/:id/estado`    | `rh_admin`         |
 | 5   | `PATCH /adscripciones/:id/jefaturas` | `rh_admin`         |
 | 6   | `GET /empresas/:id/jefaturas`        | `rh_admin`         |
+| 7   | `PATCH /adscripciones/:id/rol`       | `manageAccess`     |
 
 > **Adscribir ≠ dar de alta.** `POST /empleados` crea a la persona y su primera
 > adscripción, en un solo paso. Estos 4 endpoints son para lo que viene
@@ -21,6 +22,11 @@ Base: `/api/v1`. Envelope, códigos y convenciones generales:
 >
 > **Exclusivo de `rh_admin`.** Ni `rh_consulta` ni `jefe_area` pueden llamarlos
 > — mover gente entre empresas del grupo es una decisión de RH.
+>
+> **La adscripción lleva tres campos que reparten poder, y ninguno es dato
+> laboral**: `areas` (dónde trabaja), `dirigeAreas` (a quién ve, D-60) y `rolId`
+> (qué puede, D-94). Los dos últimos van en **rutas propias**, no en el `PATCH`
+> de la adscripción, y cada una pide su casilla.
 
 ---
 
@@ -308,3 +314,53 @@ sirve.
 
 Se arma leyendo las adscripciones, así que no hay un segundo lugar donde el dato
 pueda quedar desincronizado.
+
+
+---
+
+## 6. El rol de esta persona en esta empresa
+
+### `PATCH /adscripciones/:id/rol`
+
+Quien está en dos empresas puede necesitar permisos distintos en cada una: jefe
+de área en la constructora y sólo consulta en la de maquinaria (D-94).
+
+```jsonc
+{ "rolId": "652f…" }   // su rol EN ESTA empresa
+{ "rolId": null }      // se lo quita: vuelve a mandar su rol base
+```
+
+Devuelve la adscripción, con `rolId` ya actualizado.
+
+**`null` es lo normal**, no un caso raro: significa «manda su rol base»
+(`acceso.rolId`), y si tampoco tiene, su `nivelAcceso`. Quien no use el rol por
+empresa no nota nada.
+
+### Quién puede
+
+**`manageAccess`**, no `manageAffiliations`. Es la misma decisión que darle su
+rol base en `/empleados/:id/acceso`, sólo que acotada a una empresa: quien mueve
+gente entre empresas no tiene por qué poder repartir permisos.
+
+### Errores
+
+| Código | `message` | Qué lo dispara |
+| ------ | --------- | -------------- |
+| `400` | `Ese rol está dado de baja: elige otro` | El rol existe pero está inactivo |
+| `404` | `Ese rol no existe` | `rolId` que no existe. **No cambia nada** |
+| `404` | — | La adscripción está fuera de tu alcance |
+| `403` | `No tienes permiso para realizar esta acción` | Sin `manageAccess` |
+
+### Y lo que cambia en el resto de la API
+
+A partir de aquí, **un permiso que sólo se tiene en una empresa sólo alcanza los
+datos de esa empresa**:
+
+| Situación | Respuesta |
+| --------- | --------- |
+| No lo tienes en **ninguna** empresa | `403` — «no puedes hacer esto» |
+| Lo tienes en unas y pides datos de **otra** | `404` — fuera de tu alcance |
+
+Los **catálogos del grupo no cambian**: clientes y empleados bastan con tener la
+casilla en alguna empresa; empresas, puestos y áreas siguen exigiendo ser
+administrador de plataforma.

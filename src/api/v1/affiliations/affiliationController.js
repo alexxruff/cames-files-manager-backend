@@ -69,6 +69,22 @@ class AffiliationController {
     return ok(res, datos, 'Jefaturas actualizadas')
   }
 
+  /** PATCH /adscripciones/:id/rol — el rol de esta persona en esta empresa (D-94). */
+  setRol = async (req, res) => {
+    const datos = await affiliationService.setRol(
+      req.params.id,
+      req.body.rolId ?? null,
+      this.#contexto(req)
+    )
+
+    req.log.info('Rol de la adscripción actualizado', {
+      adscripcionId: req.params.id,
+      rolId: datos.adscripcion.rolId
+    })
+
+    return ok(res, datos, 'Rol actualizado correctamente')
+  }
+
   /** GET /empresas/:id/jefaturas — quién dirige cada área (D-60) */
   jefaturas = async (req, res) => {
     const datos = await affiliationService.jefaturas(req.params.id, this.#contexto(req))

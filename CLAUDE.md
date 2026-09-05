@@ -248,6 +248,16 @@ imposible acabar con dos registros de la misma persona.
   `PERMISSION_MATRIX` por su `nivelAcceso`, que sigue siendo el respaldo y por eso
   la matriz no desapareció: pasó a ser **la semilla** de los tres roles de
   sistema. `can()` sigue síncrona porque `protect` trae el rol poblado.
+- **Y el rol puede ser distinto en cada empresa** (D-94, `adscripciones.rolId`).
+  Por eso `requireCapability` hace dos cosas: **403** si no tienes la casilla en
+  ninguna empresa, y si la tienes en algunas **acota `req.empresasVisibles` a
+  ésas** — lo de las demás pasa a ser 404 por el camino de alcance de siempre.
+  Cuidado al tocar esto: `acceso` es un subdocumento de Mongoose y
+  `{ ...acceso }` NO copia sus campos; usa `accesoPlano()`.
+- **La adscripción tiene tres campos que reparten poder**, y ninguno es dato
+  laboral: `dirigeAreas` (a quién ve, D-60), `rolId` (qué puede, D-94) y `areas`
+  (dónde trabaja). Los dos primeros van en rutas propias y no en el `PATCH` de la
+  adscripción.
 - Ninguna ruta pública salvo `POST /auth/login`, `GET /api/v1`, `/health` y
   `/ready`.
 

@@ -9,7 +9,8 @@ const { CAPABILITIES } = require('../../../utils/permissions')
 const {
   updateAffiliationValidation,
   affiliationEstadoValidation,
-  affiliationJefaturasValidation
+  affiliationJefaturasValidation,
+  affiliationRolValidation
 } = require('../../../validations/affiliationValidation')
 
 /**
@@ -47,6 +48,24 @@ router.patch(
   affiliationJefaturasValidation,
   validateRequest,
   asyncHandler(affiliationController.setJefaturas)
+)
+
+/*
+ * El rol de esta persona EN ESTA EMPRESA (D-94). Va aparte del `PATCH` de la
+ * adscripción por lo mismo que las jefaturas: no es un dato de la relación
+ * laboral, es qué puede hacer.
+ *
+ * Y pide `MANAGE_ACCESS`, no `MANAGE_AREA_LEADERSHIP`: es **la misma decisión**
+ * que darle su rol base en `/empleados/:id/acceso`, sólo que acotada a una
+ * empresa. Quien reparte accesos reparte permisos; quien mueve gente entre
+ * empresas, no.
+ */
+router.patch(
+  '/:id/rol',
+  requireCapability(CAPABILITIES.MANAGE_ACCESS),
+  affiliationRolValidation,
+  validateRequest,
+  asyncHandler(affiliationController.setRol)
 )
 
 router.patch(

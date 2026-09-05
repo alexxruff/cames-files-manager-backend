@@ -160,3 +160,20 @@ exports.affiliationEstadoValidation = [
     .isLength({ min: 10 })
     .withMessage('El motivo de la baja debe tener al menos 10 caracteres')
 ]
+
+/**
+ * El rol de esta persona en esta empresa (D-94).
+ *
+ * `null` explícito la devuelve a su rol base, y es un valor válido: no es «no
+ * mandes nada», es «quítale el de aquí».
+ */
+exports.affiliationRolValidation = [
+  param('id').isMongoId().withMessage('La adscripción indicada no es válida'),
+  body('rolId').custom((valor) => {
+    if (valor === null || valor === '') return true
+    if (!/^[0-9a-fA-F]{24}$/.test(String(valor))) {
+      throw new Error('El rol indicado no es válido')
+    }
+    return true
+  })
+]

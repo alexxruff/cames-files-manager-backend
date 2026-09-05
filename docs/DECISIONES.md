@@ -4659,3 +4659,117 @@ corresponde a su nivel. Idempotente, con `--dry-run`, y **no toca a quien ya
 tenga `rolId`**: si alguien ya recibió un rol a mano, volver a correrla no se lo
 pisa. Siembra los roles ella misma antes de empezar, para que sirva también en
 una base donde el servidor nunca arrancó con esto.
+
+## D-94 · El rol puede ser distinto en cada empresa, y el permiso acota el alcance
+
+**Contexto.** Tarea #46, 4 sept 2026, a pedido de Urbacames
+(`cames-ops/plan/propuestas/2026-09-04-usuarios-con-permisos-por-seccion.md`,
+decisión 2 del 4 sept). Quien está adscrito a dos empresas puede necesitar
+permisos distintos en cada una: jefe de área en la constructora y sólo consulta
+en la de maquinaria. Cierra la cadena que abrieron D-92 y D-93.
+
+### El campo es lo de menos
+
+`affiliations.rolId`. La adscripción **ya es** el registro «esta persona, en esta
+empresa», y ya dice qué áreas dirige ahí (D-60); el rol es un campo más, no una
+colección nueva. `null` es lo normal y significa «manda su rol base».
+
+La cadena de respaldo queda de tres eslabones, y cada uno sólo entra si falta el
+anterior: **el rol de esa empresa → su rol base → su `nivelAcceso`** contra la
+matriz. Quien no use el rol por empresa no nota absolutamente nada.
+
+### Lo que sí era grande: tener un permiso dejó de ser sí/no
+
+Hasta aquí `can(acceso, x)` no sabía de empresas, y `req.empresasVisibles` eran
+«las empresas donde tengo adscripción activa». Con el rol por empresa, la
+pregunta ya no es *si* tengo un permiso sino **en cuáles**. Eso toca la pieza
+crítica de seguridad, con 68 lugares que leen `empresasVisibles`.
+
+**No se tocó ninguno de los 68.** En su lugar:
+
+1. `applyScope` calcula además `req.permisosPorEmpresa` — `{ empresaId: Set }` —
+   resolviendo la cadena de arriba por adscripción, en la misma consulta, con el
+   rol poblado.
+2. **`requireCapability` hace dos trabajos**: si la casilla no está en ninguna
+   empresa, **403**; si está en algunas, **acota `empresasVisibles` a ésas** y
+   sigue.
+
+Con eso el 404 de «lo tengo, pero no aquí» sale **por el camino de alcance que
+ya existía y ya estaba probado**, sin una regla nueva en cada servicio. Y el
+reparto queda donde debe: **403 es «no puedes», 404 es «no es tuyo»** (regla #7
+del contrato). Acotar, nunca ampliar: es una intersección con lo que ya era
+visible, y para el administrador de plataforma —`empresasVisibles: null`— no hay
+nada que acotar.
+
+El orden ya era el correcto: `applyScope` corre antes que `requireCapability` en
+las rutas que llevan capacidad. Si alguna no tuviera `applyScope`, se cae al `can`
+de siempre y nada se acota.
+
+### Lo que esto NO acota, y por qué se deja así
+
+Las tres rutas que no llevan `requireCapability`, que son las que ya tenían su
+motivo escrito en `routeGuards.test.js`: el alta y la edición de empleados —que
+deciden por el **tipo** de persona en el servicio—, `PATCH /areas/:id/estado` y
+`POST /subidas` —que decide por el **destino**—. Las tres siguen igual que antes,
+y en las tres el alcance ya se comprueba contra el recurso concreto. Meterles el
+`permisosPorEmpresa` es posible y está anotado; no se hizo aquí porque no
+resolvía nada que hoy esté abierto.
+
+### Los catálogos del grupo se quedan igual, y salió gratis
+
+Era la condición: **clientes y empleados bastan con tener el permiso en alguna
+empresa; empresas, puestos y áreas siguen exigiendo `alcanceGlobal`**. No hizo
+falta ninguna regla especial:
+
+- Clientes y empleados **no llevan `empresaId`**, así que acotar
+  `empresasVisibles` no les hace nada. Tener la casilla en una empresa basta,
+  exactamente como antes.
+- `exigeAlcanceGlobal` (D-93) no pasa por el rol: un rol puede marcar
+  `manageCompanies` y quien lo tenga sigue sin poder si no es administrador de
+  plataforma. Hay una prueba que lo fija.
+
+### Las excepciones son de la persona
+
+`acceso.permisosExtra` vale en **todas** sus empresas: se le dieron a ella, no a
+su puesto en una de ellas. Es la lectura de «siguen valiendo donde se le dieron»,
+confirmada al proponer la tarea. Si algún día hace falta una excepción acotada a
+una empresa, es otro campo en la adscripción — y entonces sí, migración.
+
+### Quién reparte el rol de una empresa
+
+`PATCH /adscripciones/:id/rol`, y pide **`MANAGE_ACCESS`**.
+
+Va en su propia ruta y no en el `PATCH` de la adscripción por lo mismo que las
+jefaturas (D-60): **no es un dato de la relación laboral, es qué puede hacer**.
+Y pide administrar accesos, no `MANAGE_AREA_LEADERSHIP` como se propuso al
+principio: es **la misma decisión** que darle su rol base en
+`/empleados/:id/acceso`, sólo que acotada a una empresa. Quien mueve gente entre
+empresas no tiene por qué poder repartir permisos. Hoy las dos casillas son de
+`rh_admin`, así que no cambia nada para nadie; la diferencia aparece el día que
+alguien arme un rol que tenga una y no la otra, y ese día la respuesta correcta
+es la restrictiva.
+
+### La sesión dice qué trae en cada empresa
+
+`AuthUser.empresas[]` gana `rol` y `permisos`, resueltos por la cadena completa.
+El `permisos` plano de D-93 se queda como la **unión** de todas: es lo que el
+front ya lee, y sirve para decidir si una sección se ofrece siquiera. Para saber
+qué se puede hacer **dentro** de una empresa, el de esa empresa.
+
+### Una trampa que costó una tarde y merece quedar escrita
+
+`acceso` casi siempre es un **subdocumento de Mongoose**, y `{ ...acceso }` **no
+copia sus campos**: devuelve `$__`, `_doc` y compañía. Con eso, `nivelAcceso` y
+`permisosExtra` salían `undefined` y el respaldo por nivel contestaba que no a
+todo.
+
+Lo peor no era el error sino **cuándo se veía**: sólo fallaba si NO había rol, que
+es justo el caso que el respaldo existe para cubrir. Con rol, la respuesta salía
+del rol y todo parecía correcto — venía así desde D-93, donde afectaba al `origen`
+de cada permiso sin que ninguna prueba lo tocara. Ahora hay `accesoPlano()`, que
+copia campo por campo, y una prueba que usa un documento de Mongoose **de verdad**
+en vez de un objeto plano. Las pruebas con objetos literales no habrían visto
+nunca este fallo.
+
+**Sin migración**: `rolId` es nuevo y anulable sobre adscripciones que ya existen,
+y `null` significa exactamente lo de hoy.

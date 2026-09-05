@@ -618,6 +618,24 @@ function canManageEmployeeType(acceso, tipo) {
 }
 
 /**
+ * Una copia PLANA de un acceso, con el rol que se le quiera imponer.
+ *
+ * Existe por una trampa concreta: `acceso` suele ser un **subdocumento de
+ * Mongoose**, y `{ ...acceso }` no copia sus campos —devuelve `$__`, `_doc` y
+ * compañía—, así que `nivelAcceso` y `permisosExtra` salían `undefined` y el
+ * respaldo por nivel contestaba que no a todo. Sólo se notaba cuando NO había
+ * rol, que es justo el caso que el respaldo existe para cubrir.
+ */
+function accesoPlano(acceso, rolId) {
+  return {
+    nivelAcceso: acceso.nivelAcceso,
+    alcanceGlobal: acceso.alcanceGlobal,
+    permisosExtra: acceso.permisosExtra || [],
+    rolId
+  }
+}
+
+/**
  * El rol resuelto de un acceso, o `null` si no trae.
  *
  * `acceso.rolId` llega **poblado** desde `protect`, que lo trae en la misma
@@ -732,7 +750,7 @@ function permissionsOf(acceso) {
   const rol = rolDe(acceso)
   const extras = new Set(acceso.permisosExtra || [])
   // El mismo acceso sin sus excepciones: sirve para saber qué le daba la base.
-  const sinExcepciones = { ...acceso, permisosExtra: [], rolId: rol }
+  const sinExcepciones = { ...accesoPlano(acceso, rol), permisosExtra: [] }
 
   return PERMISSIONS.filter(({ clave }) => can(acceso, clave)).map(({ clave }) => ({
     clave,
@@ -744,6 +762,38 @@ function permissionsOf(acceso) {
      */
     origen: extras.has(clave) && !can(sinExcepciones, clave) ? 'excepcion' : 'rol'
   }))
+}
+
+/**
+ * Las claves que trae un acceso **en una empresa concreta** (D-94).
+ *
+ * La cadena de respaldo, en orden, y cada eslabón sólo entra si falta el
+ * anterior:
+ *
+ * 1. **El rol de esa empresa** (`adscripciones.rolId`) — jefe de área en la
+ *    constructora y sólo consulta en la de maquinaria.
+ * 2. **Su rol base** (`acceso.rolId`), si la adscripción no dice ninguno. Es lo
+ *    normal: quien no use el rol por empresa no nota nada.
+ * 3. **Su `nivelAcceso`** contra la matriz, si tampoco tiene rol base. El mismo
+ *    respaldo de D-93, que es lo que hace que las migraciones no bloqueen.
+ *
+ * Las **excepciones son de la persona** (`acceso.permisosExtra`) y valen en
+ * todas sus empresas: se le dieron a ella, no a su puesto en una de ellas.
+ *
+ * @param {object} acceso
+ * @param {{rolDeLaEmpresa?: object|null}} [opciones]
+ * @returns {string[]} claves, en el orden del catálogo
+ */
+function permissionKeysOf(acceso, { rolDeLaEmpresa = null } = {}) {
+  if (!acceso) return []
+
+  const rol =
+    rolDeLaEmpresa && Array.isArray(rolDeLaEmpresa.permisos)
+      ? rolDeLaEmpresa
+      : acceso.rolId
+
+  const efectivo = accesoPlano(acceso, rol)
+  return PERMISSIONS.filter(({ clave }) => can(efectivo, clave)).map(({ clave }) => clave)
 }
 
 /**
@@ -778,6 +828,7 @@ module.exports = {
   PERMISSIONS,
   PERMISSION_BY_KEY,
   permissionsOf,
+  permissionKeysOf,
   missingRequirements,
   PERMISSION_SECTIONS,
   PERMISSION_KEYS,

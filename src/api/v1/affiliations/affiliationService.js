@@ -6,6 +6,7 @@ const Assignment = require('../assignments/assignmentModel')
 const areaService = require('../areas/areaService')
 const companyService = require('../companies/companyService')
 const Project = require('../projects/projectModel')
+const Role = require('../roles/roleModel')
 const { AppError } = require('../../../middlewares/errorHandler')
 const { today } = require('../../../utils/dates')
 const {
@@ -290,6 +291,36 @@ class AffiliationService {
     adscripcion.dirigeAreas = [...new Set(dirigeAreas)]
     await adscripcion.save()
 
+    return { adscripcion: adscripcion.toJSON() }
+  }
+
+  /**
+   * `PATCH /adscripciones/:id/rol` — el rol de esta persona **en esta empresa**
+   * (D-94).
+   *
+   * Va en su propia ruta y no en el `PATCH` de la adscripción por lo mismo que
+   * las jefaturas (D-60): **no es un dato de la relación laboral, es qué puede
+   * hacer**. Y por eso pide `MANAGE_ACCESS` y no `MANAGE_AFFILIATIONS`: quien
+   * mueve gente entre empresas no tiene por qué poder repartir permisos.
+   *
+   * `null` le quita el rol de esta empresa y la devuelve a su rol base, que es
+   * lo normal y lo que tienen todas hasta que alguien decida lo contrario.
+   */
+  async setRol(id, rolId, contexto = {}) {
+    const adscripcion = await this.#buscarVisible(id, contexto)
+
+    if (rolId) {
+      const rol = await Role.findById(rolId)
+      if (!rol) throw AppError.notFound('Ese rol no existe')
+      if (!rol.activo) {
+        throw new AppError(400, 'Ese rol está dado de baja: elige otro')
+      }
+      adscripcion.rolId = rol._id
+    } else {
+      adscripcion.rolId = null
+    }
+
+    await adscripcion.save()
     return { adscripcion: adscripcion.toJSON() }
   }
 

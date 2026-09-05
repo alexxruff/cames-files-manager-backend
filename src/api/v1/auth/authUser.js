@@ -1,6 +1,6 @@
 const Affiliation = require('../affiliations/affiliationModel')
 const Role = require('../roles/roleModel')
-const { permissionsOf } = require('../../../utils/permissions')
+const { permissionsOf, permissionKeysOf } = require('../../../utils/permissions')
 // Se requiere aunque no se use directamente: `populate('empresaId')` resuelve el
 // modelo por nombre y sin esto lanza MissingSchemaError.
 require('../companies/companyModel')
@@ -20,6 +20,11 @@ require('../companies/companyModel')
  * excepciones, con el efecto del alcance global aplicado. Va aquí para que la
  * pantalla apague su menú con lo que dice el servidor y deje de mantener su
  * propia copia de la matriz — hoy son dos listas que ya difieren en un caso.
+ *
+ * Desde D-94 cada empresa trae **los suyos**, porque el rol puede ser distinto en
+ * cada una. El `permisos` de arriba se queda como la **unión** de todas: es lo
+ * que el front ya lee, y sirve para decidir si una sección se ofrece siquiera.
+ * Para saber qué se puede hacer DENTRO de una empresa, el de esa empresa.
  */
 async function construirAuthUser(empleado, { ultimoAccesoEn = null } = {}) {
   const adscripciones = await Affiliation.find({
@@ -27,7 +32,11 @@ async function construirAuthUser(empleado, { ultimoAccesoEn = null } = {}) {
     activo: true
   })
     .populate({ path: 'empresaId', select: 'nombre activo' })
-    .select('empresaId areas')
+    .populate({
+      path: 'rolId',
+      select: 'nombre permisos todosLosPermisos soloSusAreas activo'
+    })
+    .select('empresaId areas rolId')
 
   /*
    * El rol puede venir ya poblado (`protect`) o no (el login, que busca por
@@ -49,7 +58,15 @@ async function construirAuthUser(empleado, { ultimoAccesoEn = null } = {}) {
     .map((a) => ({
       _id: a.empresaId._id.toString(),
       nombre: a.empresaId.nombre,
-      areas: a.areas || []
+      areas: a.areas || [],
+      /*
+       * El rol y los permisos DE ESA EMPRESA (D-94). `rol: null` significa que
+       * ahí manda su rol base, no que no tenga permisos: `permisos` ya viene
+       * resuelto por la cadena completa, así que la pantalla lee esto y no
+       * deduce nada.
+       */
+      rol: a.rolId ? { _id: a.rolId._id.toString(), nombre: a.rolId.nombre } : null,
+      permisos: permissionKeysOf(acceso, { rolDeLaEmpresa: a.rolId })
     }))
 
   return {
@@ -70,7 +87,14 @@ async function construirAuthUser(empleado, { ultimoAccesoEn = null } = {}) {
      * Sólo las claves: de dónde le viene cada una es la pregunta de la ficha de
      * la persona, no de la sesión propia, y va en `GET /empleados/:id/acceso`.
      */
-    permisos: permissionsOf(acceso).map(({ clave }) => clave),
+    /*
+     * La UNIÓN de lo que puede en todas sus empresas. Un administrador de
+     * plataforma no tiene adscripciones que unir, así que sale de su acceso.
+     */
+    permisos:
+      empresas.length > 0
+        ? [...new Set(empresas.flatMap((e) => e.permisos))]
+        : permissionsOf(acceso).map(({ clave }) => clave),
     empresas,
     active: Boolean(empleado.activo && empleado.acceso?.activo),
     ultimoAccesoEn: ultimoAccesoEn ? ultimoAccesoEn.toISOString() : null,

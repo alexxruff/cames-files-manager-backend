@@ -330,6 +330,10 @@ desincronizadas. Índice rápido:
 - **Los roles son datos, no código** (D-93). `/roles` los administra, y quien
   tiene rol se resuelve contra él; quien no, contra `PERMISSION_MATRIX` por su
   `nivelAcceso`, que sigue viajando en la sesión.
+- **El rol puede ser distinto en cada empresa** (D-94): `adscripciones.rolId`. Un
+  permiso que sólo se tiene en una empresa **acota el alcance** a ésa, así que en
+  las demás los datos responden `404`; si no se tiene en ninguna, la ruta
+  responde `403`.
 - **Empleados, clientes y categorías son catálogos compartidos.** No llevan
   `empresaId`. La pertenencia se expresa con vínculos.
 - **`adscripciones`** lleva la relación laboral: contrato, fecha de ingreso,

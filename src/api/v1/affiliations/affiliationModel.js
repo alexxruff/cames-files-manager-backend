@@ -108,6 +108,24 @@ const affiliationSchema = new mongoose.Schema(
      */
     dirigeAreas: { type: [{ type: String, trim: true }], default: [] },
 
+    /**
+     * El rol de esta persona **en esta empresa** (D-94).
+     *
+     * Quien está adscrito a dos empresas puede necesitar permisos distintos en
+     * cada una: jefe de área en la constructora y sólo consulta en la de
+     * maquinaria. Vive aquí y no en la persona porque es exactamente el registro
+     * de «esta persona, en esta empresa», el mismo que ya dice qué áreas dirige.
+     *
+     * **`null` es lo normal y significa «manda su rol base»** (`acceso.rolId`),
+     * y si tampoco tiene, su `nivelAcceso` contra la matriz. Es el mismo respaldo
+     * en cadena de D-93, un eslabón más largo: quien no use esto no nota nada.
+     */
+    rolId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Role',
+      default: null
+    },
+
     /** Áreas DONDE TRABAJA, dentro de esta empresa. Un administrativo necesita al menos una. */
     areas: {
       /*
@@ -270,6 +288,8 @@ const affiliationSchema = new mongoose.Schema(
           empleadoId: idAString(ret.empleadoId),
           areas: ret.areas || [],
           dirigeAreas: ret.dirigeAreas || [],
+          // Puede venir poblado (`applyScope`) o como id: se serializa igual.
+          rolId: ret.rolId ? (ret.rolId._id || ret.rolId).toString() : null,
           departamento: ret.departamento ?? null,
           tipoContrato: ret.tipoContrato,
           fechaIngreso: ret.fechaIngreso,

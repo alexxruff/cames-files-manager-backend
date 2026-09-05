@@ -1,5 +1,9 @@
 const { AppError } = require('./errorHandler')
-const { isPlatformAdmin, isLimitedToOwnArea } = require('../utils/permissions')
+const {
+  isPlatformAdmin,
+  isLimitedToOwnArea,
+  permissionKeysOf
+} = require('../utils/permissions')
 const { CAPABILITIES } = require('../utils/permissions')
 const Affiliation = require('../api/v1/affiliations/affiliationModel')
 
@@ -13,6 +17,10 @@ const Affiliation = require('../api/v1/affiliations/affiliationModel')
  * - `req.empresasVisibles` — array de ids, o `null` = todas (admin de plataforma).
  * - `req.areasPorEmpresa`  — `{ empresaId: [areas] }`, para el jefe de área. Son
  *   las áreas que **DIRIGE**, no aquellas donde trabaja (D-60).
+ * - `req.permisosPorEmpresa` — `{ empresaId: Set(claves) }` (D-94). Desde que el
+ *   rol puede ser distinto en cada empresa, tener un permiso dejó de ser sí/no y
+ *   pasó a ser **en cuáles**. Quien lo usa es `requireCapability`, que con esto
+ *   acota `empresasVisibles` a las empresas donde de verdad lo tiene.
  * - `req.esAdminPlataforma`.
  *
  * Reglas que no se negocian:
@@ -33,13 +41,28 @@ async function applyScope(req, res, next) {
       req.esAdminPlataforma = true
       req.empresasVisibles = null // null = todas
       req.areasPorEmpresa = {}
+      /*
+       * El administrador de plataforma no se acota por empresa: ve todas y su
+       * rol es el base. `null` aquí significa «lo que pueda, lo puede en todas»,
+       * igual que `empresasVisibles`.
+       */
+      req.permisosPorEmpresa = null
       return next()
     }
 
+    /*
+     * El rol de cada adscripción viene POBLADO, en la misma consulta: es lo que
+     * permite resolver los permisos de cada empresa sin una consulta por empresa.
+     */
     const adscripciones = await Affiliation.find({
       empleadoId: req.user._id,
       activo: true
-    }).select('empresaId dirigeAreas')
+    })
+      .select('empresaId dirigeAreas rolId')
+      .populate({
+        path: 'rolId',
+        select: 'nombre permisos todosLosPermisos soloSusAreas activo'
+      })
 
     req.esAdminPlataforma = false
     req.empresasVisibles = adscripciones.map((a) => String(a.empresaId))
@@ -51,6 +74,20 @@ async function applyScope(req, res, next) {
      */
     req.areasPorEmpresa = Object.fromEntries(
       adscripciones.map((a) => [String(a.empresaId), a.dirigeAreas || []])
+    )
+
+    /*
+     * Los permisos DE CADA EMPRESA (D-94). Si la adscripción trae rol, manda ése;
+     * si no, el de la persona —y si tampoco, su `nivelAcceso`—, que es la misma
+     * cadena de respaldo de D-93 con un eslabón más. `permissionKeysOf` resuelve
+     * los tres casos y aplica las excepciones, que son de la persona y valen en
+     * todas sus empresas.
+     */
+    req.permisosPorEmpresa = Object.fromEntries(
+      adscripciones.map((a) => [
+        String(a.empresaId),
+        new Set(permissionKeysOf(acceso, { rolDeLaEmpresa: a.rolId }))
+      ])
     )
 
     return next()
@@ -97,4 +134,25 @@ function areasVisibles(req, empresaId) {
   return req.areasPorEmpresa?.[String(empresaId)] || []
 }
 
-module.exports = { applyScope, empresaFiltro, empresaEsVisible, areasVisibles }
+/**
+ * Las empresas donde este usuario tiene la capacidad, o `null` = todas (D-94).
+ *
+ * Va aparte de `requireCapability` porque también la necesitan los servicios que
+ * deciden por el cuerpo de la petición y no por la ruta.
+ */
+function empresasCon(req, capability) {
+  const porEmpresa = req.permisosPorEmpresa
+  if (!porEmpresa) return null // administrador de plataforma
+
+  return Object.entries(porEmpresa)
+    .filter(([, claves]) => claves.has(capability))
+    .map(([empresaId]) => empresaId)
+}
+
+module.exports = {
+  applyScope,
+  empresaFiltro,
+  empresaEsVisible,
+  areasVisibles,
+  empresasCon
+}

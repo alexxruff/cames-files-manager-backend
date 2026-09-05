@@ -89,6 +89,8 @@ async function adscribir(empresa, empleado, datos = {}) {
     areas: datos.areas || [],
     // Las áreas que DIRIGE, distintas de aquellas donde trabaja (D-60).
     dirigeAreas: datos.dirigeAreas || [],
+    // El rol EN ESTA empresa (D-94). `null` = manda su rol base.
+    rolId: datos.rolId ?? null,
     // Lo que llena el archivo de nómina y ahora también sale en el renglón (D-62).
     departamento: datos.departamento ?? null,
     datosPendientes: datos.datosPendientes || [],

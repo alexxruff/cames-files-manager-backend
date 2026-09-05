@@ -89,6 +89,47 @@ function requireCapability(capability) {
     if (!req.user) {
       return next(new AppError(401, 'Necesitas iniciar sesión para continuar'))
     }
+
+    /*
+     * ─── Dos trabajos, no uno (D-94) ────────────────────────────────────────
+     *
+     * Desde que el rol puede ser distinto en cada empresa, «tengo este permiso»
+     * dejó de ser sí/no y pasó a ser **en cuáles**. Así que aquí se decide:
+     *
+     * - **En ninguna → 403.** Es el mismo rechazo de siempre.
+     * - **En algunas → se ACOTA `empresasVisibles` a ésas** y se sigue. A partir
+     *   de ahí, los datos de las demás quedan fuera de alcance y responden 404
+     *   por el camino que ya existía, sin una regla nueva en cada servicio.
+     *
+     * Ese reparto —403 para «no puedes», 404 para «no es tuyo»— es la regla #7
+     * del contrato, y hacerlo aquí es lo que evita repetirla en los 68 sitios
+     * que leen `empresasVisibles`.
+     *
+     * `applyScope` corre ANTES que esto en todas las rutas que llevan capacidad,
+     * así que `permisosPorEmpresa` ya está calculado. Si no estuviera —una ruta
+     * sin `applyScope`—, se cae al `can` de siempre y nada se acota.
+     */
+    const porEmpresa = req.permisosPorEmpresa
+
+    if (porEmpresa) {
+      const empresas = Object.entries(porEmpresa)
+        .filter(([, claves]) => claves.has(capability))
+        .map(([empresaId]) => empresaId)
+
+      if (empresas.length === 0) {
+        return next(new AppError(403, 'No tienes permiso para realizar esta acción'))
+      }
+
+      /*
+       * Se acota, nunca se amplía: la intersección con lo que ya era visible.
+       * `null` es el administrador de plataforma y ahí no hay nada que acotar.
+       */
+      if (req.empresasVisibles !== null) {
+        req.empresasVisibles = req.empresasVisibles.filter((id) => empresas.includes(id))
+      }
+      return next()
+    }
+
     if (!can(req.user.acceso, capability)) {
       return next(new AppError(403, 'No tienes permiso para realizar esta acción'))
     }

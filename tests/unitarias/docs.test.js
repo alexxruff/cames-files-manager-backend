@@ -87,7 +87,7 @@ describe('La documentación no se desfasó del código', () => {
      */
     it.each([
       ['docs/ENDPOINTS-PROYECTOS.md', 36],
-      ['docs/ENDPOINTS-ADSCRIPCIONES.md', 6],
+      ['docs/ENDPOINTS-ADSCRIPCIONES.md', 7],
       ['docs/ENDPOINTS-EXPEDIENTES.md', 6],
       ['docs/ENDPOINTS-IMPORTACION.md', 2],
       ['docs/ENDPOINTS-MAQUINAS.md', 18]

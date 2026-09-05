@@ -28,7 +28,7 @@ tiempo de ejecución**, así que no puede mentir:
 curl -s http://localhost:8080/api/v1 | jq '.data.implementados, .data.pendientes'
 ```
 
-`GET /api/v1` es público. Hoy son **118 rutas** en pie y 6 anunciadas como
+`GET /api/v1` es público. Hoy son **119 rutas** en pie y 6 anunciadas como
 pendientes. Dónde está el detalle de cada familia:
 
 | Familia                                               | Detalle en                                             |
@@ -84,6 +84,7 @@ expedienteId }`), en el alta, la edición, el estado y las tres rutas de acceso.
 | Su copia de la matriz de permisos | `GET /permisos` la manda: 41 casillas con sección, etiqueta y qué exigen, más `tengo` con las de quien entró (D-92) |
 | Los tres niveles de acceso escritos en el código | Son **roles**, y se arman en `/roles` sin desplegar nada (D-93). `nivelAcceso` sigue viajando mientras migran |
 | Deducir permisos de `nivelAcceso` | `AuthUser` trae `permisos[]` ya resueltos y `rol` (D-93) |
+| Un solo juego de permisos por persona | Cada empresa trae **los suyos** en `empresas[].permisos` y `empresas[].rol` (D-94). El `permisos` de arriba es la unión |
 | Leer proyectos, contratos, maquinaria, clientes o empresas era gratis con sesión | Cada sección pide su casilla de **ver**. Hoy los tres niveles la tienen, pero esas rutas **ya pueden responder 403** |
 
 **Archivos del front que hay que tocar:**

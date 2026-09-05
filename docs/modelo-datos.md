@@ -1210,6 +1210,12 @@ por celda** contra el código: si las dos dejan de coincidir, `npm test` falla y
 > diciendo exactamente esto— y **el respaldo** de quien todavía no tiene rol.
 > Sigue siendo obligatorio que coincida con el código, por eso mismo: si miente,
 > los roles nacen mintiendo.
+>
+> Y desde **D-94** el rol puede ser **distinto en cada empresa**
+> (`adscripciones.rolId`), así que tener un permiso dejó de ser sí/no y pasó a ser
+> **en cuáles**: `requireCapability` responde `403` si no lo tienes en ninguna, y
+> si lo tienes en algunas **acota tu alcance a ésas** — lo de las demás pasa a ser
+> `404`.
 
 Antes hubo dos —ésta y la de D-32— y no decían lo mismo: ésta dejaba la edición
 de personal sólo en `rh_admin` diez días después de que Urbacames confirmara lo

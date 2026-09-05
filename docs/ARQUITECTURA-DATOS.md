@@ -11,7 +11,7 @@ cambiar cualquier esquema.
 | **Este**             | **Lo que HAY**: colecciones, relaciones e impacto de cambiarlas |
 | `modelo-datos.md`    | El diseño y su porqué. Ha derivado; donde discrepe, manda éste  |
 | `backend-spec.md`    | El contrato HTTP: envelope, códigos, enums y catálogo de rutas  |
-| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-93)                      |
+| `DECISIONES.md`      | Por qué cada cosa es como es (D-01 … D-94)                      |
 | `CONTRATO-API.md`    | La forma de las respuestas HTTP, petición por petición          |
 | `ARQUITECTURA.md`    | Las capas del código (modelo → servicio → controlador → ruta)   |
 | `ESTADO.md`          | Qué está hecho y qué falta                                      |
@@ -165,6 +165,7 @@ erDiagram
     CHECKLIST_TEMPLATES ||--o{ RECORDS    : "genera el checklist"
 
     ROLES      ||--o{ EMPLOYEES    : "sus permisos (acceso.rolId, D-93)"
+    ROLES      ||--o{ AFFILIATIONS : "su rol en ESA empresa (D-94)"
 
     EMPLOYEES  ||--o{ ACCESS_LOGS  : "quién consultó"
     RECORDS    ||--o{ ACCESS_LOGS  : "qué se consultó"
@@ -184,10 +185,14 @@ D-72, también la adscripción— les apuntan.
 Las líneas de `AREAS` y las de los registros son distintas de todas las demás y
 están explicadas en la sección 4: **Mongoose no las resuelve sola**.
 
-La flecha de `ROLES` a `EMPLOYEES` apunta a `acceso.rolId`, dentro del
-subdocumento de acceso. **Es opcional y `null` no significa «sin permisos»**:
-quien no tiene rol se resuelve por su `nivelAcceso` contra la matriz del código
-(D-93), que es lo que hace que la migración no bloquee un despliegue.
+Las dos flechas de `ROLES` son opcionales y **`null` no significa «sin
+permisos»** en ninguna de las dos: es una cadena de tres eslabones, y cada uno
+sólo entra si falta el anterior (D-94):
+
+    adscripción.rolId → acceso.rolId → acceso.nivelAcceso (la matriz)
+
+Por eso la migración de D-93 no bloquea un despliegue y por eso quien no use el
+rol por empresa no nota nada.
 
 La línea punteada entre `MACHINE_ASSIGNMENTS` y `MACHINE_INCIDENTS` es de otra
 naturaleza todavía: **no hay ninguna referencia guardada entre las dos**. La
@@ -515,8 +520,10 @@ Un nombre y las casillas del catálogo que trae marcadas (D-93). Hasta la tarea
 - **Editar sus permisos afecta a su gente en la siguiente petición**, no al
   volver a entrar: `protect` lo resuelve en cada una. Es deliberado, pero
   significa que un dedazo aquí cierra rutas de inmediato.
-- **`acceso.rolId` es la única referencia que le entra**, y es opcional. Un rol
-  sin gente se puede borrar sin más; uno con gente, no.
+- **Le entran DOS referencias, las dos opcionales**: `acceso.rolId` (el rol base
+  de la persona) y `affiliations.rolId` (el suyo en esa empresa, D-94). El
+  borrado cuenta **las dos**: un rol se puede estar usando sólo como rol de
+  empresa.
 - **Lo que exige alcance global no se puede dar por rol.** El catálogo lo exige
   encima (`exigeAlcanceGlobal`), así que marcar `manageCompanies` en un rol no
   se lo da a quien no es administrador de plataforma.
@@ -614,6 +621,8 @@ colección: `records.documentos[].tipo` apunta a `DOCUMENT_TYPES` en
 | **`employees.tipo`**                             | `utils/permissions.js` (`canManageEmployeeType`), el desplegable de puestos                                     |
 | **`employees.acceso.rolId`**                     | **Todo lo que puede esa persona**, desde la siguiente petición. `null` la devuelve a resolverse por su `nivelAcceso` |
 | **`roles.permisos`**                             | Lo que puede **toda la gente con ese rol**, desde la siguiente petición: no esperan a volver a entrar (D-93)   |
+| **`affiliations.rolId`**                         | Lo que esa persona puede **en esa empresa** (D-94), y con ello a qué empresas alcanza cada permiso suyo        |
+| **`affiliations.activo`** (además de lo de abajo) | Sus permisos en esa empresa desaparecen con ella: `permisosPorEmpresa` sale de las adscripciones **activas**  |
 | **Borrar un rol**                                | Bloqueado (`409`) si alguien lo tiene. Los de sistema no se borran nunca                                        |
 | **`PERMISSION_MATRIX`**                          | Ya NO manda sobre quien tiene rol: es la **semilla** de los tres de sistema y el respaldo de quien no tiene (D-93) |
 | **Agregar un permiso al catálogo**               | Nace negado para todos salvo el rol con `todosLosPermisos`. Y `routeGuards.test.js` exige que su ruta lo pida   |
@@ -670,18 +679,36 @@ No es un campo. Se calcula en cada petición, en `applyScope`:
 ```
 Empleado con acceso
   └─ sus adscripciones ACTIVAS
-       ├─ empresaId  → req.empresasVisibles   (qué empresas ve)
-       └─ dirigeAreas → req.areasPorEmpresa   (qué áreas dirige en cada una)
+       ├─ empresaId   → req.empresasVisibles    (qué empresas ve)
+       ├─ dirigeAreas → req.areasPorEmpresa     (qué áreas dirige en cada una)
+       └─ rolId       → req.permisosPorEmpresa  (qué PUEDE en cada una, D-94)
+                        cadena: rol de la empresa → rol base → nivelAcceso
 
 Administrador de plataforma (acceso.alcanceGlobal)
-  └─ req.empresasVisibles = null  → todas
+  └─ req.empresasVisibles = null     → todas
+     req.permisosPorEmpresa = null   → lo que pueda, lo puede en todas
 ```
 
-Dos reglas que no se negocian:
+Y después, en cada ruta que exige una capacidad (D-94):
+
+```
+requireCapability(x)
+  ├─ ¿la tiene en NINGUNA empresa?  → 403  «no puedes hacer esto»
+  └─ ¿en algunas?                   → ACOTA req.empresasVisibles a ésas
+                                       y lo de las demás pasa a ser 404
+```
+
+Ahí está la razón de que el rol por empresa no obligara a tocar los 68 sitios que
+leen `empresasVisibles`: el permiso **acota el alcance**, y el alcance ya sabía
+responder 404.
+
+Tres reglas que no se negocian:
 
 - **`empresaId` nunca se lee del cuerpo ni del query para decidir alcance.** Sale
   del usuario. Si llega en la petición, sólo **acota** dentro de lo visible.
 - **Fuera de alcance responde `404`, no `403`.** Un `403` confirmaría que existe.
+- **Acotar, nunca ampliar.** El filtro por capacidad es una intersección con lo
+  que ya era visible; nunca añade una empresa.
 
 ---
 

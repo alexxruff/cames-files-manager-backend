@@ -67,6 +67,10 @@ un documento y aquí queda el enlace.
       lado no queda rastro y nadie se entera. No es una corrección de
       documentación: es revisar si la interfaz está tirando altas buenas. La
       regla, en [`INTEGRACION-FRONTEND.md`](./INTEGRACION-FRONTEND.md) §7.
+- [ ] **Al pintar botones dentro de una empresa, usen `empresas[].permisos`, no
+      el `permisos` de arriba.** Desde la #46 el rol puede ser distinto en cada
+      empresa: el de arriba es la unión y sirve para el menú, pero un botón
+      pintado con él y usado en la empresa equivocada recibe un 404.
 - [ ] **Apaguen el menú con `AuthUser.permisos`, no con `nivelAcceso`.** Desde la
       #45 la sesión trae las casillas ya resueltas y el rol de quien entró.
       Deducirlas del nivel deja de funcionar en cuanto exista el primer rol que
@@ -117,6 +121,51 @@ job diario de vigencias. El orden, en [`ESTADO.md`](./ESTADO.md).
 ---
 
 ## Bitácora
+
+### 2026-09-04 17:38:55 · backend · La #46: un rol distinto en cada empresa
+
+**Leído de ustedes**: `HANDOFF-FRONTEND.md` del 4 sept (sin entradas nuevas
+desde la #43).
+
+**Hecho.** Quien está adscrito a dos empresas puede tener permisos distintos en
+cada una: jefe de área en la constructora y sólo consulta en la de maquinaria. El
+rol vive en la adscripción, que ya es «esta persona, en esta empresa». Cierra la
+cadena de la #44 y la #45. Detalle en `plan/handoff/46.md`; el porqué, en D-94.
+
+**Quien no use esto no nota nada**: si la adscripción no dice rol, manda el rol
+base, y si tampoco tiene, su nivel de acceso de siempre.
+
+**Lo que sí les cambia el diseño de la #47: `permisos` deja de ser una sola
+lista.**
+
+- **`empresas[].permisos`** es lo que puede hacer **ahí**. Es con lo que se
+  pintan los botones cuando ya se sabe en qué empresa se trabaja.
+- **`permisos`** (el de arriba, el de la #45) pasa a ser la **unión** de todas.
+  No cambió de forma, así que lo que ya hayan hecho sigue funcionando; sirve para
+  decidir si una sección se ofrece siquiera en el menú.
+- Un botón pintado con la unión y usado en la empresa equivocada recibe **404**.
+
+**Y una regla que hay que tratar distinto en la pantalla**, porque parte los
+errores en dos:
+
+| Situación | Respuesta | Qué hacer |
+| --- | --- | --- |
+| No tiene el permiso en **ninguna** empresa | `403` | Esconder la sección |
+| Lo tiene en unas y pide datos de **otra** | `404` | Como el resto del alcance: no existe |
+
+No inventamos un código para «lo tienes pero no aquí», a propósito: el `403` es
+del permiso y el `404` es del alcance, que es la regla de siempre.
+
+**`rol: null` no significa «sin permisos»**, significa «aquí manda su rol base».
+`permisos` ya viene resuelto en los dos casos, así que no hay nada que deducir —
+y en el selector conviene que «el mismo que su rol base» sea la opción por
+omisión, porque es lo que tienen todas.
+
+**Ruta nueva, una sola**: `PATCH /adscripciones/:id/rol`, con `manageAccess`.
+**Sin migración.**
+
+**Qué necesitamos de ustedes:** la #47, que ya tiene sus tres handoff completos
+(44, 45 y 46). Es el momento de leerlos juntos antes de diseñar la pantalla.
 
 ### 2026-09-04 16:26:22 · backend · La #45: los roles son datos, y se eligen al crear un usuario
 
